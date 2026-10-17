@@ -1,0 +1,1482 @@
+<!doctype html>
+<!--
+  sacd2wav.html - convert SACD ISO images to WAV files in the browser.
+
+  A JavaScript port of ../sacd2wav.c.  Everything runs locally: the ISO is
+  read piece by piece from disk (it is never loaded whole, nor uploaded), and
+  each selected track is converted in its own Web Worker.
+
+  The page has two scripts:
+    #sacd-lib  the library, sacdLibrary(): Scarletbook TOC parser, DST
+               decoder, DSD -> PCM decimator, WAV writer.  No DOM access; the
+               workers run the same code (its source is handed to them as a
+               Blob), and tests/run_tests.mjs loads it into Node.
+    #sacd-app  the user interface.
+
+  Output is the same as the C/C++ programs': same filters, same TPDF dither
+  sequence as the C++ sacd2wav (seeded per track), same file names.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SACD to WAV</title>
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2e0;
+  --accent: #2f5bd3; --accent-text: #ffffff; --accent-soft: #e7edfc; --ok: #1d7a46; --warn: #a15c00; --err: #b3261e;
+  --bar: #2f5bd3; --bar-bg: #e9e9e6; --drop: #fbfbfa;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+    --accent: #7c9cff; --accent-text: #0e1324; --accent-soft: #232b45; --ok: #5fcf8f; --warn: #f0b35a; --err: #ff8a80;
+    --bar: #7c9cff; --bar-bg: #2c2c31; --drop: #1a1a1d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+  --accent: #7c9cff; --accent-text: #0e1324; --accent-soft: #232b45; --ok: #5fcf8f; --warn: #f0b35a; --err: #ff8a80;
+  --bar: #7c9cff; --bar-bg: #2c2c31; --drop: #1a1a1d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 920px; margin: 0 auto; padding: 28px 16px 64px; }
+h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+.sub { color: var(--muted); margin: 0 0 20px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+
+#drop {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  min-height: 150px; padding: 24px; text-align: center; cursor: pointer;
+  border: 2px dashed var(--line); background: var(--drop); transition: border-color .15s, background .15s;
+}
+#drop.over { border-color: var(--accent); background: var(--accent-soft); }
+#drop strong { font-size: 16px; }
+#drop .hint { color: var(--muted); font-size: 13px; }
+#drop.compact { min-height: 0; flex-direction: row; justify-content: space-between; text-align: left; padding: 14px 18px; }
+#drop.compact .big { display: none; }
+#file-error { color: var(--err); margin: 10px 2px 0; }
+
+#disc { margin-top: 18px; }
+.disc-head { padding: 16px 18px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
+.disc-head h2 { margin: 0; font-size: 18px; }
+.disc-head .meta { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg label { padding: 5px 12px; cursor: pointer; font-size: 13px; user-select: none; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:has(input:checked) { background: var(--accent); color: var(--accent-text); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.tracks { width: 100%; border-collapse: collapse; }
+.tracks th, .tracks td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.tracks th { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.tracks tr:last-child td { border-bottom: 0; }
+.tracks tbody tr { cursor: pointer; }
+.tracks tbody tr:hover { background: var(--accent-soft); }
+.tracks .c-check { width: 36px; padding-left: 16px; }
+.tracks .c-num { width: 36px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tracks .c-len { width: 64px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.tracks .c-status { width: 190px; }
+.tracks .title { overflow-wrap: anywhere; }
+.tracks .performer { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; margin: 0; vertical-align: middle; }
+.status { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+.status.ok { color: var(--ok); } .status.err { color: var(--err); } .status.warn { color: var(--warn); }
+.bar { height: 5px; border-radius: 3px; background: var(--bar-bg); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--bar); transition: width .2s; }
+
+.controls { padding: 14px 18px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.field select, .field input[type=number] {
+  font: inherit; font-size: 14px; color: var(--text); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; min-width: 120px;
+}
+.field input[type=number] { width: 90px; min-width: 0; }
+.spacer { flex: 1; }
+button {
+  font: inherit; font-size: 14px; font-weight: 600; border-radius: 8px; padding: 8px 16px; cursor: pointer;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text);
+}
+button.secondary { background: transparent; color: var(--text); border-color: var(--line); font-weight: 500; }
+button:disabled { opacity: .45; cursor: default; }
+.summary { padding: 0 18px 14px; font-size: 13px; color: var(--muted); }
+#log { margin: 14px 0 0; padding: 0; list-style: none; font-size: 13px; }
+#log li { padding: 3px 0; color: var(--warn); overflow-wrap: anywhere; }
+#log li.err { color: var(--err); }
+.foot { color: var(--muted); font-size: 12px; margin-top: 22px; }
+
+@media (max-width: 640px) {
+  .tracks .c-len { display: none; }
+  .tracks .c-status { width: 110px; }
+  .controls { gap: 12px; }
+  .field select { min-width: 0; }
+  .spacer { display: none; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>SACD to WAV</h1>
+  <p class="sub">Convert tracks from an SACD ISO image to WAV. Everything happens on this computer; the image is never uploaded.</p>
+
+  <div id="drop" class="panel" tabindex="0" role="button" aria-label="Choose an SACD ISO image">
+    <div>
+      <strong id="drop-title">Drop an SACD .iso here</strong>
+      <div class="hint" id="drop-hint">or click to choose a file</div>
+    </div>
+    <div class="hint big">Stereo and multichannel areas, plain DSD and DST</div>
+  </div>
+  <input type="file" id="file-input" accept=".iso" hidden>
+  <p id="file-error" hidden></p>
+
+  <section id="disc" class="panel" hidden>
+    <div class="disc-head">
+      <div>
+        <h2 id="album"></h2>
+        <div class="meta" id="album-meta"></div>
+      </div>
+      <div class="seg" id="area-choice" hidden></div>
+    </div>
+    <table class="tracks">
+      <thead>
+        <tr>
+          <th class="c-check"><input type="checkbox" id="check-all" aria-label="Select all tracks"></th>
+          <th class="c-num">#</th>
+          <th>Title</th>
+          <th class="c-len">Length</th>
+          <th class="c-status"></th>
+        </tr>
+      </thead>
+      <tbody id="track-rows"></tbody>
+    </table>
+    <div class="controls">
+      <label class="field">Sample rate
+        <select id="rate">
+          <option value="44100">44.1 kHz</option>
+          <option value="48000">48 kHz</option>
+          <option value="88200" selected>88.2 kHz</option>
+          <option value="96000">96 kHz</option>
+          <option value="176400">176.4 kHz</option>
+          <option value="192000">192 kHz</option>
+        </select>
+      </label>
+      <label class="field">Bit depth
+        <select id="bits">
+          <option value="16">16-bit</option>
+          <option value="24" selected>24-bit</option>
+          <option value="32">32-bit float</option>
+        </select>
+      </label>
+      <label class="field" title="SACD full scale is 50% modulation, so +6 dB brings it to 0 dBFS">Gain (dB)
+        <input type="number" id="gain" value="6" step="0.5" min="-20" max="20">
+      </label>
+      <label class="field" id="save-field">Save to
+        <select id="save">
+          <option value="download">Downloads</option>
+          <option value="folder">A folder…</option>
+        </select>
+      </label>
+      <div class="spacer"></div>
+      <button class="secondary" id="cancel" hidden>Cancel</button>
+      <button id="convert" disabled>Convert</button>
+    </div>
+    <div class="summary" id="summary"></div>
+  </section>
+  <ul id="log"></ul>
+  <p class="foot">Each WAV is written while it is converted when saving to a folder (Chrome, Edge). With Downloads, each track is kept in memory until it is finished, then downloaded; your browser may ask once to allow several downloads.</p>
+</main>
+
+<script id="sacd-lib">
+/* ======================================================================
+ * sacdLibrary() - the converter.  Returns the public functions; everything
+ * else is private.  See ../sacd2wav.c for the format notes this follows.
+ * ==================================================================== */
+function sacdLibrary() {
+'use strict';
+
+const SECTOR_SIZE = 2048;
+const MASTER_TOC_LSN = 510;  // "SACDMTOC"
+const MASTER_TEXT_LSN = 511; // "SACDText"
+const MAX_CHANNELS = 6;
+const MAX_TRACKS = 255;      // track tables always have 255 slots
+const FRAME_RATE = 75;       // audio frames per second; TOC times are m:s:frame
+const DSD_FS = 2822400;      // DSD64: 64 x 44100 one-bit samples per second
+const BYTES_PER_CH = DSD_FS / 8 / FRAME_RATE; // 4704 bytes per channel per frame
+const BITS_PER_FRAME = DSD_FS / FRAME_RATE;   // 37632
+const MAX_FRAME_BYTES = BYTES_PER_CH * MAX_CHANNELS;
+const DSD_SILENCE = 0x69;    // 01101001: equal 1s and 0s
+const READ_CHUNK = 256;      // sectors per read
+const DATA_TYPE_AUDIO = 2;   // packet types: 2 audio, 3 supplementary, 7 padding
+const UP = 80, DOWN = 147;   // 48 kHz family: 48000 / 88200 = 80 / 147
+const ATTEN = 110;           // filter stopband attenuation, dB
+const RATES = [44100, 48000, 88200, 96000, 176400, 192000];
+
+class FormatError extends Error {
+  constructor(message) { super(message); this.name = 'FormatError'; }
+}
+
+const be16 = (b, o) => b[o] << 8 | b[o + 1];
+const be32 = (b, o) => (b[o] << 24 | b[o + 1] << 16 | b[o + 2] << 8 | b[o + 3]) >>> 0;
+// A TOC time is 4 bytes: minutes, seconds, frames (0..74), flags; plain binary.
+const timecode = (b, o) => (b[o] * 60 + b[o + 1]) * FRAME_RATE + b[o + 2];
+function hasId(b, o, id) {
+  if (o + 8 > b.length) return false;
+  for (let i = 0; i < 8; i++) if (b[o + i] !== id.charCodeAt(i)) return false;
+  return true;
+}
+
+// ------------------------------------------------------------------ text
+
+function isValidUtf8(b) {
+  for (let i = 0; i < b.length;) {
+    const c = b[i];
+    let n = c < 0x80 ? 0 : (c & 0xe0) === 0xc0 ? 1 : (c & 0xf0) === 0xe0 ? 2 : (c & 0xf8) === 0xf0 ? 3 : -1;
+    if (n < 0) return false;
+    for (i++; n--; i++) if (i >= b.length || (b[i] & 0xc0) !== 0x80) return false;
+  }
+  return true;
+}
+
+const utf8 = new TextDecoder('utf-8');
+
+// Bytes from `at` up to a NUL, the end of the buffer, or max bytes.
+function tocBytes(buf, at, max = Infinity) {
+  const out = [];
+  for (let i = at; i < buf.length && out.length < max && buf[i]; i++) out.push(buf[i]);
+  return out;
+}
+
+// A TOC string as text: trailing spaces removed, UTF-8 if valid, else Latin-1.
+function tocString(bytes) {
+  let n = bytes.length;
+  while (n && bytes[n - 1] === 0x20) n--;
+  bytes = bytes.slice(0, n);
+  return isValidUtf8(bytes) ? utf8.decode(Uint8Array.from(bytes)) : String.fromCharCode(...bytes);
+}
+
+// A TOC string as a safe file name component (as make_filename() in sacd2wav.c).
+function makeFilename(raw) {
+  raw = raw.slice(0, 255);
+  const isUtf8 = isValidUtf8(raw), out = [];
+  for (const c of raw) {
+    if (out.length + 4 >= 200) break;
+    if (c < 0x20 || c === 0x7f || '/\\:*?"<>|'.includes(String.fromCharCode(c))) out.push(0x5f);
+    else if (c < 0x80 || isUtf8) out.push(c);
+    else out.push(0xc0 | c >> 6, 0x80 | (c & 0x3f)); // Latin-1 -> UTF-8
+  }
+  while (out.length && !isValidUtf8(out)) out.pop(); // no cut multi-byte sequence
+  while (out.length && (out[out.length - 1] === 0x20 || out[out.length - 1] === 0x2e)) out.pop();
+  if (out.length && out[0] === 0x2e) out[0] = 0x5f;
+  return utf8.decode(Uint8Array.from(out));
+}
+
+function trackFileName(track) {
+  const num = String(track.number).padStart(2, '0');
+  const title = makeFilename(track.titleBytes);
+  return title ? `${num} - ${title}.wav` : `${num}.wav`;
+}
+
+// ------------------------------------------------------------------ TOC
+//
+// `read(lsn, count)` is the only access to the image: it returns a promise
+// of a Uint8Array with up to `count` sectors (fewer at the end of the file).
+
+/*
+ * Master TOC (LSN 510), fields used:
+ *   offset   0  "SACDMTOC"
+ *   offset  16  uint16 album set size, 18: this disc's number in the set
+ *   offset  64  uint32 stereo area TOC LSN        (0 = no stereo area)
+ *   offset  72  uint32 multichannel area TOC LSN  (0 = none)
+ *   offset  84  uint16 stereo area TOC length in sectors
+ *   offset  86  uint16 multichannel area TOC length in sectors
+ *   offset  88  char[16] catalog number
+ *   offset 120  uint16 year, 122: month, 123: day
+ * Master text (LSN 511): uint16 offsets of the album title (16), album
+ * artist (18), disc title (32) and disc artist (34), relative to the sector.
+ */
+async function readDisc(read) {
+  const m = await read(MASTER_TOC_LSN, 1);
+  if (m.length < SECTOR_SIZE || !hasId(m, 0, 'SACDMTOC'))
+    throw new FormatError(`not an SACD image (no master TOC at sector ${MASTER_TOC_LSN})`);
+  const disc = {
+    stereo: null, multichannel: null,
+    setSize: be16(m, 16), setNumber: be16(m, 18),
+    catalogNumber: tocString(tocBytes(m, 88, 16)), date: '',
+    text: { albumTitle: '', albumArtist: '', discTitle: '', discArtist: '' },
+  };
+  if (be32(m, 64)) disc.stereo = { kind: 'stereo', toc: be32(m, 64), sectors: be16(m, 84) };
+  if (be32(m, 72)) disc.multichannel = { kind: 'multichannel', toc: be32(m, 72), sectors: be16(m, 86) };
+  const year = be16(m, 120), month = m[122], day = m[123];
+  if (year) {
+    disc.date = String(year);
+    if (month >= 1 && month <= 12) {
+      disc.date += '-' + String(month).padStart(2, '0');
+      if (day >= 1 && day <= 31) disc.date += '-' + String(day).padStart(2, '0');
+    }
+  }
+  const t = await read(MASTER_TEXT_LSN, 1);
+  if (t.length >= SECTOR_SIZE && hasId(t, 0, 'SACDText')) {
+    const field = offset => {
+      const pos = be16(t, offset);
+      return pos && pos < SECTOR_SIZE ? tocString(tocBytes(t, pos)) : '';
+    };
+    disc.text = { albumTitle: field(16), albumArtist: field(18), discTitle: field(32), discArtist: field(34) };
+  }
+  return disc;
+}
+
+/*
+ * Area TOC.  Header sector:
+ *   offset  0   "TWOCHTOC" or "MULCHTOC"
+ *   offset 20   sample rate code: 4 = DSD64
+ *   offset 21   low nibble = frame format: 0 = DST, 2 / 3 = plain DSD
+ *   offset 32   channel count
+ *   offset 69   track count
+ * The table sectors after it, found by their 8-byte ID:
+ *   "SACDTRL1"  offset 8: uint32 start_lsn[255],  offset 1028: uint32 length[255]
+ *   "SACDTRL2"  offset 8: time start[255],        offset 1028: time duration[255]
+ *   "SACDTTxt"  offset 8: uint16 position[255] of each track's text items:
+ *               count, 3 reserved bytes, then per item: type (1 title,
+ *               2 performer), 1 reserved byte, NUL-terminated string + padding
+ * The result is plain data, so it can be posted to a worker.
+ */
+async function readArea(read, loc) {
+  const toc = loc.sectors ? await read(loc.toc, loc.sectors) : new Uint8Array(0);
+  if (!loc.sectors || toc.length < loc.sectors * SECTOR_SIZE) throw new FormatError('cannot read area TOC');
+  if (!hasId(toc, 0, 'TWOCHTOC') && !hasId(toc, 0, 'MULCHTOC')) throw new FormatError('bad area TOC signature');
+  if (toc[20] !== 4) throw new FormatError(`unsupported sample rate code ${toc[20]} (only DSD64 is supported)`);
+  const frameFormat = toc[21] & 0x0f;
+  if (frameFormat !== 0 && frameFormat !== 2 && frameFormat !== 3)
+    throw new FormatError(`unknown frame format ${frameFormat}`);
+  const channels = toc[32];
+  if (channels < 1 || channels > MAX_CHANNELS) throw new FormatError(`unsupported channel count ${channels}`);
+
+  let trl1 = -1, trl2 = -1, txt = -1;
+  for (let s = 1; s < loc.sectors; s++) {
+    const at = s * SECTOR_SIZE;
+    if (hasId(toc, at, 'SACDTRL1')) trl1 = at;
+    else if (hasId(toc, at, 'SACDTRL2')) trl2 = at;
+    else if (hasId(toc, at, 'SACDTTxt') && txt < 0) txt = at; // first text channel only
+  }
+  if (trl1 < 0 || trl2 < 0) throw new FormatError('track list missing from area TOC');
+
+  const length = i => be32(toc, trl1 + 8 + 4 * MAX_TRACKS + 4 * i);
+  const duration = i => timecode(toc, trl2 + 8 + 4 * MAX_TRACKS + 4 * i);
+  // Trust the header's track count only if the tables agree with it.
+  let n = toc[69];
+  if (n < 1 || n > MAX_TRACKS || !length(n - 1) || !duration(n - 1))
+    for (n = 0; n < MAX_TRACKS && length(n) && duration(n); n++);
+  if (!n) throw new FormatError('no tracks found');
+
+  const tracks = [];
+  for (let i = 0; i < n; i++) {
+    const t = {
+      number: i + 1, lsn: be32(toc, trl1 + 8 + 4 * i), sectors: length(i),
+      start: timecode(toc, trl2 + 8 + 4 * i), duration: duration(i),
+      titleBytes: [], performerBytes: [],
+    };
+    if (i && (t.start < tracks[i - 1].start || t.lsn < tracks[i - 1].lsn))
+      throw new FormatError('track list is not in order');
+    tracks.push(t);
+  }
+  if (txt >= 0) {
+    const end = toc.length; // a string may run on into the next sector
+    for (const t of tracks) {
+      const pos = be16(toc, txt + 8 + 2 * (t.number - 1));
+      if (!pos || txt + pos + 4 >= end) continue;
+      const items = toc[txt + pos];
+      let p = txt + pos + 4;
+      for (let i = 0; i < items && p + 2 < end; i++) {
+        const type = toc[p];
+        p += 2;
+        const s = tocBytes(toc, p);
+        if (s.length && type === 1) t.titleBytes = s;
+        else if (s.length && type === 2) t.performerBytes = s;
+        p += s.length;
+        while (p < end && !toc[p]) p++; // terminator + padding to the next item
+      }
+    }
+  }
+  for (const t of tracks) {
+    t.title = tocString(t.titleBytes);
+    t.performer = tocString(t.performerBytes);
+    t.fileName = trackFileName(t);
+  }
+  return { kind: loc.kind, dst: frameFormat === 0, frameFormat, channels, tracks };
+}
+
+// ------------------------------------------------------------------ DST decoder
+/*
+ * Direct Stream Transfer (ISO/IEC 14496-3 subpart 10), the lossless DSD
+ * compression on most SACDs; a line-by-line port of dst_decode() in
+ * sacd2wav.c.  Per bit, a prediction filter (up to 128 taps over the
+ * channel's last 128 bits) predicts the next bit, and an arithmetic decoder
+ * says whether the prediction was right, with a probability picked by how
+ * confident the prediction was.  Filters and probability tables are sent at
+ * the start of every frame.
+ */
+const DST_MAX_ELEMENTS = 2 * MAX_CHANNELS;
+const FSETS_PRED = [[-8], [-16, 8], [-9, -5, 6]];
+const PROBS_PRED = [[-8], [-16, 8], [-24, 24, -8]];
+const ilog2 = v => 31 - Math.clz32(v);
+
+function reverse8(c) {
+  let r = 0;
+  for (let i = 0; i < 8; i++) r |= ((c >> i) & 1) << (7 - i);
+  return r;
+}
+
+class DstDecoder {
+  constructor(channels) {
+    this.channels = channels;
+    this.fLength = new Int32Array(DST_MAX_ELEMENTS);
+    this.fCoeff = new Int32Array(DST_MAX_ELEMENTS * 128);
+    this.pLength = new Int32Array(DST_MAX_ELEMENTS);
+    this.pCoeff = new Int32Array(DST_MAX_ELEMENTS * 128);
+    this.filter = new Int16Array(DST_MAX_ELEMENTS * 16 * 256); // [element][byte position][byte]
+    this.fmap = new Int32Array(MAX_CHANNELS);
+    this.pmap = new Int32Array(MAX_CHANNELS);
+    this.halfProb = new Int32Array(MAX_CHANNELS);
+    this.history = new Int32Array(4 * MAX_CHANNELS); // 128 bits per channel, newest bit in word 0, bit 0
+    this.buf = null; this.bits = 0; this.pos = 0;
+  }
+
+  getBit() {
+    const p = this.pos++;
+    return p < this.bits ? (this.buf[p >>> 3] >> (7 - (p & 7))) & 1 : 0;
+  }
+
+  getBits(n) { // n <= 25
+    if (n === 0) return 0;
+    const pos = this.pos, byte = pos >>> 3, b = this.buf;
+    if (pos + n <= this.bits && byte + 4 <= b.length) {
+      const w = (b[byte] << 24 | b[byte + 1] << 16 | b[byte + 2] << 8 | b[byte + 3]) << (pos & 7);
+      this.pos = pos + n;
+      return w >>> (32 - n);
+    }
+    let v = 0;
+    while (n--) v = v << 1 | this.getBit();
+    return v >>> 0;
+  }
+
+  getSbits(n) {
+    const v = this.getBits(n);
+    return v >= 1 << (n - 1) ? v - (1 << n) : v;
+  }
+
+  // Signed Rice code: unary quotient, k-bit remainder, sign bit if non-zero.
+  getRice(k) {
+    let q = 0;
+    while (!this.getBit())
+      if (++q > 65536 || this.pos > this.bits) return null;
+    let v = q << k | this.getBits(k);
+    if (v && this.getBit()) v = -v;
+    return v;
+  }
+
+  // Channel -> element map; returns the element count, or -1 if invalid.
+  readMap(map) {
+    let elements = 1;
+    map.fill(0);
+    if (this.getBit()) return elements; // all channels share element 0
+    for (let ch = 1; ch < this.channels; ch++) {
+      map[ch] = this.getBits(ilog2(elements) + 1);
+      if (map[ch] === elements) {
+        if (++elements >= DST_MAX_ELEMENTS) return -1;
+      } else if (map[ch] > elements) {
+        return -1;
+      }
+    }
+    return elements;
+  }
+
+  // Filter coefficients or probability tables, plain or Rice coded.
+  readTable(elements, lengths, coeff, pred, lengthBits, coeffBits, isSigned, offset) {
+    for (let i = 0; i < elements; i++) {
+      const len = lengths[i] = this.getBits(lengthBits) + 1, base = i * 128;
+      let method = -1;
+      if (this.getBit()) {
+        method = this.getBits(2);
+        if (method === 3) return false;
+      }
+      const uncoded = method < 0 ? len : method + 1;
+      for (let j = 0; j < uncoded && j < len; j++)
+        coeff[base + j] = (isSigned ? this.getSbits(coeffBits) : this.getBits(coeffBits)) + offset;
+      if (method < 0) continue;
+
+      const lsbSize = this.getBits(3), p = pred[method];
+      for (let j = method + 1; j < len; j++) {
+        let x = 0;
+        for (let k = 0; k <= method; k++) x += p[k] * coeff[base + j - k - 1];
+        let c = this.getRice(lsbSize);
+        if (c === null) return false;
+        c += x >= 0 ? -(((x + 4) / 8) | 0) : ((-x + 3) / 8) | 0;
+        if (!isSigned && (c < offset || c >= offset + (1 << coeffBits))) return false;
+        coeff[base + j] = c;
+      }
+    }
+    return true;
+  }
+
+  // Decodes one frame (size bytes of input) into byte-interleaved DSD.
+  // Returns false if the frame is invalid.
+  decode(input, size, dsd) {
+    const channels = this.channels, nbytes = BYTES_PER_CH * channels;
+    this.buf = input; this.bits = size * 8; this.pos = 0;
+    if (size <= 1) return false;
+
+    if (!this.getBit()) { // stored uncompressed
+      this.getBit();
+      if (this.getBits(6)) return false;
+      const n = Math.min(size - 1, nbytes);
+      dsd.set(input.subarray(1, 1 + n));
+      dsd.fill(DSD_SILENCE, n, nbytes);
+      return true;
+    }
+    // segmentation: only "same, all channels, end of segmentation" on SACD
+    if (!this.getBit() || !this.getBit() || !this.getBit()) return false;
+
+    const sameMap = this.getBit();
+    const fElements = this.readMap(this.fmap);
+    if (fElements < 0) return false;
+    let pElements;
+    if (sameMap) {
+      pElements = fElements;
+      this.pmap.set(this.fmap);
+    } else if ((pElements = this.readMap(this.pmap)) < 0) {
+      return false;
+    }
+    for (let ch = 0; ch < channels; ch++) this.halfProb[ch] = this.getBit();
+    if (!this.readTable(fElements, this.fLength, this.fCoeff, FSETS_PRED, 7, 9, true, 0) ||
+        !this.readTable(pElements, this.pLength, this.pCoeff, PROBS_PRED, 6, 7, false, 1))
+      return false;
+    if (this.getBit()) return false;
+
+    // filter[e][j][byte] = taps 8j..8j+7 of element e, each signed by a bit of byte
+    const filter = this.filter, fCoeff = this.fCoeff;
+    for (let i = 0; i < fElements; i++) {
+      const length = this.fLength[i];
+      for (let j = 0; j < 16; j++) {
+        const total = Math.max(0, Math.min(8, length - j * 8)), base = i * 128 + j * 8, out = (i * 16 + j) * 256;
+        for (let k = 0; k < 256; k++) {
+          let v = 0;
+          for (let l = 0; l < total; l++) v += (((k >> l) & 1) * 2 - 1) * fCoeff[base + l];
+          if (v !== (v << 16) >> 16) return false;
+          filter[out + k] = v;
+        }
+      }
+    }
+
+    const history = this.history, fmap = this.fmap, pmap = this.pmap, halfProb = this.halfProb;
+    const fLength = this.fLength, pLength = this.pLength, pCoeff = this.pCoeff;
+    history.fill(0xAAAAAAAA | 0);
+    dsd.fill(0, 0, nbytes);
+
+    // Binary arithmetic decoder with a 12-bit range a and code value c
+    // (unsigned 32-bit, as in C).  Each step decodes one bit that is 1 with
+    // probability p/256, then renormalises.  The first bit (DST_X_Bit) is
+    // discarded; the rest are the residuals, decoded inline in the loop below.
+    let a = 4095, c = this.getBits(12);
+    {
+      const p = (reverse8(fCoeff[0] & 127) >> 1) + 1;
+      const k = (a >>> 8) | ((a >>> 7) & 1), q = k * p, aq = (a - q) >>> 0;
+      if (c < aq) a = aq; else { a = q; c = (c - aq) >>> 0; }
+      if (a < 2048) {
+        const n = a ? 11 - ilog2(a) : 12;
+        a = (a << n) >>> 0;
+        c = ((c << n) | this.getBits(n)) >>> 0;
+      }
+    }
+
+    for (let i = 0; i < BITS_PER_FRAME; i++) {
+      const at = (i >>> 3) * channels, shift = 7 - (i & 7);
+      for (let ch = 0; ch < channels; ch++) {
+        const fe = fmap[ch], f = fe << 12, h = ch << 2;
+        const w0 = history[h], w1 = history[h + 1], w2 = history[h + 2], w3 = history[h + 3];
+        const sum =
+          filter[f + (w0 & 255)] + filter[f + 256 + ((w0 >>> 8) & 255)] +
+          filter[f + 512 + ((w0 >>> 16) & 255)] + filter[f + 768 + (w0 >>> 24)] +
+          filter[f + 1024 + (w1 & 255)] + filter[f + 1280 + ((w1 >>> 8) & 255)] +
+          filter[f + 1536 + ((w1 >>> 16) & 255)] + filter[f + 1792 + (w1 >>> 24)] +
+          filter[f + 2048 + (w2 & 255)] + filter[f + 2304 + ((w2 >>> 8) & 255)] +
+          filter[f + 2560 + ((w2 >>> 16) & 255)] + filter[f + 2816 + (w2 >>> 24)] +
+          filter[f + 3072 + (w3 & 255)] + filter[f + 3328 + ((w3 >>> 8) & 255)] +
+          filter[f + 3584 + ((w3 >>> 16) & 255)] + filter[f + 3840 + (w3 >>> 24)];
+        const predict = (sum << 16) >> 16;
+        let prob;
+        if (!halfProb[ch] || i >= fLength[fe]) {
+          const pe = pmap[ch], len = pLength[pe];
+          let idx = (predict < 0 ? -predict : predict) >> 3;
+          if (idx >= len) idx = len - 1;
+          prob = pCoeff[pe * 128 + idx];
+        } else {
+          prob = 128;
+        }
+
+        const k = (a >>> 8) | ((a >>> 7) & 1), q = k * prob, aq = (a - q) >>> 0;
+        let e;
+        if (c < aq) { e = 1; a = aq; } else { e = 0; a = q; c = (c - aq) >>> 0; }
+        if (a < 2048) {
+          const n = a ? 11 - (31 - Math.clz32(a)) : 12;
+          a = (a << n) >>> 0;
+          c = ((c << n) | this.getBits(n)) >>> 0;
+        }
+
+        const v = (predict < 0 ? 1 : 0) ^ e;
+        dsd[at + ch] |= v << shift;
+        history[h + 3] = w3 << 1 | w2 >>> 31;
+        history[h + 2] = w2 << 1 | w1 >>> 31;
+        history[h + 1] = w1 << 1 | w0 >>> 31;
+        history[h] = w0 << 1 | v;
+      }
+    }
+    return true;
+  }
+}
+
+// ------------------------------------------------------------------ DSD -> PCM
+/*
+ * Stage 1: Kaiser-windowed FIR evaluated 8 taps at a time: for every byte
+ * position in the window a 256-entry table holds the contribution of each
+ * possible DSD byte, so one output sample costs L table lookups.  Needs a
+ * whole number of DSD bytes per output sample (44.1, 88.2, 176.4, 352.8 kHz).
+ * Stage 2, for the 48 kHz family: stage 1 runs at 147/80 of the output rate
+ * and a polyphase resampler converts by 80/147, computing only the K taps
+ * per output that land on non-zero samples.
+ * The arithmetic is in the same order as in sacd2wav.c, so the results are
+ * the same doubles.
+ */
+function besselI0(x) {
+  let sum = 1, term = 1;
+  for (let k = 1; k < 64 && term > sum * 1e-17; k++) {
+    term *= (x / (2 * k)) * (x / (2 * k));
+    sum += term;
+  }
+  return sum;
+}
+
+function kaiserTaps(fpass, fstop, fs) {
+  const dw = 2 * Math.PI * (fstop - fpass) / fs;
+  return Math.ceil((ATTEN - 7.95) / (2.285 * dw)) + 1;
+}
+
+function kaiserLowpass(n, fpass, fstop, fs, gain) {
+  const h = new Float64Array(n), fc = (fpass + fstop) / 2 / fs, c = (n - 1) / 2, beta = 0.1102 * (ATTEN - 8.7);
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const x = i - c, r = x / c;
+    const sinc = x === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * x) / (Math.PI * x);
+    h[i] = sinc * besselI0(beta * Math.sqrt(Math.max(0, 1 - r * r))) / besselI0(beta);
+    sum += h[i];
+  }
+  for (let i = 0; i < n; i++) h[i] *= gain / sum;
+  return h;
+}
+
+const FILTER_BANDS = { // output rate: [passband edge, stopband edge]
+  44100: [20000, 22050], 48000: [20000, 24000], 88200: [30000, 44100],
+  96000: [30000, 48000], 176400: [40000, 70000], 192000: [40000, 76000],
+};
+
+class Decimator {
+  constructor(channels, rate) {
+    if (!FILTER_BANDS[rate]) throw new RangeError(`unsupported rate ${rate}`);
+    let [fpass, fstop] = FILTER_BANDS[rate];
+    // 48 kHz family: stage 1 only has to stop what would alias below fstop2.
+    let rate1 = rate;
+    const fpass2 = fpass, fstop2 = fstop;
+    if (rate % 1000 === 0) {
+      rate1 = rate / UP * DOWN;
+      fstop = rate1 - fstop2;
+    }
+    const taps = kaiserTaps(fpass, fstop, DSD_FS);
+    this.ch = channels;
+    this.step = Math.floor(DSD_FS / rate1 / 8);
+    this.L = Math.floor((taps + 15) / 16) * 2;
+    this.flush = this.L / 2 + this.step;
+    const L = this.L, h = kaiserLowpass(L * 8, fpass, fstop, DSD_FS, 1);
+    this.tab = new Float64Array(256 * L);
+    for (let m = 0; m < L; m++) {
+      for (let byte = 0; byte < 256; byte++) {
+        let v = 0;
+        for (let l = 0; l < 8; l++) v += h[8 * m + l] * ((byte >> (7 - l)) & 1 ? 1 : -1); // MSB first
+        this.tab[m * 256 + byte] = v;
+      }
+    }
+    this.h2 = null;
+    if (rate1 !== rate) {
+      const fs2 = rate1 * UP;
+      this.K = Math.floor((kaiserTaps(fpass2, fstop2, fs2) - 1 + UP - 1) / UP) + 1;
+      this.flush += (Math.floor(this.K / 2) + 2) * this.step;
+    }
+    const cap = 2 * L + Math.max(BYTES_PER_CH, this.flush);
+    this.buf = [];
+    for (let ch = 0; ch < channels; ch++) {
+      const b = new Uint8Array(cap);
+      b.fill(DSD_SILENCE, 0, L / 2); // centre the first window on sample 0
+      this.buf.push(b);
+    }
+    this.have = L / 2;
+    this.maxOut = Math.floor(cap / this.step) + 2; // sample frames one process() call can produce
+    if (!this.K) return;
+
+    // Stage 2, designed at rate1 * UP; tap i belongs to phase i % UP.
+    const K = this.K, n2 = UP * (K - 1) + 1, c = Math.floor(n2 / 2);
+    const h2 = kaiserLowpass(n2, fpass2, fstop2, rate1 * UP, UP);
+    this.h2 = new Float64Array(UP * K);
+    for (let i = 0; i < n2; i++) this.h2[(i % UP) * K + Math.floor(i / UP)] = h2[i];
+    this.x2 = [];
+    for (let ch = 0; ch < channels; ch++) this.x2.push(new Float64Array(K + cap + 2));
+    this.have2 = K - 1;          // silence before sample 0
+    this.t2 = (K - 1) * UP + c;  // centre of the next output, in ticks of rate1 * UP
+  }
+
+  // Appends n bytes per channel (byte-interleaved src, or silence if null) and
+  // filters what is available into interleaved out.  Returns sample frames.
+  process(src, n, out) {
+    const chs = this.ch, L = this.L, step = this.step, tab = this.tab, bufs = this.buf, h2 = this.h2;
+    for (let ch = 0; ch < chs; ch++) {
+      const d = bufs[ch];
+      if (!src) d.fill(DSD_SILENCE, this.have, this.have + n);
+      else for (let i = 0, o = this.have; i < n; i++, o++) d[o] = src[i * chs + ch];
+    }
+    const have = this.have + n;
+    let pos = 0, produced = 0, o = 0;
+    while (pos + L <= have) {
+      for (let ch = 0; ch < chs; ch++) {
+        const b = bufs[ch];
+        let acc = 0;
+        for (let m = 0, t = 0, p = pos; m < L; m++, t += 256, p++) acc += tab[t + b[p]];
+        if (h2) this.x2[ch][this.have2] = acc;
+        else out[o++] = acc;
+      }
+      if (h2) this.have2++;
+      pos += step;
+      produced++;
+    }
+    for (let ch = 0; ch < chs; ch++) bufs[ch].copyWithin(0, pos, have);
+    this.have = have - pos;
+    return h2 ? this.resample(out) : produced;
+  }
+
+  // Stage 2: output centred on tick t uses phase t % UP, which multiplies the
+  // newest sample t / UP and the K - 1 before it.
+  resample(out) {
+    const chs = this.ch, K = this.K, h2 = this.h2, x2 = this.x2;
+    let produced = 0, o = 0, t2 = this.t2;
+    while (Math.floor(t2 / UP) < this.have2) {
+      const n0 = Math.floor(t2 / UP), hp = (t2 % UP) * K;
+      for (let ch = 0; ch < chs; ch++) {
+        const x = x2[ch];
+        let acc = 0;
+        for (let k = 0; k < K; k++) acc += h2[hp + k] * x[n0 - k];
+        out[o++] = acc;
+      }
+      t2 += DOWN;
+      produced++;
+    }
+    // keep only the K - 1 samples before the next output's newest one
+    const drop = Math.min(Math.max(Math.floor(t2 / UP) - (K - 1), 0), this.have2);
+    for (let ch = 0; ch < chs; ch++) x2[ch].copyWithin(0, drop, this.have2);
+    this.have2 -= drop;
+    this.t2 = t2 - drop * UP;
+    return produced;
+  }
+}
+
+// ------------------------------------------------------------------ samples and WAV
+
+// Gain, TPDF dither and quantisation; the dither is xorshift64 seeded per
+// track exactly as in the C++ sacd2wav, kept in two 32-bit halves.
+class SampleEncoder {
+  constructor(bits, gain, trackNumber) {
+    this.bits = bits; this.bytes = bits / 8; this.gain = gain;
+    this.scale = bits === 32 ? 1 : 2 ** (bits - 1);
+    this.top = this.scale - 1;
+    this.hi = 0x9E3779B9; this.lo = (0x7F4A7C15 ^ trackNumber) >>> 0;
+    this.peak = 0; this.clipped = 0;
+  }
+
+  uniform() {
+    let hi = this.hi, lo = this.lo;
+    hi = (hi ^ (hi << 13 | lo >>> 19)) >>> 0; lo = (lo ^ lo << 13) >>> 0; // x ^= x << 13
+    lo = (lo ^ (lo >>> 7 | hi << 25)) >>> 0; hi = (hi ^ hi >>> 7) >>> 0;  // x ^= x >> 7
+    hi = (hi ^ (hi << 17 | lo >>> 15)) >>> 0; lo = (lo ^ lo << 17) >>> 0; // x ^= x << 17
+    this.hi = hi; this.lo = lo;
+    return (hi * 2097152 + (lo >>> 11)) / 9007199254740992; // (x >> 11) / 2^53
+  }
+
+  // Encodes pcm[from..to) into view (a DataView) at byte offset o.
+  encode(pcm, from, to, view, o) {
+    const gain = this.gain, scale = this.scale, top = this.top, bits = this.bits;
+    let peak = this.peak;
+    for (let i = from; i < to; i++) {
+      const x = pcm[i] * gain, ax = Math.abs(x);
+      if (ax > peak) peak = ax;
+      if (bits === 32) {
+        view.setFloat32(o, x, true);
+        o += 4;
+        continue;
+      }
+      const r1 = this.uniform(), r2 = this.uniform();
+      let v = Math.floor(x * scale + r1 - r2 + 0.5);
+      if (v > top || v < -scale) { this.clipped++; v = v > top ? top : -scale; }
+      if (bits === 16) {
+        view.setInt16(o, v, true);
+        o += 2;
+      } else {
+        view.setUint8(o, v & 255); view.setUint8(o + 1, (v >> 8) & 255); view.setUint8(o + 2, (v >> 16) & 255);
+        o += 3;
+      }
+    }
+    this.peak = peak;
+    return o;
+  }
+}
+
+const MAX_WAV_DATA = 0xffffffff - 80; // RIFF sizes are 32-bit
+
+function wavHeader(channels, rate, bits, frames) {
+  const ext = channels > 2, bps = bits / 8, format = bits === 32 ? 3 : 1;
+  const data = Math.min(frames * channels * bps, MAX_WAV_DATA);
+  const h = new Uint8Array(ext ? 68 : 44), v = new DataView(h.buffer);
+  let p = 0;
+  const tag = s => { for (const ch of s) h[p++] = ch.charCodeAt(0); };
+  const u16 = x => { v.setUint16(p, x, true); p += 2; };
+  const u32 = x => { v.setUint32(p, x, true); p += 4; };
+  tag('RIFF'); u32(data + (ext ? 60 : 36)); tag('WAVEfmt ');
+  u32(ext ? 40 : 16); u16(ext ? 0xfffe : format); u16(channels); u32(rate);
+  u32(rate * channels * bps); u16(channels * bps); u16(bits);
+  if (ext) { // WAVE_FORMAT_EXTENSIBLE with the speaker mask
+    const masks = [0, 0x4, 0x3, 0x7, 0x33, 0x37, 0x3f];
+    u16(22); u16(bits); u32(masks[channels]); u16(format);
+    h.set([0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71], p); p += 14;
+  }
+  tag('data'); u32(data);
+  return h;
+}
+
+// ------------------------------------------------------------------ track conversion
+
+// Sample positions of a track, counted (as in sacd2wav.c) from the start of
+// track 1.  Every frame becomes exactly rate / 75 samples.
+function trackSpan(area, index, rate) {
+  const t = area.tracks, last = t.length - 1, spf = rate / FRAME_RATE, origin = t[0].start;
+  const begin = (t[index].start - origin) * spf;
+  const end = index < last ? (t[index + 1].start - origin) * spf : (t[last].start + t[last].duration - origin) * spf;
+  return { begin, end, frames: end - begin };
+}
+
+/*
+ * Audio sectors: a header byte (packet count:3, frame-info count:3,
+ * reserved:1, DST:1), 2 bytes per packet (frame start:1, reserved:1,
+ * type:3, length:11), 3 or 4 bytes of frame info (m, s, f time code [+1])
+ * per frame that starts in this sector, then the packet payloads.
+ * Calls fn(packetIndex, isFrameStart, isAudio, payloadOffset, length) per
+ * packet of the sector at `o`; returns the frame-info offset and count.
+ */
+function sectorPackets(b, o, fn) {
+  const h = b[o], npackets = h >> 5, nframes = (h >> 2) & 7, dst = h & 1;
+  let data = o + 1 + 2 * npackets + nframes * (dst ? 4 : 3);
+  const end = o + SECTOR_SIZE;
+  for (let k = 0; k < npackets; k++) {
+    const info = be16(b, o + 1 + 2 * k), len = info & 0x7ff;
+    if (data + len > end) break; // corrupt sector
+    fn(k, info >> 15, ((info >> 11) & 7) === DATA_TYPE_AUDIO, data, len);
+    data += len;
+  }
+  return { info: o + 1 + 2 * npackets, nframes };
+}
+
+// The first sector at or after `from` holding an audio frame start whose time
+// code can be trusted (frame infos match the frame starts); with `strict`,
+// that must be the very first sector with a frame start.
+async function findFrameStart(read, from, to, strict) {
+  for (let lsn = from; lsn < to;) {
+    const buf = await read(lsn, Math.min(32, to - lsn)), got = Math.floor(buf.length / SECTOR_SIZE);
+    if (!got) return null;
+    for (let s = 0; s < got; s++) {
+      let starts = 0;
+      const { info, nframes } = sectorPackets(buf, s * SECTOR_SIZE, (k, start, audio) => { if (start && audio) starts++; });
+      if (!starts) continue;
+      if (starts === nframes) return { lsn: lsn + s, tc: timecode(buf, info) };
+      if (strict) return null;
+    }
+    lsn += got;
+  }
+  return null;
+}
+
+/*
+ * Where to start reading so that frame `target` (counted from track 1, as
+ * sacd2wav.c counts) is decoded: the sector where some frame <= target
+ * starts, found from the frame time codes, which run consecutively.  Returns
+ * { lsn, index } or null (then decoding starts at track 1).
+ */
+async function locateFrame(read, area, index, target) {
+  const t = area.tracks, start = t[0].lsn, end = t[t.length - 1].lsn + t[t.length - 1].sectors;
+  const first = await findFrameStart(read, start, end, true);
+  if (!first) return null;
+  const sectorsPerFrame = (t[index].lsn - start) / Math.max(1, t[index].start - t[0].start);
+  let lsn = Math.max(start, Math.floor(start + target * sectorsPerFrame) - 8), best = null;
+  for (let i = 0; i < 24 && lsn >= start && lsn < end; i++) {
+    const f = await findFrameStart(read, lsn, end, false);
+    if (!f) break;
+    const idx = f.tc - first.tc;
+    if (idx < 0) break;
+    if (idx <= target) {
+      if (!best || idx > best.index) best = { lsn: f.lsn, index: idx, origin: first.tc };
+      if (target - idx <= 16) break;
+      lsn = f.lsn + Math.floor((target - idx - 8) * sectorsPerFrame);
+    } else {
+      lsn = Math.floor(f.lsn - (idx - target) * sectorsPerFrame) - 8;
+    }
+  }
+  return best;
+}
+
+class Resync extends Error {}
+
+/*
+ * Converts one track to WAV data.  Only the frames from shortly before the
+ * track to shortly after it are decoded: the filters forget everything
+ * older than a fraction of a frame, and a frame of input always yields the
+ * same rate / 75 output samples at the same phase, so the result is the same
+ * as converting the whole disc in one pass (as sacd2wav does) and cutting.
+ *
+ *   options.read(lsn, count)   sector reader
+ *   options.area               from readArea()
+ *   options.index              track index in area.tracks
+ *   options.rate, bits, gainDb output format
+ *   options.onData(bytes)      receives the sample data in order (may return a promise)
+ *   options.onProgress(f)      0..1
+ *
+ * The WAV header comes last, in the result (its sizes are only final then):
+ * write it in front of the data.  Result:
+ *   { header, frames, peak, clipped, badFrames, warnings }
+ */
+async function convertTrack(options) {
+  try {
+    return await convertTrackFrom(options, true);
+  } catch (e) {
+    if (!(e instanceof Resync)) throw e;
+    return convertTrackFrom(options, false); // time codes disagree: decode from track 1
+  }
+}
+
+const WARMUP_FRAMES = 3;
+
+async function convertTrackFrom(o, seek) {
+  const { read, area, index, rate, bits } = o;
+  if (!RATES.includes(rate)) throw new RangeError(`unsupported rate ${rate}`);
+  if (bits !== 16 && bits !== 24 && bits !== 32) throw new RangeError(`unsupported bit depth ${bits}`);
+  const tracks = area.tracks, track = tracks[index], ch = area.channels, nbytes = BYTES_PER_CH * ch;
+  const spf = rate / FRAME_RATE, { begin, end } = trackSpan(area, index, rate);
+  const areaStart = tracks[0].lsn, areaEnd = tracks[tracks.length - 1].lsn + tracks[tracks.length - 1].sectors;
+  const warnings = [];
+
+  // Decode from frame `target`; skip (without decoding) any frames before it.
+  const target = Math.max(0, track.start - tracks[0].start - WARMUP_FRAMES);
+  let lsn = areaStart, firstIndex = 0, origin = null;
+  if (seek && target > 0) {
+    const loc = await locateFrame(read, area, index, target);
+    if (loc) ({ lsn, index: firstIndex, origin } = loc);
+  }
+
+  const dec = new Decimator(ch, rate), enc = new SampleEncoder(bits, 10 ** (o.gainDb / 20), track.number);
+  const dst = area.dst ? new DstDecoder(ch) : null;
+  const frame = new Uint8Array(MAX_FRAME_BYTES), dsd = new Uint8Array(MAX_FRAME_BYTES);
+  const pcm = new Float64Array(ch * dec.maxOut);
+  const OUT_SIZE = 1 << 20;
+  let out = new Uint8Array(OUT_SIZE), view = new DataView(out.buffer), used = 0;
+  let pos = target * spf, written = 0, badFrames = 0, lastProgress = -1;
+
+  const flushOut = async () => {
+    if (!used) return;
+    const chunk = out.subarray(0, used);
+    out = new Uint8Array(OUT_SIZE); view = new DataView(out.buffer); used = 0;
+    await o.onData?.(chunk);
+  };
+  // Samples [pos, pos + n) are in pcm; keep the part inside the track.
+  const deliver = async n => {
+    let from = Math.max(pos, begin);
+    const to = Math.min(pos + n, end);
+    while (from < to) {
+      const room = Math.floor((OUT_SIZE - used) / (enc.bytes * ch));
+      if (!room) { await flushOut(); continue; }
+      const k = Math.min(room, to - from);
+      used = enc.encode(pcm, (from - pos) * ch, (from - pos + k) * ch, view, used);
+      from += k; written += k;
+    }
+    pos += n;
+    const p = Math.floor(written / (end - begin) * 200);
+    if (p !== lastProgress) { lastProgress = p; o.onProgress?.(p / 200); }
+  };
+  // One complete frame, as emit_frame() in sacd2wav.c.
+  const emit = async (size) => {
+    let input = frame;
+    if (size > MAX_FRAME_BYTES) { // overflowed the reassembly buffer
+      badFrames++;
+      dsd.fill(DSD_SILENCE, 0, nbytes);
+      input = dsd;
+    } else if (dst) {
+      if (!dst.decode(frame, size, dsd)) { badFrames++; dsd.fill(DSD_SILENCE, 0, nbytes); }
+      input = dsd;
+    } else if (size !== nbytes) {
+      badFrames++;
+      dsd.set(frame.subarray(0, Math.min(size, nbytes)));
+      if (size < nbytes) dsd.fill(DSD_SILENCE, size, nbytes);
+      input = dsd;
+    }
+    await deliver(dec.process(input, BYTES_PER_CH, pcm));
+  };
+
+  // Reassemble frames from the audio packets; a frame-start packet completes the previous frame.
+  let started = false, fsize = 0, current = firstIndex - 1, outOfSequence = 0, reachedEnd = true;
+  read: while (lsn < areaEnd) {
+    const buf = await read(lsn, Math.min(READ_CHUNK, areaEnd - lsn)), got = Math.floor(buf.length / SECTOR_SIZE);
+    if (!got) { warnings.push(`read error / truncated image at sector ${lsn}`); break; }
+    for (let s = 0; s < got; s++) {
+      const packets = [];
+      const { info, nframes } = sectorPackets(buf, s * SECTOR_SIZE, (k, start, audio, at, len) => {
+        if (audio) packets.push(start, at, len);
+      });
+      let starts = 0;
+      for (let k = 0; k < packets.length; k += 3) starts += packets[k];
+      if (origin !== null && starts && starts === nframes && timecode(buf, info) - origin !== current + 1) {
+        if (pos < begin) throw new Resync();
+        outOfSequence++;
+      }
+      for (let k = 0; k < packets.length; k += 3) {
+        const at = packets[k + 1], len = packets[k + 2];
+        if (packets[k]) {
+          if (started && current >= target) await emit(fsize);
+          started = true; fsize = 0; current++;
+          if (pos >= end) { reachedEnd = false; break read; }
+        }
+        if (started && current >= target && fsize + len <= MAX_FRAME_BYTES) frame.set(buf.subarray(at, at + len), fsize);
+        fsize += len;
+      }
+    }
+    lsn += got;
+  }
+  if (reachedEnd) {
+    if (started && current >= target) await emit(fsize);
+    await deliver(dec.process(null, dec.flush, pcm)); // the filter tail
+  }
+  await flushOut();
+  if (badFrames) warnings.push(`${badFrames} frame${badFrames > 1 ? 's' : ''} could not be decoded and were replaced by silence`);
+  if (outOfSequence) warnings.push(`${outOfSequence} frame time code${outOfSequence > 1 ? 's' : ''} out of sequence`);
+  if (written < end - begin) warnings.push(`audio ended ${((end - begin - written) / rate).toFixed(2)} s early (truncated image?)`);
+  if (enc.clipped) warnings.push(`${enc.clipped} samples clipped, try a lower gain`);
+  if (written * ch * enc.bytes > MAX_WAV_DATA) warnings.push('larger than 4 GB, WAV header size fields are capped');
+  return { header: wavHeader(ch, rate, bits, written), frames: written, peak: enc.peak, clipped: enc.clipped, badFrames, warnings };
+}
+
+// A sector reader for a File or Blob (browser or worker).
+function blobReader(blob) {
+  return async (lsn, count) => {
+    const start = lsn * SECTOR_SIZE;
+    if (start >= blob.size) return new Uint8Array(0);
+    return new Uint8Array(await blob.slice(start, Math.min(blob.size, start + count * SECTOR_SIZE)).arrayBuffer());
+  };
+}
+
+return {
+  RATES, FRAME_RATE, SECTOR_SIZE, FormatError,
+  readDisc, readArea, convertTrack, trackSpan, wavHeader, blobReader,
+  // internals, exported for the tests
+  DstDecoder, Decimator, SampleEncoder, makeFilename, tocString,
+};
+}
+</script>
+
+<script id="sacd-app">
+'use strict';
+(() => {
+const lib = sacdLibrary();
+const $ = id => document.getElementById(id);
+
+// ------------------------------------------------------------------ workers
+// The workers run the library's own source, so the page stays a single file.
+const workerSource = `${sacdLibrary.toString()}
+const lib = sacdLibrary();
+let unacked = 0, resume = null;
+self.onmessage = async ({ data: m }) => {
+  if (m.type === 'ack') {
+    unacked--;
+    if (resume && unacked <= 2) { resume(); resume = null; }
+    return;
+  }
+  try {
+    const result = await lib.convertTrack({
+      read: lib.blobReader(m.file), area: m.area, index: m.index, rate: m.rate, bits: m.bits, gainDb: m.gainDb,
+      onData: async bytes => {
+        self.postMessage({ type: 'data', bytes }, [bytes.buffer]);
+        if (++unacked > 6) await new Promise(r => { resume = r; }); // the writer is behind
+      },
+      onProgress: p => self.postMessage({ type: 'progress', p }),
+    });
+    self.postMessage({ type: 'done', result });
+  } catch (e) {
+    self.postMessage({ type: 'error', message: String(e && e.message || e) });
+  }
+};`;
+const workerUrl = URL.createObjectURL(new Blob([workerSource], { type: 'text/javascript' }));
+
+// ------------------------------------------------------------------ state
+
+const state = {
+  file: null, disc: null, areas: {}, areaKind: null, selected: new Set(),
+  busy: false, workers: new Set(), cancelled: false,
+};
+const area = () => state.areas[state.areaKind];
+
+const canPickFolder = typeof window.showDirectoryPicker === 'function';
+if (!canPickFolder) $('save').querySelector('[value=folder]').remove();
+
+// remembered settings (per browser; optional)
+const SETTINGS_KEY = 'sacd2wav.settings';
+try {
+  const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+  for (const id of ['rate', 'bits', 'save'])
+    if ([...$(id).options].some(o => o.value === s[id])) $(id).value = s[id];
+  if (Number.isFinite(parseFloat(s.gain))) $('gain').value = s.gain;
+} catch { /* storage unavailable */ }
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ rate: $('rate').value, bits: $('bits').value, gain: $('gain').value, save: $('save').value }));
+  } catch { /* storage unavailable */ }
+}
+
+// ------------------------------------------------------------------ helpers
+
+const fmtTime = frames => {
+  const s = Math.round(frames / lib.FRAME_RATE);
+  return s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+                   : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+const fmtSize = bytes => bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${Math.round(bytes / 1e6)} MB`;
+const fmtDb = peak => (20 * Math.log10(Math.max(peak, 1e-9))).toFixed(1).replace('-', '−');
+const stem = name => { const d = name.lastIndexOf('.'); return d > 0 ? name.slice(0, d) : name; };
+
+function settings() {
+  const gain = parseFloat($('gain').value);
+  return { rate: +$('rate').value, bits: +$('bits').value, gainDb: Number.isFinite(gain) ? gain : 6 };
+}
+
+function log(message, isError) {
+  const li = document.createElement('li');
+  li.textContent = message;
+  if (isError) li.className = 'err';
+  $('log').append(li);
+}
+
+// ------------------------------------------------------------------ loading a disc
+
+async function openFile(file) {
+  if (state.busy) return;
+  $('file-error').hidden = true;
+  $('log').replaceChildren();
+  try {
+    const read = lib.blobReader(file);
+    const disc = await lib.readDisc(read);
+    const areas = {};
+    const errors = [];
+    for (const loc of [disc.stereo, disc.multichannel]) {
+      if (!loc) continue;
+      try { areas[loc.kind] = await lib.readArea(read, loc); } catch (e) { errors.push(`${loc.kind} area: ${e.message}`); }
+    }
+    if (!Object.keys(areas).length) throw new Error(errors.join('; ') || 'no audio areas');
+    errors.forEach(e => log(`${file.name}: ${e}`));
+    Object.assign(state, { file, disc, areas, areaKind: areas.stereo ? 'stereo' : 'multichannel' });
+    state.selected = new Set(area().tracks.map((t, i) => i));
+    render();
+  } catch (e) {
+    $('file-error').textContent = `${file.name}: ${e.message}`;
+    $('file-error').hidden = false;
+  }
+}
+
+function render() {
+  const { disc, file } = state, a = area();
+  const t = disc.text;
+  $('drop').classList.add('compact');
+  $('drop-title').textContent = file.name;
+  $('drop-hint').textContent = `${fmtSize(file.size)} · drop or click to open another image`;
+  $('album').textContent = t.discTitle || t.albumTitle || stem(file.name);
+  const total = a.tracks.reduce((s, x) => s + x.duration, 0);
+  $('album-meta').textContent = [
+    t.discArtist || t.albumArtist,
+    disc.date,
+    disc.catalogNumber,
+    `${a.tracks.length} tracks · ${fmtTime(total)} · ${a.channels} ch ${a.dst ? 'DST' : 'DSD'}`,
+  ].filter(Boolean).join(' · ');
+
+  const choice = $('area-choice');
+  choice.replaceChildren();
+  choice.hidden = Object.keys(state.areas).length < 2;
+  for (const kind of ['stereo', 'multichannel']) {
+    const x = state.areas[kind];
+    if (!x) continue;
+    const label = document.createElement('label');
+    label.innerHTML = `<input type="radio" name="area" value="${kind}"> ${kind === 'stereo' ? 'Stereo' : 'Multichannel'} (${x.channels} ch)`;
+    const input = label.querySelector('input');
+    input.checked = kind === state.areaKind;
+    input.disabled = state.busy;
+    input.onchange = () => {
+      state.areaKind = kind;
+      state.selected = new Set(area().tracks.map((_, i) => i));
+      render();
+    };
+    choice.append(label);
+  }
+
+  const rows = $('track-rows');
+  rows.replaceChildren();
+  a.tracks.forEach((track, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="c-check"><input type="checkbox"></td><td class="c-num"></td>
+      <td><div class="title"></div><div class="performer"></div></td><td class="c-len"></td>
+      <td class="c-status"><div class="status"></div></td>`;
+    const box = tr.querySelector('input');
+    box.checked = state.selected.has(i);
+    box.setAttribute('aria-label', `Track ${track.number}`);
+    box.onclick = e => e.stopPropagation();
+    box.onchange = () => { box.checked ? state.selected.add(i) : state.selected.delete(i); updateSummary(); };
+    tr.onclick = () => { if (!box.disabled) { box.checked = !box.checked; box.onchange(); } };
+    tr.querySelector('.c-num').textContent = track.number;
+    tr.querySelector('.title').textContent = track.title || `Track ${track.number}`;
+    tr.querySelector('.performer').textContent = track.performer;
+    tr.querySelector('.c-len').textContent = fmtTime(track.duration);
+    rows.append(tr);
+  });
+  $('disc').hidden = false;
+  updateSummary();
+}
+
+function rowOf(i) { return $('track-rows').children[i]; }
+
+function updateSummary() {
+  const a = area();
+  if (!a) return;
+  const { rate, bits } = settings();
+  const n = state.selected.size;
+  let bytes = 0, frames = 0;
+  for (const i of state.selected) {
+    frames += a.tracks[i].duration;
+    bytes += lib.trackSpan(a, i, rate).frames * a.channels * bits / 8;
+  }
+  const all = $('check-all');
+  all.checked = n === a.tracks.length;
+  all.indeterminate = n > 0 && n < a.tracks.length;
+  for (const box of $('track-rows').querySelectorAll('input')) box.disabled = state.busy;
+  all.disabled = state.busy;
+  $('convert').disabled = !n || state.busy;
+  $('convert').textContent = n === 1 ? 'Convert 1 track' : `Convert ${n} tracks`;
+  if (!state.busy)
+    $('summary').textContent = n ? `${n} of ${a.tracks.length} tracks selected · ${fmtTime(frames)} · about ${fmtSize(bytes)} of WAV` : 'No tracks selected';
+}
+
+function setStatus(i, cls, text, progress) {
+  const st = rowOf(i).querySelector('.status');
+  st.className = 'status' + (cls ? ' ' + cls : '');
+  st.replaceChildren();
+  const label = document.createElement('span');
+  label.textContent = text;
+  st.append(label);
+  if (progress != null) {
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.innerHTML = '<i></i>';
+    bar.firstChild.style.width = `${(progress * 100).toFixed(1)}%`;
+    st.append(bar);
+  }
+}
+
+// ------------------------------------------------------------------ output
+
+// Folder output: written as it arrives; the header is rewritten at the end.
+async function folderWriter(dir, name, placeholder) {
+  const handle = await dir.getFileHandle(name, { create: true });
+  const w = await handle.createWritable();
+  await w.write(placeholder);
+  return {
+    write: bytes => w.write(bytes),
+    finish: async header => { await w.write({ type: 'write', position: 0, data: header }); await w.close(); },
+    abort: () => w.abort().catch(() => {}),
+  };
+}
+
+// Download output: collected as Blobs (which the browser may keep on disk), then saved.
+function downloadWriter(name) {
+  const parts = [];
+  let pending = [], pendingBytes = 0;
+  return {
+    write: bytes => {
+      pending.push(bytes);
+      if ((pendingBytes += bytes.length) >= 64 << 20) { parts.push(new Blob(pending)); pending = []; pendingBytes = 0; }
+    },
+    finish: header => {
+      const blob = new Blob([header, ...parts, ...pending], { type: 'audio/wav' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 120000);
+    },
+    abort: () => {},
+  };
+}
+
+// ------------------------------------------------------------------ conversion
+
+function convertOne(i, opts, writer) {
+  const a = area();
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(workerUrl);
+    state.workers.add(worker);
+    let chain = Promise.resolve(), failed = null;
+    const finish = () => { worker.terminate(); state.workers.delete(worker); };
+    worker.onmessage = ({ data: m }) => {
+      if (m.type === 'data') {
+        chain = chain.then(() => writer.write(m.bytes)).then(() => worker.postMessage({ type: 'ack' }))
+          .catch(e => { failed = failed || e; worker.postMessage({ type: 'ack' }); });
+      } else if (m.type === 'progress') {
+        setStatus(i, '', `${Math.floor(m.p * 100)}%`, m.p);
+      } else if (m.type === 'done') {
+        chain.then(async () => {
+          finish();
+          if (failed) throw failed;
+          await writer.finish(m.result.header);
+          resolve(m.result);
+        }).catch(e => { writer.abort(); reject(e); });
+      } else if (m.type === 'error') {
+        finish(); writer.abort(); reject(new Error(m.message));
+      }
+    };
+    worker.onerror = e => { e.preventDefault(); finish(); writer.abort(); reject(new Error(e.message || 'worker failed')); };
+    state.cancelHooks.push(() => { finish(); writer.abort(); reject(new Error('cancelled')); });
+    worker.postMessage({ file: state.file, area: a, index: i, ...opts });
+  });
+}
+
+async function convert() {
+  const a = area(), opts = settings(), indices = [...state.selected].sort((x, y) => x - y);
+  if (!indices.length) return;
+  saveSettings();
+  let dir = null;
+  if ($('save').value === 'folder') {
+    try {
+      const root = await window.showDirectoryPicker({ id: 'sacd2wav', mode: 'readwrite' });
+      dir = await root.getDirectoryHandle(stem(state.file.name), { create: true }); // like sacd2wav: one folder per image
+    } catch (e) {
+      if (e.name !== 'AbortError') log(`Cannot use that folder: ${e.message}`, true);
+      return;
+    }
+  }
+
+  Object.assign(state, { busy: true, cancelled: false, cancelHooks: [] });
+  $('cancel').hidden = false;
+  $('log').replaceChildren();
+  for (const x of document.querySelectorAll('#area-choice input, .controls select, .controls input')) x.disabled = true;
+  updateSummary();
+  for (const i of indices) setStatus(i, '', 'Waiting', 0);
+
+  const started = performance.now();
+  const parallel = Math.max(1, Math.min(indices.length, (navigator.hardwareConcurrency || 4) - 1, 8));
+  let next = 0, done = 0, failed = 0, peak = 0, audioFrames = 0;
+  const showProgress = () => {
+    $('summary').textContent = `Converted ${done} of ${indices.length}` + (failed ? ` · ${failed} failed` : '') +
+      ` · ${parallel} at a time · ${((performance.now() - started) / 1000).toFixed(0)} s`;
+  };
+  const timer = setInterval(showProgress, 1000);
+  showProgress();
+
+  const runner = async () => {
+    while (next < indices.length && !state.cancelled) {
+      const i = indices[next++], track = a.tracks[i], name = track.fileName;
+      const frames = lib.trackSpan(a, i, opts.rate).frames;
+      setStatus(i, '', 'Starting', 0);
+      try {
+        const writer = dir ? await folderWriter(dir, name, lib.wavHeader(a.channels, opts.rate, opts.bits, frames))
+                           : downloadWriter(name);
+        const r = await convertOne(i, opts, writer);
+        peak = Math.max(peak, r.peak);
+        audioFrames += r.frames;
+        setStatus(i, r.warnings.length ? 'warn' : 'ok', `Done · peak ${fmtDb(r.peak)} dBFS`);
+        r.warnings.forEach(w => log(`${name}: ${w}`));
+      } catch (e) {
+        if (state.cancelled) { setStatus(i, '', 'Cancelled'); continue; }
+        failed++;
+        setStatus(i, 'err', 'Failed');
+        log(`${name}: ${e.message}`, true);
+      }
+      done++;
+      showProgress();
+    }
+  };
+  await Promise.all(Array.from({ length: parallel }, runner));
+  clearInterval(timer);
+
+  const secs = (performance.now() - started) / 1000;
+  for (const i of indices.slice(next)) setStatus(i, '', 'Cancelled');
+  state.busy = false;
+  $('cancel').hidden = true;
+  for (const x of document.querySelectorAll('#area-choice input, .controls select, .controls input')) x.disabled = false;
+  updateSummary();
+  const where = dir ? ` into the folder “${dir.name}”` : '';
+  $('summary').textContent = state.cancelled
+    ? `Cancelled after ${secs.toFixed(0)} s`
+    : `${done - failed} of ${indices.length} tracks converted${where} in ${secs.toFixed(0)} s` +
+      (audioFrames ? ` (${(audioFrames / opts.rate / secs).toFixed(0)}× real time) · peak ${fmtDb(peak)} dBFS at ${opts.gainDb >= 0 ? '+' : ''}${opts.gainDb} dB gain` : '');
+}
+
+function cancel() {
+  state.cancelled = true;
+  for (const hook of state.cancelHooks || []) hook();
+  state.cancelHooks = [];
+}
+
+// ------------------------------------------------------------------ events
+
+const drop = $('drop'), input = $('file-input');
+drop.onclick = () => { if (!state.busy) input.click(); };
+drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); drop.onclick(); } };
+input.onchange = () => { if (input.files[0]) openFile(input.files[0]); input.value = ''; };
+// Accept a drop anywhere on the page, and never let the browser open the file instead.
+let dragDepth = 0;
+addEventListener('dragenter', e => { e.preventDefault(); if (++dragDepth === 1) drop.classList.add('over'); });
+addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; drop.classList.remove('over'); } });
+addEventListener('dragover', e => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = state.busy ? 'none' : 'copy'; });
+addEventListener('drop', e => {
+  e.preventDefault();
+  dragDepth = 0;
+  drop.classList.remove('over');
+  const file = e.dataTransfer?.files?.[0];
+  if (file) openFile(file);
+});
+
+$('check-all').onchange = e => {
+  state.selected = e.target.checked ? new Set(area().tracks.map((_, i) => i)) : new Set();
+  for (const [i, box] of [...$('track-rows').querySelectorAll('input')].entries()) box.checked = state.selected.has(i);
+  updateSummary();
+};
+for (const id of ['rate', 'bits', 'gain', 'save']) $(id).addEventListener('change', () => { saveSettings(); updateSummary(); });
+$('convert').onclick = convert;
+$('cancel').onclick = cancel;
+addEventListener('beforeunload', e => { if (state.busy) e.preventDefault(); });
+})();
+</script>
+</body>
+</html>
