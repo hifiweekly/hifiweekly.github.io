@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>moe_sort Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.fig svg { display: block; width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">gpt-oss · gptoss.ptx · prefill routing</div>
+    <h1>Inside <code>moe_sort</code></h1>
+    <p>gpt-oss sends every token to 4 of its 32 experts. During prompt processing, the expert GEMM wants each expert's tokens side by side, so that expert's weights are read once for the whole chunk instead of once per token. <code>moe_sort</code> builds that grouping: a counting sort by expert id, done by one block with shared-memory atomics. It is a classic histogram → prefix sum → scatter, small enough to watch in full.</p>
+    <div class="formula"><span class="w">ids</span>[p] = expert of pair p = (token t, slot j), p = 4t + j &nbsp;→&nbsp; <span class="y">list</span>[<span class="s">offs</span>[e] … <span class="s">offs</span>[e+1]) = the pairs routed to expert e</div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">24 tokens × 4 experts = 96 pairs</h2>
+      <p>Colors mark the 32 experts. With 1024 threads and only 96 pairs, thread p handles pair p, so the strided loops run once. Step through the three phases; the last phase shows why the order inside a bucket is not fixed.</p>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="w">ids: rows = tokens, columns = the 4 chosen experts</b><span>pair p = 4·token + slot</span></div>
+        <div class="fig"><svg id="ids" role="img" aria-label="Expert ids per token"></svg></div>
+        <div class="cvlabel"><b class="s">shared cnt[e] → offs[e]</b><span id="cntsub"></span></div>
+        <div class="fig"><svg id="hist" role="img" aria-label="Counts per expert"></svg></div>
+        <div class="cvlabel"><b class="y">list: pair indices grouped by expert</b><span><button id="shuffle">Replay with another arrival order</button></span></div>
+        <div class="fig"><svg id="list" role="img" aria-label="Output list"></svg></div>
+        <div class="status" id="status">Hover over a pair, a bar or a list entry.</div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="ecard-l"></b></div>
+        <dl class="kv" id="ecard"></dl>
+        <div class="tablewrap"><table class="nums" id="offs"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>One block is enough</h3>
+        <p>A prompt chunk has at most 128 tokens, so n ≤ 512 pairs and 32 counters. Everything fits in one block's shared memory, the atomics stay on-chip, and the only synchronization needed is <code>bar.sync</code> between phases. The prefix sum over 32 counters is done serially by thread 0: 32 additions are faster than organizing a parallel scan.</p>
+      </div>
+      <div class="panel">
+        <h3>Why arbitrary order is fine</h3>
+        <p>Atomics return slots in whatever order the hardware serves them, so two runs can list a bucket's pairs differently. The expert GEMM writes the result for pair p into row p of its output, and <code>moe_combine</code> later sums each token's 4 rows with their router weights. The position inside the bucket never reaches the math, so results stay deterministic.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>moe_sort</code>; launched from <code>gptoss.c</code> as one block of 1024 threads before the expert GEMMs (<code>gemm_mxfp4</code>). Expert ids here are generated with a realistic skew toward a few popular experts.</footer>
+</div>
+
+<script>
+(() => {
+const { $, C } = Atlas;
+Atlas.chrome('moe_sort');
+const T = 24, K = 4, E = 32, N = T * K;
+Atlas.facts($('facts'), [['1', 'block'], ['1024', 'threads'], ['2 × 64 × 4 B', 'shared memory'], ['3', 'barriers'], ['2n', 'shared atomics']]);
+
+const r = Atlas.rng(3), pop = Array.from({ length: E }, (_, e) => Math.pow(0.86, (e * 7) % E) + 0.05);
+const ids = [];
+for (let t = 0; t < T; t++) {
+  const chosen = new Set();
+  while (chosen.size < K) { let u = r() * pop.reduce((a, b) => a + b), e = 0; while (u > pop[e]) { u -= pop[e]; e++; } chosen.add(Math.min(e, E - 1)); }
+  ids.push(...chosen);
+}
+const cnt = new Array(E).fill(0); ids.forEach(e => cnt[e]++);
+const offs = []; { let run = 0; for (let e = 0; e < E; e++) { offs.push(run); run += cnt[e]; } offs.push(run); }
+let order, list, landed;
+function scatter(seed) {
+  const rr = Atlas.rng(seed); order = Array.from({ length: N }, (_, p) => p);
+  for (let i = N - 1; i > 0; i--) { const j = Math.floor(rr() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  const cur = offs.slice(0, E); list = new Array(N).fill(null); landed = new Array(N);
+  order.forEach((p, k) => { const pos = cur[ids[p]]++; list[pos] = p; landed[p] = k; });
+}
+let seed = 1; scatter(seed);
+const hue = e => `hsl(${(e * 137.5) % 360} 58% 52%)`;
+
+const steps = [
+  { tag: 'Z', kind: 'zero', short: 'zero', title: 'threads 0–31 zero the 32 counters, bar.sync', text: 'Shared memory starts with garbage, so the first nexp threads clear <code>cnt[e]</code>. A barrier makes sure nobody counts into an uncleared slot.' },
+];
+for (let q = 1; q <= 4; q++) steps.push({ tag: 'C', kind: 'count', frac: q / 4, short: `count ${q * 25}%`, title: `count: atomicAdd(&cnt[ids[p]], 1) (${q * 25}% of pairs)`, delay: 800,
+  text: 'Every thread reads its pair\'s expert and increments that counter with <code>atom.shared.add.u32</code>. When several threads hit the same counter, the hardware serializes them; the totals are exact regardless of order.' + (q === 4 ? ' Then bar.sync.' : '') });
+for (let q = 1; q <= 4; q++) steps.push({ tag: 'S', kind: 'scan', upto: q * 8, short: `scan e < ${q * 8}`, title: `thread 0 scans experts ${(q - 1) * 8}–${q * 8 - 1}`, delay: 800,
+  text: `A serial exclusive prefix sum: offs[e] = the number of pairs routed to experts before e. Thread 0 writes it to both the global <code>offs</code> array (for the GEMM launch) and the shared <code>cur</code> array (the next free slot of each bucket).${q === 4 ? ` offs[32] = ${N}. Then bar.sync.` : ''}` });
+for (let q = 1; q <= 4; q++) steps.push({ tag: 'X', kind: 'scatter', frac: q / 4, short: `scatter ${q * 25}%`, title: `scatter: list[atomicAdd(&cur[ids[p]], 1)] = p (${q * 25}% arrived)`, delay: 900,
+  text: 'Each thread claims the next free place in its expert\'s bucket with a second atomic, which returns the old value, and writes its pair index there. The pairs below arrived in a random order; press "Replay with another arrival order" to see buckets fill differently while their contents stay the same.' });
+
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `A|extern "C" __global__ void moe_sort(const unsigned *ids, unsigned n, unsigned nexp,
+A|                                    unsigned *offs, unsigned *list)    // 1 block, 1024 threads
+A|{
+A|    __shared__ unsigned cnt[64], cur[64];
+Z|    if (threadIdx.x < nexp) cnt[threadIdx.x] = 0;
+Z|    __syncthreads();
+C|    for (unsigned p = threadIdx.x; p < n; p += blockDim.x)
+C|        atomicAdd(&cnt[ids[p]], 1);
+C|    __syncthreads();
+S|    if (threadIdx.x == 0) {                                // serial exclusive scan
+S|        unsigned run = 0;
+S|        for (unsigned e = 0; e < nexp; e++) { cur[e] = offs[e] = run; run += cnt[e]; }
+S|        offs[nexp] = run;
+S|    }
+S|    __syncthreads();
+X|    for (unsigned p = threadIdx.x; p < n; p += blockDim.x)
+X|        list[atomicAdd(&cur[ids[p]], 1)] = p;               // claim a place in the bucket
+A|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `Z|    setp.ge.u32         %p1, %r3, %r2;          // tid >= nexp ?
+Z|    @%p1 bra            ZEROED;
+Z|    st.shared.u32       [%r8], 0;
+Z|ZEROED:
+Z|    bar.sync            0;
+C|COUNT:
+C|    ld.global.u32       %r10, [%rd5];           // e = ids[p]
+C|    shl.b32             %r11, %r10, 2;
+C|    atom.shared.add.u32 %r12, [%r11], 1;        // cnt[e]++
+C|    add.u32             %r9, %r9, %r4;
+C|    bra.uni             COUNT;
+C|COUNTED:
+C|    bar.sync            0;
+S|    @%p2 bra            SCANNED;                // only thread 0 scans
+S|SCAN:
+S|    ld.shared.u32       %r17, [%r16];           // cnt[e]
+S|    st.shared.u32       [%r18], %r13;           // cur[e] = run
+S|    st.global.u32       [%rd7], %r13;           // offs[e] = run
+S|    add.u32             %r13, %r13, %r17;
+S|    add.u32             %r14, %r14, 1;
+S|    bra.uni             SCAN;
+S|SCANNED:
+S|    bar.sync            0;
+X|SCATTER:
+X|    ld.global.u32       %r10, [%rd5];
+X|    atom.shared.add.u32 %r19, [%r11], 1;        // old cur[e] = my place
+X|    mul.wide.u32        %rd8, %r19, 4;
+X|    st.global.u32       [%rd9], %r9;            // list[place] = p` },
+});
+
+const S = { e: ids[5], hover: null };
+function draw() {
+  const st = stepper.step;
+  const counted = st.kind === 'count' ? Math.round(N * st.frac) : st.kind === 'zero' ? 0 : N;
+  const isCounted = p => p < counted;
+  const arrived = st.kind === 'scatter' ? Math.round(N * st.frac) : 0;
+  const scanUpto = st.kind === 'scan' ? st.upto : st.kind === 'scatter' ? E : 0;
+  // ids grid
+  const cw = 34, ch = 18;
+  let s = '';
+  const per = 8, groups = T / per, gw = K * cw + 40, Wd = groups * gw, Hd = per * ch + 22;
+  for (let gI = 0; gI < groups; gI++) for (let k = 0; k < per; k++) {
+    const t = gI * per + k, y = 16 + k * ch, x0 = gI * gw + 30;
+    s += `<text x="${x0 - 4}" y="${y + 12}" font-size="9.5" text-anchor="end" fill="${C.muted}">t${t}</text>`;
+    for (let j = 0; j < K; j++) {
+      const p = t * K + j, e = ids[p], on = st.kind === 'zero' ? false : st.kind === 'count' ? isCounted(p) : true;
+      const sel = e === S.e;
+      s += `<g data-p="${p}"><rect x="${x0 + j * cw}" y="${y}" width="${cw - 2}" height="${ch - 2}" rx="2" fill="${hue(e)}" opacity="${on ? (sel ? 1 : 0.75) : 0.25}" stroke="${sel ? C.fg : 'none'}" stroke-width="1.5"/>`;
+      s += `<text x="${x0 + j * cw + cw / 2 - 1}" y="${y + 12}" font-size="10" text-anchor="middle" fill="#fff">${e}</text></g>`;
+    }
+  }
+  $('ids').setAttribute('viewBox', `0 0 ${Wd} ${Hd}`); $('ids').innerHTML = s;
+
+  // histogram
+  const bw = 26, HH = 150, hx = 8, maxc = Math.max(...cnt);
+  let hs = '';
+  for (let e = 0; e < E; e++) {
+    let c = 0; ids.forEach((id, p) => { if (id === e && isCounted(p)) c++; });
+    if (st.kind === 'zero') c = 0;
+    const bh = c / maxc * (HH - 50), x = hx + e * bw, y = HH - 34 - bh, sel = e === S.e;
+    hs += `<g data-e="${e}"><rect x="${x}" y="${16}" width="${bw - 3}" height="${HH - 50}" fill="transparent"/><rect x="${x}" y="${y}" width="${bw - 3}" height="${bh}" fill="${hue(e)}" opacity="${sel ? 1 : 0.75}" stroke="${sel ? C.fg : 'none'}" stroke-width="1.5"/>`;
+    hs += `<text x="${x + bw / 2 - 1.5}" y="${y - 3}" font-size="9.5" text-anchor="middle" fill="${C.fg}">${st.kind === 'zero' ? 0 : c}</text>`;
+    hs += `<text x="${x + bw / 2 - 1.5}" y="${HH - 22}" font-size="9" text-anchor="middle" fill="${C.muted}">${e}</text>`;
+    hs += `<text x="${x + bw / 2 - 1.5}" y="${HH - 6}" font-size="9" text-anchor="middle" fill="${e < scanUpto ? C.sync : C.zero}">${e < scanUpto ? offs[e] : '·'}</text></g>`;
+  }
+  hs += `<text x="${hx}" y="10" font-size="9.5" fill="${C.muted}">cnt[e]</text>`;
+  $('hist').setAttribute('viewBox', `0 0 ${hx + E * bw + 4} ${HH}`); $('hist').innerHTML = hs;
+  $('cntsub').textContent = scanUpto ? `bottom row: offs[e] for e < ${scanUpto}` : 'expert number below each bar';
+
+  // list
+  const lw = 20, rows = 2, perRow = N / rows, lh = 40;
+  let ls = '';
+  for (let pos = 0; pos < N; pos++) {
+    const row = Math.floor(pos / perRow), x = 4 + (pos % perRow) * lw, y = 6 + row * lh;
+    const p = list[pos], filled = st.kind === 'scatter' && landed[p] < arrived;
+    const e = ids[p], sel = e === S.e;
+    const owner = offs.findIndex((o, k) => k < E && pos >= o && pos < offs[k + 1]);
+    ls += `<g data-pos="${pos}"><rect x="${x}" y="${y}" width="${lw - 2}" height="22" rx="2" fill="${filled ? hue(e) : scanUpto === E ? hue(owner) : C.zero}" opacity="${filled ? (sel ? 1 : 0.8) : scanUpto === E ? 0.18 : 0.3}" stroke="${sel && (filled || scanUpto === E) ? C.fg : 'none'}" stroke-width="1.5"/>`;
+    if (filled) ls += `<text x="${x + lw / 2 - 1}" y="${y + 15}" font-size="8.5" text-anchor="middle" fill="#fff">${p}</text>`;
+    ls += '</g>';
+    if (scanUpto === E && offs.includes(pos) && pos > 0) ls += `<line x1="${x - 1}" y1="${y - 3}" x2="${x - 1}" y2="${y + 25}" stroke="${C.fg}" stroke-width="1.2"/>`;
+  }
+  $('list').setAttribute('viewBox', `0 0 ${8 + perRow * lw} ${rows * lh + 4}`); $('list').innerHTML = ls;
+
+  // expert card
+  const e = S.e, members = ids.map((id, p) => id === e ? p : -1).filter(p => p >= 0);
+  $('ecard-l').textContent = `expert ${e}`;
+  const inBucket = st.kind === 'scatter' ? list.slice(offs[e], offs[e + 1]).filter(p => landed[p] < arrived) : [];
+  $('ecard').innerHTML = [
+    ['pairs', members.map(p => `${p} (t${p >> 2})`).join(', ')],
+    ['count', cnt[e]], ['bucket', scanUpto > e ? `list[${offs[e]} … ${offs[e + 1] - 1}]` : '–'],
+    ['arrived', st.kind === 'scatter' ? (inBucket.join(', ') || 'none yet') : '–'],
+  ].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  let ot = `<caption>offs (global) and cur (shared) for the first experts</caption><tr><th>e</th><th>cnt</th><th>offs</th><th>cur now</th></tr>`;
+  for (let k = 0; k < 8; k++) {
+    const ek = (e + k) % E, landedHere = st.kind === 'scatter' ? list.slice(offs[ek], offs[ek + 1]).filter(p => landed[p] < arrived).length : 0;
+    ot += `<tr class="${ek === e ? 'on' : ''}"><td>${ek}</td><td>${counted === N ? cnt[ek] : '…'}</td><td>${scanUpto > ek ? offs[ek] : '–'}</td><td>${scanUpto > ek ? offs[ek] + landedHere : '–'}</td></tr>`;
+  }
+  $('offs').innerHTML = ot;
+}
+function hoverHandler(ev) {
+  const g = ev.target.closest('g'); if (!g) return;
+  if (g.dataset.p) { const p = +g.dataset.p; $('status').textContent = `pair ${p}: token ${p >> 2}, slot ${p & 3} → expert ${ids[p]} · handled by thread ${p}`; }
+  if (g.dataset.e) { const e = +g.dataset.e; $('status').textContent = `expert ${e}: ${cnt[e]} pairs, bucket list[${offs[e]} … ${offs[e + 1] - 1}]`; }
+  if (g.dataset.pos) { const pos = +g.dataset.pos, p = list[pos]; $('status').textContent = `list[${pos}] = pair ${p} (token ${p >> 2}, expert ${ids[p]}), arrival #${landed[p] + 1}`; }
+}
+function clickHandler(ev) {
+  const g = ev.target.closest('g'); if (!g) return;
+  if (g.dataset.p) S.e = ids[+g.dataset.p]; if (g.dataset.e) S.e = +g.dataset.e; if (g.dataset.pos) S.e = ids[list[+g.dataset.pos]];
+  draw();
+}
+['ids', 'hist', 'list'].forEach(id => { $(id).addEventListener('mousemove', hoverHandler); $(id).addEventListener('click', clickHandler); $(id).style.cursor = 'pointer'; });
+$('shuffle').addEventListener('click', () => { seed++; scatter(seed); draw(); });
+const stepper = Atlas.stepper({ steps, code, render: draw });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

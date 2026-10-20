@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>swiglu_oai Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.regs td:first-child, .regs th:first-child { text-align: left; }
+.regs td.ins { font-family: var(--font-mono); color: var(--muted); text-align: left; white-space: nowrap; }
+.plot svg { display: block; width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">gpt-oss · gptoss.ptx · element-wise, grid-stride</div>
+    <h1>Inside <code>swiglu_oai</code></h1>
+    <p>Each gpt-oss expert computes two projections of the token, a gate g and an up value u, and combines them element by element before the down projection. OpenAI's variant clamps both inputs at ±7 and adds 1 to the up value. The kernel is the simplest kind there is: one thread per element, no cooperation, so this page is about two things, the arithmetic of one element and how a grid-stride loop spreads any n over a fixed-size grid.</p>
+    <div class="formula"><span class="y">out</span> = x<sub>g</sub> · σ(1.702 · x<sub>g</sub>) · (x<sub>u</sub> + 1) &nbsp;&nbsp;<span class="muted">// x<sub>g</sub> = min(<span class="w">g</span>, 7), x<sub>u</sub> = clamp(<span class="x">u</span>, −7, 7)</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-one">
+    <div class="sechead">
+      <h2 id="s-one">One element, instruction by instruction</h2>
+      <p>Set g and u with the sliders, then step through the eight instructions a thread runs for its element. The table shows every register value as it is produced. The sigmoid is computed as x / (1 + 2<sup>−1.702·log₂e·x</sup>): one <code>ex2.approx</code> plus a division, with no <code>exp</code> instruction.</p>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="controls">
+          <label for="gs">g <input id="gs" type="range" min="-10" max="12" step="0.05" value="2.4"> <span id="gv" class="mono"></span></label>
+          <label for="us">u <input id="us" type="range" min="-10" max="10" step="0.05" value="-0.8"> <span id="uv" class="mono"></span></label>
+        </div>
+        <div class="plot"><svg id="plot" role="img" aria-label="Gate function and the selected point"></svg></div>
+        <div class="legend" id="legend"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b>registers of one thread</b><span>float32</span></div>
+        <div class="tablewrap"><table class="nums regs" id="regs"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-map">
+    <div class="sechead">
+      <h2 id="s-map">Grid-stride: any n on a capped grid</h2>
+      <p>The host launches 256-thread blocks, enough to cover n but at most 8 per SM: 448 blocks on this 56-SM card. Thread <code>i</code> handles elements i, i + stride, i + 2·stride … where stride = blocks × 256. During decode n is small and every thread does one element. During prefill n is far larger than the grid, so each thread loops. Each cell below is one block's 256 consecutive elements; rows are laps of the loop. Click a cell to follow a block.</p>
+    </div>
+    <div class="panel">
+      <div class="controls">
+        <label for="mode">workload <select id="mode"><option value="decode">decode: 1 token × 4 experts × 2880</option><option value="prefill">prefill chunk: 128 tokens × 4 × 2880</option></select></label>
+      </div>
+      <canvas id="map"></canvas>
+      <div class="status" id="mapstatus"></div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>swiglu_oai</code>; launched by <code>launch_1d()</code> in <code>gptoss.c</code> (256 threads, blocks capped at 8 × SM count) with α = 1.702 and limit = 7. The output overwrites g in place.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('swiglu_oai');
+const ALPHA = 1.702, LIMIT = 7, SM = 56, MAXB = 8 * SM;
+Atlas.facts($('facts'), [['≤ 448', 'blocks (8 per SM)'], ['256', 'threads per block'], ['0 B', 'shared memory'], ['1 ex2 + 1 div', 'per element'], ['in place', 'out may equal g']]);
+
+const S = { g: 2.4, u: -0.8 };
+function regs() {
+  const g = fr(S.g), u = fr(S.u), k = fr(ALPHA * fr(-1.4426950216293335));
+  const xg = fr(Math.min(g, LIMIT)), xu0 = fr(Math.min(u, LIMIT)), xu = fr(Math.max(xu0, -LIMIT));
+  const t = fr(xg * k), e = fr(2 ** t), e1 = fr(e + 1), q = fr(xg / e1), u1 = fr(xu + 1), out = fr(q * u1);
+  return [
+    ['I', 'mad.lo.u32', 'i = block·256 + tid', null],
+    ['L', 'ld.global.f32 ×2', 'g, u', `${g.toFixed(4)}, ${u.toFixed(4)}`],
+    ['C', 'min / min / max', 'x_g, x_u', `${xg.toFixed(4)}, ${xu.toFixed(4)}`],
+    ['E', 'mul.f32', 't = x_g · (−1.702 log₂e)', t.toFixed(5)],
+    ['E', 'ex2.approx.f32', 'e = 2^t = exp(−1.702 x_g)', e.toPrecision(6)],
+    ['D', 'add / div.rn', 'x_g / (1 + e)', q.toFixed(5)],
+    ['M', 'add / mul', '· (x_u + 1)', out.toFixed(5)],
+    ['S', 'st.global.f32', 'out[i]', out.toFixed(5)],
+  ];
+}
+const steps = [
+  { tag: 'I', short: 'index', title: 'which element: i = blockIdx.x · 256 + threadIdx.x', text: 'Each thread computes its first element and the grid stride (gridDim.x × 256) once, before the loop.' },
+  { tag: 'L', short: 'load', title: 'load g[i] and u[i]', text: 'Two 4-byte loads. Neighboring threads read neighboring floats, so a warp\'s 32 loads merge into one 128-byte transaction per array.' },
+  { tag: 'C', short: 'clamp', title: 'clamp: x_g = min(g, 7), x_u = clamp(u, −7, 7)', text: 'gpt-oss limits the gate from above only and the up value from both sides. Large positive gates saturate at 7·σ(11.9) ≈ 7.' },
+  { tag: 'E', short: 'exponent', title: 'exp(−1.702 x_g) as a power of 2', text: 'The hardware has a fast base-2 exponential (<code>ex2.approx</code>, about 2 ulp), so the kernel folds −α·log₂e = −2.4555 into one constant, multiplies, and takes 2<sup>t</sup>.' },
+  { tag: 'D', short: 'sigmoid', title: 'x_g · σ(1.702 x_g) = x_g / (1 + e)', text: 'One add and an IEEE-rounded division (<code>div.rn.f32</code>) finish the gated part. Dividing x_g directly saves a separate multiply by the sigmoid.' },
+  { tag: 'M', short: '× (u+1)', title: 'multiply by (x_u + 1)', text: 'The "+1" is part of OpenAI\'s formulation: with u = 0 the up path passes the gate through unchanged.' },
+  { tag: 'S', short: 'store', title: 'store, then i += stride', text: 'The result overwrites g in place (the host passes the gate buffer as out). If i + stride < n, the thread loops for another element.' },
+];
+
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `A|extern "C" __global__ void swiglu_oai(const float *g, const float *u, float *out, unsigned n,
+A|                                      float alpha, float limit)
+A|{
+E|    const float k = -alpha * 1.44269504f;                       // -alpha * log2(e)
+I|    for (unsigned i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
+I,S|         i += gridDim.x * blockDim.x) {                          // grid-stride loop
+L|        float xg = g[i], xu = u[i];
+C|        xg = fminf(xg, limit);
+C|        xu = fmaxf(fminf(xu, limit), -limit);
+E|        float e = exp2f(xg * k);                                  // exp(-alpha * xg)
+D|        float sg = xg / (e + 1.0f);                               // xg * sigmoid(alpha * xg)
+M|        float r = sg * (xu + 1.0f);
+S|        out[i] = r;
+I|    }
+A|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `E|    mul.f32             %f4, %f1, 0fBFB8AA3B;   // -alpha * log2(e)
+I|    mad.lo.u32          %r6, %r4, %r3, %r2;     // i = block * 256 + tid
+I|    mul.lo.u32          %r7, %r5, %r3;          // stride
+I|LOOP:
+I|    setp.ge.u32         %p1, %r6, %r1;
+I|    @%p1 bra            DONE;
+L|    ld.global.f32       %f5, [%rd5];            // g
+L|    ld.global.f32       %f6, [%rd6];            // u
+C|    min.f32             %f5, %f5, %f2;
+C|    min.f32             %f6, %f6, %f2;
+C|    max.f32             %f6, %f6, %f3;
+E|    mul.f32             %f7, %f5, %f4;
+E|    ex2.approx.f32      %f8, %f7;               // exp(-alpha * xg)
+D|    add.f32             %f8, %f8, 0f3F800000;
+D|    div.rn.f32          %f9, %f5, %f8;
+M|    add.f32             %f10, %f6, 0f3F800000;
+M|    mul.f32             %f11, %f9, %f10;
+S|    st.global.f32       [%rd7], %f11;
+S|    add.u32             %r6, %r6, %r7;          // i += stride
+S|    bra.uni             LOOP;` },
+});
+
+function drawRegs(st) {
+  const R = regs(), order = 'ILCEDMS', upto = order.indexOf(st.tag);
+  $('regs').innerHTML = `<tr><th>instruction</th><th>computes</th><th>value</th></tr>` + R.map(([t, ins, what, v]) => {
+    const k = order.indexOf(t), on = t === st.tag;
+    return `<tr class="${on ? 'on' : ''}"${k > upto ? ' style="opacity:.35"' : ''}><td class="ins">${ins}</td><td style="text-align:left">${what}</td><td>${k <= upto && v !== null ? v : (v === null ? '' : '–')}</td></tr>`;
+  }).join('');
+}
+function drawPlot(st) {
+  const W = 620, H = 300, ml = 44, mr = 12, mt = 14, mb = 30, x0 = -10, x1 = 12, y0 = -1, y1 = 8;
+  const X = v => ml + (v - x0) / (x1 - x0) * (W - ml - mr), Y = v => mt + (y1 - v) / (y1 - y0) * (H - mt - mb);
+  const gate = gv => { const xg = Math.min(gv, LIMIT); return xg / (1 + Math.exp(-ALPHA * xg)); };
+  let s = '';
+  for (let v = -10; v <= 12; v += 2) s += `<line x1="${X(v)}" y1="${mt}" x2="${X(v)}" y2="${H - mb}" stroke="${C.line}" stroke-width="0.6"/><text x="${X(v)}" y="${H - mb + 16}" font-size="10" text-anchor="middle" fill="${C.muted}">${v}</text>`;
+  for (let v = 0; v <= 8; v += 2) s += `<line x1="${ml}" y1="${Y(v)}" x2="${W - mr}" y2="${Y(v)}" stroke="${C.line}" stroke-width="0.6"/><text x="${ml - 6}" y="${Y(v) + 3}" font-size="10" text-anchor="end" fill="${C.muted}">${v}</text>`;
+  s += `<line x1="${X(7)}" y1="${mt}" x2="${X(7)}" y2="${H - mb}" stroke="${C.w}" stroke-dasharray="4 3"/><text x="${X(7) + 4}" y="${mt + 10}" font-size="10" fill="${C.w}">clamp at 7</text>`;
+  let d = ''; for (let i = 0; i <= 440; i++) { const gv = x0 + (x1 - x0) * i / 440; d += (i ? 'L' : 'M') + X(gv).toFixed(1) + ' ' + Y(gate(gv)).toFixed(1); }
+  s += `<path d="${d}" fill="none" stroke="${C.y}" stroke-width="2.2"/>`;
+  let d2 = ''; for (let i = 0; i <= 440; i++) { const gv = x0 + (x1 - x0) * i / 440; d2 += (i ? 'L' : 'M') + X(gv).toFixed(1) + ' ' + Y(Math.max(y0, Math.min(y1, gv))).toFixed(1); }
+  s += `<path d="${d2}" fill="none" stroke="${C.muted}" stroke-width="1" stroke-dasharray="2 3"/>`;
+  const gy = gate(S.g);
+  s += `<circle cx="${X(S.g)}" cy="${Y(gy)}" r="5" fill="${C.y}" stroke="${C.fg}" stroke-width="1.5"/>`;
+  s += `<text x="${W - mr}" y="${H - 4}" font-size="10" text-anchor="end" fill="${C.muted}">g</text>`;
+  const out = regs()[7][3];
+  s += `<text x="${ml + 8}" y="${mt + 12}" font-size="11" fill="${C.fg}">x_g·σ(1.702·x_g) at g = ${S.g.toFixed(2)}: ${gy.toFixed(4)} · (x_u + 1 = ${(Math.max(-7, Math.min(7, S.u)) + 1).toFixed(2)}) = ${out}</text>`;
+  $('plot').setAttribute('viewBox', `0 0 ${W} ${H}`); $('plot').innerHTML = s;
+  Atlas.legend($('legend'), [['--y', 'gate part x_g·σ(1.702·x_g)'], ['--muted', 'dotted: identity, for comparison'], ['--w', 'dashed: the clamp']]);
+}
+function draw() { const st = stepper.step; $('gv').textContent = S.g.toFixed(2); $('uv').textContent = S.u.toFixed(2); drawRegs(st); drawPlot(st); drawMap(); }
+$('gs').addEventListener('input', () => { S.g = +$('gs').value; draw(); });
+$('us').addEventListener('input', () => { S.u = +$('us').value; draw(); });
+
+// grid-stride map
+const M = { mode: 'decode', b: 3 };
+const mg = Atlas.grid($('map'), 1, 45);
+function geom() {
+  const n = M.mode === 'decode' ? 4 * 2880 : 128 * 4 * 2880;
+  const blocks = Math.min(MAXB, Math.ceil(n / 256)), stride = blocks * 256, laps = Math.ceil(n / stride);
+  return { n, blocks, stride, laps };
+}
+function drawMap() {
+  const G = geom(); if (mg.rows !== G.laps || mg.cols !== G.blocks) mg.resize(G.laps, G.blocks);
+  $('map').style.aspectRatio = `${G.blocks} / ${Math.max(G.laps * 4, 6)}`;
+  const g = mg.prep();
+  for (let lap = 0; lap < G.laps; lap++) for (let b = 0; b < G.blocks; b++) {
+    const first = lap * G.stride + b * 256;
+    if (first >= G.n) { g.hatch(lap, b); continue; }
+    const full = first + 256 <= G.n;
+    g.cell(lap, b, b === M.b ? C.y : C.x, (full ? 0.35 : 0.2) + 0.45 * (lap % 2), 0.15);
+  }
+  g.box(0, M.b, G.laps, 1, C.fg, 1.5);
+  const els = []; for (let lap = 0; lap < G.laps; lap++) { const f = lap * G.stride + M.b * 256; if (f < G.n) els.push(f); }
+  $('mapstatus').innerHTML = `n = ${Atlas.int(G.n)} elements · ${G.blocks} blocks × 256 = stride ${Atlas.int(G.stride)} · ${G.laps} lap${G.laps > 1 ? 's' : ''}` +
+    `<br>block ${M.b}, thread t handles elements ${els.map(f => Atlas.int(f) + '+t').join(', ')}`;
+}
+mg.hook(p => { const G = geom(), f = p.r * G.stride + p.c * 256; $('mapstatus').textContent = f < G.n ? `lap ${p.r}, block ${p.c}: elements ${Atlas.int(f)}–${Atlas.int(Math.min(G.n, f + 256) - 1)}` : `lap ${p.r}, block ${p.c}: past n, loop ends`; }, p => { M.b = p.c; drawMap(); }, () => drawMap());
+$('mode').addEventListener('change', () => { M.mode = $('mode').value; M.b = Math.min(M.b, geom().blocks - 1); drawMap(); });
+
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1300 });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>gemm_q8 Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+/* Layout: a technical-manual page. The GEMM triad (Xs × Ws → Y) is the centerpiece,
+   with the 256-thread block beside it and the source underneath; one stepper drives all. */
+:root {
+  --bg: #f1f3f6;
+  --panel: #ffffff;
+  --fg: #17202b;
+  --muted: #5a6575;
+  --line: #d4dae2;
+  --zero: #c9ced6;
+  --w: #b26d0c;      /* weights / Ws */
+  --x: #0f7d76;      /* activations / Xs */
+  --y: #b0365f;      /* accumulators / Y */
+  --sync: #4a54b5;   /* barriers */
+  --hl: #fff3c4;     /* highlighted code line */
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e131a; --panel: #151c25; --fg: #e3e8ef; --muted: #93a0b1; --line: #29333f;
+    --zero: #3a4452; --w: #e6a23c; --x: #39bfb1; --y: #f06b98; --sync: #8e97f2; --hl: #3a3420;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e131a; --panel: #151c25; --fg: #e3e8ef; --muted: #93a0b1; --line: #29333f;
+  --zero: #3a4452; --w: #e6a23c; --x: #39bfb1; --y: #f06b98; --sync: #8e97f2; --hl: #3a3420;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+}
+.wrap { max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(30px, 5vw, 44px); letter-spacing: -0.01em; }
+h1 code { font-family: var(--font-mono); font-weight: 500; font-size: 0.9em; }
+h2 { font-size: 24px; }
+h3 { font-size: 16px; letter-spacing: 0.02em; }
+p { margin: 0; max-width: 70ch; }
+code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+header { display: flex; flex-direction: column; gap: 14px; }
+.formula { font-family: var(--font-mono); font-size: 15px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; white-space: nowrap; }
+.formula .w { color: var(--w); } .formula .x { color: var(--x); } .formula .y { color: var(--y); }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; }
+.fact { display: flex; flex-direction: column; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); min-width: 0; }
+.fact b { font-family: var(--font-mono); font-weight: 500; font-size: 14px; font-variant-numeric: tabular-nums; }
+.fact span { font-size: 12px; color: var(--muted); }
+section { display: flex; flex-direction: column; gap: 14px; }
+.sechead { display: flex; flex-direction: column; gap: 6px; }
+
+/* overview */
+.overview { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.overview svg { display: block; min-width: 680px; width: 100%; height: auto; }
+.overview text { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+.tile { cursor: pointer; }
+.tile:focus-visible { outline: none; }
+.tile:focus-visible rect.frame { stroke: var(--sync); stroke-width: 2.5; }
+
+/* stepper */
+.stepper {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--bg); padding-block: 10px; border-bottom: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.btns { display: flex; gap: 6px; }
+button { font: inherit; font-size: 14px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 11px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--sync); outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--font-mono); font-size: 12.5px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px; }
+.chip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.kctl { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.kctl input { width: 160px; accent-color: var(--sync); }
+
+/* block view */
+.block { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.triad { display: grid; grid-template-columns: 68fr 64fr; gap: 10px 12px; }
+.triad .cv { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cvlabel { font-family: var(--font-mono); font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+.cvlabel b { font-weight: 500; }
+.cvlabel .w { color: var(--w); } .cvlabel .x { color: var(--x); } .cvlabel .y { color: var(--y); }
+canvas { display: block; width: 100%; cursor: crosshair; border-radius: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+.status { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); min-height: 2.6em; }
+.caption { border-left: 3px solid var(--sync); padding: 4px 0 4px 12px; display: flex; flex-direction: column; gap: 6px; }
+.caption h3 { font-family: var(--font-mono); font-weight: 500; font-size: 14px; }
+
+.bits { display: grid; grid-template-columns: 7.5em repeat(8, minmax(0, 1fr)); gap: 3px; font-family: var(--font-mono); font-size: 12px; align-items: center; }
+.bits .b { text-align: center; padding: 3px 0; border-radius: 3px; background: var(--bg); }
+.bits .hd { text-align: center; color: var(--muted); font-size: 11px; }
+.bits .role { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bits .seg { text-align: center; border-radius: 3px; padding: 3px 0; font-size: 11.5px; color: var(--panel); }
+.bits .row.dim { opacity: 0.35; }
+.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 12px; font-size: 13px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-family: var(--font-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.acc td, .acc th { font-family: var(--font-mono); font-size: 12px; padding: 2px 8px; text-align: right; border-bottom: 1px solid var(--line); }
+.acc th { color: var(--muted); font-weight: 400; }
+.tablewrap { overflow-x: auto; }
+
+/* code */
+.codehead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tabs { display: flex; gap: 4px; }
+pre.code { margin: 0; overflow-x: auto; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; background: var(--bg); border-radius: 6px; padding: 8px 0; }
+pre.code .ln { display: block; padding: 0 14px 0 10px; border-left: 3px solid transparent; white-space: pre; }
+pre.code .ln.on { background: var(--hl); border-left-color: var(--sync); }
+pre.code .c { color: var(--muted); font-style: italic; }
+pre.code .k { color: var(--sync); }
+pre.code .n { color: var(--y); }
+
+/* numbers */
+.cost { width: 100%; font-size: 13.5px; }
+.cost th, .cost td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.cost th { font-weight: 500; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.cost td.num { font-family: var(--font-mono); text-align: right; white-space: nowrap; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+.ok { color: var(--x); font-weight: 600; }
+footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; }
+
+@media (max-width: 1000px) {
+  .block, .two { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 620px) {
+  .triad { grid-template-columns: minmax(0, 1fr); }
+  .triad .spacer { display: none; }
+  .kctl input { width: 110px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">gpt-oss + Gemma 3 · identical in gptoss.ptx and gemma3.ptx · prefill kernel</div>
+    <h1>Inside <code>gemm_q8</code></h1>
+    <p>This kernel multiplies a batch of token activations by an 8-bit quantized weight matrix. The prompt-processing path calls it for every attention projection. Pick a block, pick a thread, and step through one launch to see exactly which bytes each of the 256 threads moves and multiplies.</p>
+    <div class="formula">
+      <span class="y">Y</span>[t][r] = Σ<sub>c</sub> <span class="w">W</span>[r][c] · <span class="x">X</span>[t][c] + bias[r] + resid[t][r]
+      &nbsp;&nbsp;<span class="muted">// W: int8 with one f16 scale per 32 columns · X, Y: f32</span>
+    </div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-grid">
+    <div class="sechead">
+      <h2 id="s-grid">The grid: one block per 64 × 32 output tile</h2>
+      <p>The output <code>Y</code> has one row per token and one column per weight row. The launch cuts it into tiles of 64 weight rows × 32 tokens, and each block computes one tile. The example problem has 2880 × 2880 weights and 77 tokens, the same shape as the GPU test that compared this kernel against its CUDA C++ rewrite. Select a tile to look inside it. The bottom row of tiles is only partly filled because 77 is not a multiple of 32.</p>
+    </div>
+    <div class="overview"><svg id="overview" role="group" aria-label="Output tiles; select one"></svg></div>
+  </section>
+
+  <section aria-labelledby="s-block">
+    <div class="sechead">
+      <h2 id="s-block">Inside one block</h2>
+      <p>The block walks along the shared dimension 64 columns at a time. In each <em>k-step</em>, the threads copy a 64 × 64 slice of weights and a 32 × 64 slice of activations into shared memory, wait for each other, multiply, and wait again. After the last step they add bias and residual and write the tile. The three panels are laid out as a matrix product: <span style="color:var(--x)">Xs</span> (left) × <span style="color:var(--w)">Ws</span> (top) accumulates into the <span style="color:var(--y)">Y</span> tile.</p>
+    </div>
+
+    <div class="stepper" role="toolbar" aria-label="Step through the kernel">
+      <div class="btns">
+        <button id="b-prev" aria-label="Previous step">◀</button>
+        <button id="b-play" aria-pressed="false">Play</button>
+        <button id="b-next" aria-label="Next step">▶</button>
+      </div>
+      <div class="chips" id="chips"></div>
+      <label class="kctl" for="kslider">k-step <input id="kslider" type="range" min="0" value="0" step="1"> <span id="klabel"></span></label>
+    </div>
+
+    <div class="block">
+      <div class="panel">
+        <div class="triad">
+          <div class="spacer"></div>
+          <div class="cv">
+            <div class="cvlabel"><b class="w">Ws [64 k][64 rows]</b><span>shared · f32 · 16 KB</span></div>
+            <canvas id="cv-ws" aria-label="Shared weight tile Ws"></canvas>
+          </div>
+          <div class="cv">
+            <div class="cvlabel"><b class="x">Xs [32 tokens][68]</b><span>shared · f32 · 8.5 KB</span></div>
+            <canvas id="cv-xs" aria-label="Shared activation tile Xs"></canvas>
+          </div>
+          <div class="cv">
+            <div class="cvlabel"><b class="y">Y tile [32 tokens][64 rows]</b><span>registers → global</span></div>
+            <canvas id="cv-y" aria-label="Output tile"></canvas>
+          </div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over a cell to see which thread writes or reads it. Click to select that thread.</div>
+        <div class="caption" id="caption"></div>
+      </div>
+
+      <div class="panel">
+        <div class="cvlabel"><b>256 threads = 8 warps</b><span id="thlabel"></span></div>
+        <canvas id="cv-th" aria-label="Threads of the block, 16 by 16"></canvas>
+        <div class="bits" id="bits" aria-label="How the thread index splits into roles"></div>
+        <dl class="kv" id="tcard"></dl>
+        <div class="tablewrap"><table class="acc" id="acc"></table></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="codehead">
+        <h3>The code for the current phase</h3>
+        <div class="tabs" role="tablist">
+          <button role="tab" id="t-cpp" aria-pressed="true">CUDA C++ (condensed)</button>
+          <button role="tab" id="t-ptx" aria-pressed="false">Hand-written PTX (excerpt)</button>
+        </div>
+      </div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-cost">
+    <div class="sechead">
+      <h2 id="s-cost">What it costs</h2>
+      <p>Measured on the RTX 4070 SUPER with the example problem (2880 rows, 2880 columns, 77 tokens). Occupancy figures are calculated from the resource counts ptxas reports, not measured.</p>
+    </div>
+    <div class="two">
+      <div class="panel tablewrap"><table class="cost" id="cost"></table></div>
+      <div class="panel">
+        <h3>Check this block in the page</h3>
+        <p class="muted">The panels above are driven by a JavaScript re-run of the kernel on generated data: int8 weights, f16 scales and f32 math in the kernel's exact order. This button runs all 256 threads of the selected block and compares them with a float64 reference.</p>
+        <div><button id="b-check">Run all 256 threads</button></div>
+        <div class="status" id="checkout"></div>
+        <p class="muted">On the GPU, the CUDA C++ version and the hand-written PTX produced bit-identical results on all 231,000 outputs of the example problem.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">
+    Sources: <code>gptoss/gptoss.ptx</code> (kernel <code>gemm_q8</code>, helper <code>st4_s8</code>), the launch in <code>gptoss/gptoss.c</code>, and the CUDA C++ rewrite <code>gemm_q8.cu</code> with its comparison test. The timings are 200-launch averages from that test.
+  </footer>
+</div>
+
+<script>
+(() => {
+'use strict';
+Atlas.chrome('gemm_q8');
+// ---------- problem and launch ----------
+const P = { rows: 2880, cols: 2880, T: 77, ldy: 3000 };
+const BX = P.rows / 64, BY = Math.ceil(P.T / 32), NSTEP = P.cols / 64;
+const PH = ['loadW', 'loadX', 'sync1', 'fma', 'sync2'];
+const PHASES = [
+  { id: 'loadW', label: 'load W', color: '--w', tag: 'W' },
+  { id: 'loadX', label: 'load X', color: '--x', tag: 'X' },
+  { id: 'sync1', label: 'sync', color: '--sync', tag: '1' },
+  { id: 'fma', label: 'FMA', color: '--y', tag: 'F' },
+  { id: 'sync2', label: 'sync', color: '--sync', tag: '2' },
+  { id: 'epilogue', label: 'epilogue', color: '--y', tag: 'E' },
+];
+const S = { bx: 7, by: 0, step: 0, phase: 'loadW', kin: 0, tid: 37, hover: null, playing: false, lang: 'cpp' };
+const $ = id => document.getElementById(id);
+const fr = Math.fround;
+const fmt = (v, d = 4) => (v === null || v === undefined) ? '–' : (Math.abs(v) >= 1e4 ? v.toExponential(3) : v.toFixed(d));
+const map = t => ({ lr: t & 63, q: t >> 6, tl: t >> 3, kk: (t & 7) * 8, tr: t & 15, tt: t >> 4, warp: t >> 5, lane: t & 31 });
+
+// ---------- generated data, deterministic per block ----------
+function h32(a) { a |= 0; a = Math.imul(a ^ (a >>> 16), 0x7feb352d); a = Math.imul(a ^ (a >>> 15), 0x846ca68b); return (a ^ (a >>> 16)) >>> 0; }
+function f16(x) {
+  if (!x) return 0;
+  const a = Math.abs(x); let e = Math.floor(Math.log2(a)); if (e < -14) e = -14;
+  const s = 2 ** (e - 10); return Math.sign(x) * Math.round(a / s) * s;
+}
+const cache = new Map();
+function blockData(bx, by) {
+  const key = bx + ',' + by;
+  if (cache.has(key)) return cache.get(key);
+  const K = P.cols, nb = K / 32, r0 = bx * 64, t0 = by * 32, nValid = Math.min(32, P.T - t0);
+  const Wq = new Int8Array(64 * K), Wd = new Float32Array(64 * K), sc = new Float32Array(64 * nb);
+  for (let r = 0; r < 64; r++) {
+    for (let b = 0; b < nb; b++) sc[r * nb + b] = f16(((h32((r0 + r) * 131 + b * 7 + 99991) % 1000) + 1) / 1e5);
+    for (let c = 0; c < K; c++) {
+      const q = (h32((r0 + r) * K + c + 1) % 255) - 127;
+      Wq[r * K + c] = q; Wd[r * K + c] = fr(q * sc[r * nb + (c >> 5)]);
+    }
+  }
+  const X = new Float32Array(32 * K);
+  for (let t = 0; t < nValid; t++) for (let c = 0; c < K; c++)
+    X[t * K + c] = fr(((h32(0x5bd1e995 ^ ((t0 + t) * K + c)) % 2001) - 1000) / 100);
+  const bias = new Float32Array(64), resid = new Float32Array(32 * 64);
+  for (let r = 0; r < 64; r++) bias[r] = fr(((h32(777 + r0 + r) % 2001) - 1000) / 1000);
+  for (let t = 0; t < nValid; t++) for (let r = 0; r < 64; r++)
+    resid[t * 64 + r] = fr(((h32(31337 + (t0 + t) * P.ldy + r0 + r) % 2001) - 1000) / 10);
+  const d = { r0, t0, nValid, Wq, Wd, sc, X, bias, resid };
+  if (cache.size > 6) cache.delete(cache.keys().next().value);
+  cache.set(key, d);
+  return d;
+}
+// the 8 accumulators of one thread after kTotal columns, in the kernel's order
+function accAt(d, tid, kTotal) {
+  const { tr, tt } = map(tid), K = P.cols;
+  if (d.t0 + 2 * tt >= P.T) return null;
+  const a = [0, 0, 0, 0, 0, 0, 0, 0], x0b = 2 * tt * K, x1b = (2 * tt + 1) * K;
+  for (let k = 0; k < kTotal; k++) {
+    const x0 = d.X[x0b + k], x1 = d.X[x1b + k];
+    for (let i = 0; i < 4; i++) {
+      const w = d.Wd[(4 * tr + i) * K + k];
+      a[2 * i] = fr(w * x0 + a[2 * i]); a[2 * i + 1] = fr(w * x1 + a[2 * i + 1]);
+    }
+  }
+  return a;
+}
+function yOut(d, tid, a, i, j) {
+  const { tr, tt } = map(tid), r = 4 * tr + i, t = 2 * tt + j;
+  return fr(fr(a[2 * i + j] + d.bias[r]) + d.resid[t * 64 + r]);
+}
+function yRef(d, tid, i, j) {
+  const { tr, tt } = map(tid), r = 4 * tr + i, t = 2 * tt + j, K = P.cols;
+  let s = 0; for (let k = 0; k < K; k++) s += d.Wd[r * K + k] * d.X[t * K + k];
+  return s + d.bias[r] + d.resid[t * 64 + r];
+}
+function kDone() {
+  if (S.phase === 'epilogue') return P.cols;
+  if (S.phase === 'fma') return S.step * 64 + S.kin + 4;
+  if (S.phase === 'sync2') return (S.step + 1) * 64;
+  return S.step * 64;
+}
+
+// ---------- colors ----------
+let C = {};
+function readColors() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const k of ['bg', 'panel', 'fg', 'muted', 'line', 'zero', 'w', 'x', 'y', 'sync']) C[k] = cs.getPropertyValue('--' + k).trim();
+}
+
+// ---------- header facts ----------
+$('facts').innerHTML = [
+  [`(${BX}, ${BY})`, 'grid = (rows/64, ⌈T/32⌉)'], ['256', 'threads per block'], ['25,088 B', 'shared memory'],
+  ['57', 'registers / thread'], ['174 µs', 'CUDA C++ version'], ['204 µs', 'hand-written PTX'],
+].map(([b, s]) => `<div class="fact"><b>${b}</b><span>${s}</span></div>`).join('');
+
+// ---------- overview ----------
+function drawOverview() {
+  const svg = $('overview'), tw = 19, th = 26, gx = 2, ox = 58, oy = 24;
+  const W = ox + BX * (tw + gx) + 10, H = oy + BY * (th + gx) + 26;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  let s = `<defs><pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="${C.panel}"/><line x1="0" y1="0" x2="0" y2="4" stroke="${C.zero}" stroke-width="1.5"/></pattern></defs>`;
+  s += `<text x="${ox}" y="14">rows r (output features) 0 … ${P.rows - 1} →  one column of tiles = 64 rows</text>`;
+  for (let by = 0; by < BY; by++) {
+    const t0 = by * 32, nv = Math.min(32, P.T - t0), y = oy + by * (th + gx);
+    s += `<text x="${ox - 8}" y="${y + th / 2 + 4}" text-anchor="end">t ${t0}–${t0 + nv - 1}</text>`;
+    for (let bx = 0; bx < BX; bx++) {
+      const x = ox + bx * (tw + gx), sel = bx === S.bx && by === S.by;
+      const hv = th * nv / 32;
+      s += `<g class="tile" data-bx="${bx}" data-by="${by}" tabindex="0" role="button" aria-label="Block (${bx}, ${by}): rows ${bx * 64}–${bx * 64 + 63}, tokens ${t0}–${t0 + nv - 1}">`;
+      s += `<rect x="${x}" y="${y}" width="${tw}" height="${th}" fill="url(#hatch)"/>`;
+      s += `<rect x="${x}" y="${y}" width="${tw}" height="${hv}" fill="${sel ? C.y : C.line}" opacity="${sel ? 0.9 : 1}"/>`;
+      s += `<rect class="frame" x="${x}" y="${y}" width="${tw}" height="${th}" fill="none" stroke="${sel ? C.fg : 'none'}" stroke-width="2"/></g>`;
+    }
+  }
+  s += `<text x="${ox}" y="${H - 6}">${BX} × ${BY} = ${BX * BY} blocks · hatched = tokens past T = ${P.T} (loaded as zeros, never stored) · selected: block (${S.bx}, ${S.by})</text>`;
+  svg.innerHTML = s;
+}
+$('overview').addEventListener('click', e => { const g = e.target.closest('.tile'); if (g) selectBlock(+g.dataset.bx, +g.dataset.by); });
+$('overview').addEventListener('keydown', e => {
+  const g = e.target.closest('.tile'); if (!g || (e.key !== 'Enter' && e.key !== ' ')) return;
+  e.preventDefault(); selectBlock(+g.dataset.bx, +g.dataset.by);
+  const again = document.querySelector(`.tile[data-bx="${S.bx}"][data-by="${S.by}"]`); if (again) again.focus();
+});
+function selectBlock(bx, by) { S.bx = bx; S.by = by; render(); }
+
+// ---------- canvases ----------
+const CV = {
+  ws: { el: $('cv-ws'), rows: 64, cols: 64 },
+  xs: { el: $('cv-xs'), rows: 32, cols: 68 },
+  y: { el: $('cv-y'), rows: 32, cols: 64 },
+  th: { el: $('cv-th'), rows: 16, cols: 16 },
+};
+for (const c of Object.values(CV)) c.el.style.aspectRatio = `${c.cols} / ${c.rows}`;
+function prep(c) {
+  const w = c.el.clientWidth, h = c.el.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (c.el.width !== Math.round(w * dpr) || c.el.height !== Math.round(h * dpr)) { c.el.width = Math.round(w * dpr); c.el.height = Math.round(h * dpr); }
+  const ctx = c.el.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h); ctx.fillStyle = C.bg; ctx.fillRect(0, 0, w, h);
+  return { ctx, cw: w / c.cols, ch: h / c.rows, w, h };
+}
+function cell(g, r, c, color, alpha = 1, pad = 0.12) {
+  const { ctx, cw, ch } = g, p = Math.min(cw, ch) * pad;
+  ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.fillRect(c * cw + p / 2, r * ch + p / 2, cw - p, ch - p); ctx.globalAlpha = 1;
+}
+function box(g, r, c, nr, nc, color, lw = 2) {
+  const { ctx, cw, ch } = g; ctx.strokeStyle = color; ctx.lineWidth = lw;
+  ctx.strokeRect(c * cw + lw / 2 - 0.5, r * ch + lw / 2 - 0.5, nc * cw - lw + 1, nr * ch - lw + 1);
+}
+function hatchCell(g, r, c) {
+  const { ctx, cw, ch } = g; ctx.save(); ctx.beginPath(); ctx.rect(c * cw, r * ch, cw, ch); ctx.clip();
+  ctx.strokeStyle = C.zero; ctx.lineWidth = 1;
+  for (let o = -ch; o < cw; o += 4) { ctx.beginPath(); ctx.moveTo(c * cw + o, r * ch + ch); ctx.lineTo(c * cw + o + ch, r * ch); ctx.stroke(); }
+  ctx.restore();
+}
+
+function drawWs(d) {
+  const g = prep(CV.ws), K = P.cols, k0 = S.step * 64, m = map(S.tid), ph = S.phase;
+  const empty = ph === 'epilogue';
+  for (let k = 0; k < 64; k++) for (let r = 0; r < 64; r++) {
+    if (empty) { cell(g, k, r, C.zero, 0.35); continue; }
+    const q = Math.abs(d.Wq[r * K + k0 + k]) / 127;
+    let a = 0.18 + 0.7 * q;
+    if (ph === 'fma') a *= (k >= S.kin && k < S.kin + 4) ? 1.25 : (k < S.kin ? 0.35 : 0.7);
+    if (ph === 'sync2') a *= 0.35;
+    cell(g, k, r, C.w, Math.min(1, a));
+  }
+  // scale-block boundary (one f16 scale per 32 k)
+  g.ctx.fillStyle = C.fg; g.ctx.globalAlpha = 0.5; g.ctx.fillRect(0, 32 * g.ch - 0.5, g.w, 1); g.ctx.globalAlpha = 1;
+  if (ph === 'loadW' || ph === 'loadX' || ph === 'sync1') box(g, m.q * 16, m.lr, 16, 1, C.fg, 2);
+  if (ph === 'fma') box(g, S.kin, 4 * m.tr, 4, 4, C.fg, 2);
+  if (S.hover && S.hover.cv === 'ws') box(g, S.hover.r, S.hover.c, 1, 1, C.sync, 1.5);
+}
+function drawXs(d) {
+  const g = prep(CV.xs), K = P.cols, k0 = S.step * 64, m = map(S.tid), ph = S.phase;
+  const loaded = ph !== 'loadW' && ph !== 'epilogue';
+  for (let t = 0; t < 32; t++) for (let k = 0; k < 68; k++) {
+    if (k >= 64) { cell(g, t, k, C.zero, 0.5); continue; }
+    if (!loaded) { cell(g, t, k, C.zero, 0.3); continue; }
+    if (t >= d.nValid) { hatchCell(g, t, k); continue; }
+    let a = 0.18 + 0.7 * Math.min(1, Math.abs(d.X[t * K + k0 + k]) / 10);
+    if (ph === 'fma') a *= (k >= S.kin && k < S.kin + 4) ? 1.25 : (k < S.kin ? 0.35 : 0.7);
+    if (ph === 'sync2') a *= 0.35;
+    cell(g, t, k, C.x, Math.min(1, a));
+  }
+  if (ph === 'loadX' || ph === 'sync1' || ph === 'loadW') box(g, m.tl, m.kk, 1, 8, C.fg, 2);
+  if (ph === 'fma') box(g, 2 * m.tt, S.kin, 2, 4, C.fg, 2);
+  if (S.hover && S.hover.cv === 'xs') box(g, S.hover.r, S.hover.c, 1, 1, C.sync, 1.5);
+}
+function drawY(d) {
+  const g = prep(CV.y), m = map(S.tid), ph = S.phase, frac = kDone() / P.cols;
+  for (let t = 0; t < 32; t++) for (let r = 0; r < 64; r++) {
+    const active = d.t0 + 2 * (t >> 1) < P.T;
+    if (!active) { hatchCell(g, t, r); continue; }
+    if (t >= d.nValid) { cell(g, t, r, C.zero, 0.8); continue; } // computed in registers, never stored
+    cell(g, t, r, C.y, ph === 'epilogue' ? 0.95 : 0.12 + 0.6 * frac);
+  }
+  box(g, 2 * m.tt, 4 * m.tr, 2, 4, C.fg, 2);
+  if (S.hover && S.hover.cv === 'y') box(g, S.hover.r, S.hover.c, 1, 1, C.sync, 1.5);
+}
+function drawThreads(d) {
+  const g = prep(CV.th), ph = S.phase, big = g.cw > 26;
+  for (let tid = 0; tid < 256; tid++) {
+    const m = map(tid), r = tid >> 4, c = tid & 15;
+    let col = C.y, a = 0.75;
+    if (ph === 'loadW') { col = C.w; a = 0.4 + 0.18 * m.q; }
+    else if (ph === 'loadX') { col = d.t0 + m.tl < P.T ? C.x : C.zero; a = 0.45 + 0.07 * (m.kk / 8); }
+    else if (ph === 'sync1' || ph === 'sync2') { col = C.sync; a = 0.55; }
+    else if (d.t0 + 2 * m.tt >= P.T) { col = C.zero; a = 0.7; }
+    cell(g, r, c, col, a, 0.14);
+    if (big) {
+      g.ctx.fillStyle = C.fg; g.ctx.globalAlpha = 0.75; g.ctx.font = `${Math.min(11, g.cw * 0.36)}px "IBM Plex Mono", monospace`;
+      g.ctx.textAlign = 'center'; g.ctx.textBaseline = 'middle'; g.ctx.fillText(String(tid), c * g.cw + g.cw / 2, r * g.ch + g.ch / 2); g.ctx.globalAlpha = 1;
+    }
+  }
+  g.ctx.fillStyle = C.muted;
+  for (let wv = 1; wv < 8; wv++) g.ctx.fillRect(0, wv * 2 * g.ch - 1, g.w, 2);
+  box(g, S.tid >> 4, S.tid & 15, 1, 1, C.fg, 2.5);
+  if (S.hover && S.hover.cv === 'th') box(g, S.hover.r, S.hover.c, 1, 1, C.sync, 1.5);
+}
+
+// ---------- who owns a cell ----------
+function ownerOf(cv, r, c) {
+  const ph = S.phase, m = map(S.tid), d = blockData(S.bx, S.by), k0 = S.step * 64;
+  if (cv === 'th') { const tid = r * 16 + c, n = map(tid); return { tid, text: `thread ${tid} · warp ${n.warp}, lane ${n.lane}` }; }
+  if (cv === 'ws') {
+    if (ph === 'fma') { const tid = m.tt * 16 + (c >> 2); return { tid, text: `Ws[k=${r}][row=${c}] = W[${d.r0 + c}][${k0 + r}] · read by the 16 threads with tr = ${c >> 2} (one per token pair)` }; }
+    const tid = (r >> 4) * 64 + c;
+    return { tid, text: `Ws[k=${r}][row=${c}] = W[${d.r0 + c}][${k0 + r}] (int8 ${d.Wq[c * P.cols + k0 + r]} × scale ${d.sc[c * (P.cols / 32) + ((k0 + r) >> 5)].toPrecision(4)}) · written by thread ${tid} (lr = ${c}, q = ${r >> 4})` };
+  }
+  if (cv === 'xs') {
+    if (c >= 64) return { tid: null, text: `Xs[${r}][${c}] is padding: never written or read. It shifts each token row by 4 banks so the compute reads don't collide.` };
+    if (ph === 'fma') { const tid = (r >> 1) * 16 + m.tr; return { tid, text: `Xs[t=${r}][k=${c}] = X[${d.t0 + r}][${k0 + c}] · read by the 16 threads with tt = ${r >> 1}` }; }
+    const tid = r * 8 + (c >> 3);
+    return { tid, text: `Xs[t=${r}][k=${c}] = ${r < d.nValid ? `X[${d.t0 + r}][${k0 + c}]` : '0 (token ≥ T)'} · written by thread ${tid} (tl = ${r}, kk = ${(c >> 3) * 8})` };
+  }
+  const tid = (r >> 1) * 16 + (c >> 2), act = d.t0 + 2 * (r >> 1) < P.T;
+  const where = r < d.nValid ? `Y[${d.t0 + r}][${d.r0 + c}]` : `token ${d.t0 + r} ≥ T, not stored`;
+  return { tid, text: `${where} · accumulated by thread ${tid} (tr = ${c >> 2}, tt = ${r >> 1})${act ? '' : ' (idle: both its tokens are past T)'}` };
+}
+function hookCanvas(name) {
+  const c = CV[name];
+  const pos = e => { const b = c.el.getBoundingClientRect(); return { r: Math.min(c.rows - 1, Math.floor((e.clientY - b.top) / b.height * c.rows)), c: Math.min(c.cols - 1, Math.floor((e.clientX - b.left) / b.width * c.cols)) }; };
+  c.el.addEventListener('mousemove', e => { const p = pos(e); if (S.hover && S.hover.cv === name && S.hover.r === p.r && S.hover.c === p.c) return; S.hover = { cv: name, ...p }; $('status').textContent = ownerOf(name, p.r, p.c).text; drawAll(); });
+  c.el.addEventListener('mouseleave', () => { S.hover = null; drawAll(); });
+  c.el.addEventListener('click', e => { const p = pos(e), o = ownerOf(name, p.r, p.c); $('status').textContent = o.text; if (o.tid !== null) { S.tid = o.tid; render(); } });
+}
+['ws', 'xs', 'y', 'th'].forEach(hookCanvas);
+
+// ---------- thread card ----------
+function drawBits() {
+  const m = map(S.tid), bits = [...Array(8)].map((_, i) => (S.tid >> (7 - i)) & 1);
+  const ph = S.phase, on = { compute: ph === 'fma' || ph === 'epilogue', w: ph === 'loadW', x: ph === 'loadX' };
+  const seg = (label, from, to, color, val) => `<div class="seg" style="grid-column: span ${to - from + 1}; background: var(${color})">${label} = ${val}</div>`;
+  let h = `<div class="role">tid = ${S.tid}</div>` + bits.map((b, i) => `<div class="b">${b}</div>`).join('');
+  h += `<div class="role"></div>` + bits.map((_, i) => `<div class="hd">bit ${7 - i}</div>`).join('');
+  h += `<div class="role row ${on.w ? '' : 'dim'}">load W</div><div class="row ${on.w ? '' : 'dim'}" style="display:contents">${seg('q', 6, 7, '--w', m.q)}${seg('lr', 0, 5, '--w', m.lr)}</div>`;
+  h += `<div class="role row ${on.x ? '' : 'dim'}">load X</div><div class="row ${on.x ? '' : 'dim'}" style="display:contents">${seg('tl', 3, 7, '--x', m.tl)}${seg('kk/8', 0, 2, '--x', m.kk / 8)}</div>`;
+  h += `<div class="role row ${on.compute ? '' : 'dim'}">compute</div><div class="row ${on.compute ? '' : 'dim'}" style="display:contents">${seg('tt', 4, 7, '--y', m.tt)}${seg('tr', 0, 3, '--y', m.tr)}</div>`;
+  $('bits').innerHTML = h;
+  // the dim class must reach the segments themselves (display:contents wrappers don't take opacity)
+  $('bits').querySelectorAll('.row.dim').forEach(el => { el.style.opacity = 0.35; for (const ch of el.children) ch.style.opacity = 0.35; });
+}
+function drawCard(d) {
+  const m = map(S.tid), k0 = S.step * 64, K = P.cols;
+  const tok = d.t0 + m.tl, t0p = d.t0 + 2 * m.tt, active = t0p < P.T;
+  $('thlabel').textContent = `thread ${S.tid} · warp ${m.warp}, lane ${m.lane}`;
+  $('tcard').innerHTML = [
+    ['loads W', `row ${d.r0 + m.lr}, columns ${k0 + 16 * m.q}–${k0 + 16 * m.q + 15} (one 16-byte load) + f16 scale #${(k0 >> 5) + (m.q >> 1)}`],
+    ['loads X', tok < P.T ? `token ${tok}, columns ${k0 + m.kk}–${k0 + m.kk + 7} (two float4 loads)` : `nothing: token ${tok} ≥ T, so it stores 8 zeros`],
+    ['computes', active ? `rows ${d.r0 + 4 * m.tr}–${d.r0 + 4 * m.tr + 3} × tokens ${t0p}${t0p + 1 < P.T ? `, ${t0p + 1}` : ` (token ${t0p + 1} ≥ T: computed, not stored)`}` : `nothing: tokens ${t0p}, ${t0p + 1} ≥ T, so it skips every FMA loop`],
+  ].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  const kd = kDone(), a = accAt(d, S.tid, kd);
+  if (!a) { $('acc').innerHTML = `<caption class="muted" style="text-align:left;font-size:12px">This thread's 8 accumulators stay 0.</caption>`; return; }
+  if (S.phase === 'epilogue') {
+    let h = `<caption class="muted" style="text-align:left;font-size:12px;padding-bottom:4px">Stored Y = acc + bias + resid (this page's float32 run vs a float64 reference)</caption><tr><th>row</th><th>token</th><th>Y</th><th>reference</th><th>rel. err</th></tr>`;
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) {
+      const t = 2 * m.tt + j; if (t >= d.nValid) continue;
+      const y = yOut(d, S.tid, a, i, j), ref = yRef(d, S.tid, i, j);
+      h += `<tr><td>${d.r0 + 4 * m.tr + i}</td><td>${d.t0 + t}</td><td>${fmt(y)}</td><td>${fmt(ref)}</td><td>${(Math.abs(y - ref) / Math.max(1e-6, Math.abs(ref))).toExponential(1)}</td></tr>`;
+    }
+    $('acc').innerHTML = h; return;
+  }
+  let h = `<caption class="muted" style="text-align:left;font-size:12px;padding-bottom:4px">acc[4][2] in registers after ${kd} of ${K} columns</caption><tr><th></th><th>token ${t0p}</th><th>token ${t0p + 1}</th></tr>`;
+  for (let i = 0; i < 4; i++) h += `<tr><th>row ${d.r0 + 4 * m.tr + i}</th><td>${fmt(a[2 * i])}</td><td>${fmt(a[2 * i + 1])}</td></tr>`;
+  $('acc').innerHTML = h;
+}
+
+// ---------- captions, legend ----------
+function caption(d) {
+  const k0 = S.step * 64, m = map(S.tid);
+  const txt = {
+    loadW: ['load W → Ws', `Every thread does one 16-byte load: 16 int8 weights of row ${d.r0}+lr, columns ${k0}+16q … +15. It also reads that row's f16 scale, multiplies each byte by it and writes a 16-long column of Ws. Ws is stored transposed, [k][row], for two reasons. Lanes 0–31 of a warp hold consecutive rows, so their writes land in consecutive words with no bank conflicts. And in the FMA phase a thread can read its 4 adjacent rows as one float4. The line across Ws marks where the second f16 scale block starts.`],
+    loadX: ['load X → Xs', `Every thread copies 8 floats (two float4 loads) of token ${d.t0}+tl, columns ${k0}+kk … +7. Threads whose token is past T = ${P.T} store zeros, so the FMA loop needs no bounds checks. Each row is padded to 68 floats. In the FMA phase one warp reads 4 token rows at the same k. With rows 64 floats apart, those reads would all hit the same bank; at 68 apart they spread over banks 0, 4, 8 and 12.`],
+    sync1: ['__syncthreads()', `This barrier waits for all 256 threads. Every thread is about to read Ws and Xs entries that 15 other threads wrote, so nobody may start until every load and store is done.`],
+    fma: ['FMA: 8 accumulators per thread', `Thread ${S.tid} owns a 4-row × 2-token patch of the tile. For each k it reads one float4 from Ws (its 4 rows) and one float from each of its two Xs rows, then does 8 fused multiply-adds. The loop handles 4 k per pass (shown: k = ${S.kin}–${S.kin + 3}), which is 32 FMAs per pass and 512 per thread per k-step. All 16 threads that share tr read the same Ws float4, and all 16 that share tt read the same Xs value, so shared memory broadcasts them.`],
+    sync2: ['__syncthreads()', `This second barrier keeps fast warps from overwriting Ws and Xs with the next k-step's data while slower warps are still multiplying.${S.step === NSTEP - 1 ? ' This was the last k-step; the epilogue comes next.' : ` Next comes k-step ${S.step + 1} of ${NSTEP}.`}`],
+    epilogue: ['epilogue: + bias + resid → Y', `After all ${NSTEP} k-steps each thread loads bias for its 4 rows (one float4). For each of its 2 tokens it adds bias and resid[t] and stores one float4. Y may be the same buffer as resid, which is how the attention output adds itself to the residual stream in place. Each element is read and then written by the same thread, so that is safe. Tokens past T are never stored.`],
+  }[S.phase];
+  $('caption').innerHTML = `<h3>${txt[0]}</h3><p>${txt[1]}</p>`;
+}
+function legend() {
+  const L = {
+    loadW: [['--w', 'dequantized weight (darker = larger |int8|)'], ['--fg', 'outlined: written by the selected thread']],
+    loadX: [['--x', 'activation (darker = larger |x|)'], ['--zero', 'hatched: token ≥ T, stored as 0; grey columns: padding']],
+    sync1: [['--sync', 'all threads wait at the barrier']],
+    fma: [['--w', 'Ws / Xs rows being read this pass are darkest'], ['--y', 'tile shading = fraction of k accumulated'], ['--fg', 'outlined: the selected thread\'s reads and its 4 × 2 patch']],
+    sync2: [['--sync', 'all threads wait before the next k-step overwrites Ws and Xs']],
+    epilogue: [['--y', 'stored to Y'], ['--zero', 'solid grey: computed but not stored (token ≥ T); hatched: idle thread']],
+  }[S.phase];
+  $('legend').innerHTML = L.map(([c, t]) => `<span><i class="sw" style="background: var(${c})"></i>${t}</span>`).join('');
+}
+
+// ---------- code listings ----------
+const CPP = `A|extern "C" __global__ void __launch_bounds__(256)
+A|gemm_q8(const int8_t *W, const __half *D, const float *X, const float *bias,
+A|        const float *resid, float *Y, unsigned rows, unsigned cols, unsigned T, unsigned ldy)
+A|{
+A|    __shared__ float Ws[64][64];                     // [k][row], dequantized
+A|    __shared__ float Xs[32][68];                     // [token][k], +4 pad
+ |
+A|    unsigned tid = threadIdx.x;
+A|    unsigned r0 = blockIdx.x * 64, t0 = blockIdx.y * 32;
+W|    unsigned lr = tid & 63, q  = tid >> 6;           // weight load: row, k quarter
+X|    unsigned tl = tid >> 3, kk = (tid & 7) * 8;      // activation load: token, k offset
+F|    unsigned tr = tid & 15, tt = tid >> 4;           // compute: rows 4*tr.., tokens 2*tt..
+F|    float acc[4][2] = {};
+ |
+ |    for (unsigned k0 = 0; k0 < cols; k0 += 64) {
+W|        uint4 w4 = __ldg((const uint4 *)(W + (r0 + lr) * cols + k0 + q * 16));
+W|        float s = __half2float(D[(r0 + lr) * (cols / 32) + k0 / 32 + q / 2]);
+W|        st4_s8(w4.x, s, Ws, q * 16 + 0,  lr);           // Ws[k..k+3][lr] = int8 * s
+W|        st4_s8(w4.y, s, Ws, q * 16 + 4,  lr);
+W|        st4_s8(w4.z, s, Ws, q * 16 + 8,  lr);
+W|        st4_s8(w4.w, s, Ws, q * 16 + 12, lr);
+X|        float4 xa = {0}, xb = {0};                      // zeros past T
+X|        if (t0 + tl < T) {
+X|            xa = *(const float4 *)(X + (t0 + tl) * cols + k0 + kk);
+X|            xb = *(const float4 *)(X + (t0 + tl) * cols + k0 + kk + 4);
+X|        }
+X|        *(float4 *)&Xs[tl][kk] = xa;  *(float4 *)&Xs[tl][kk + 4] = xb;
+1|        __syncthreads();
+F|        if (t0 + 2 * tt < T)
+F|            for (int k = 0; k < 64; k++) {              // unrolled 4x
+F|                float4 w = *(const float4 *)&Ws[k][4 * tr];
+F|                float x0 = Xs[2 * tt][k], x1 = Xs[2 * tt + 1][k];
+F|                acc[0][0] = fmaf(w.x, x0, acc[0][0]);  acc[0][1] = fmaf(w.x, x1, acc[0][1]);
+F|                acc[1][0] = fmaf(w.y, x0, acc[1][0]);  acc[1][1] = fmaf(w.y, x1, acc[1][1]);
+F|                acc[2][0] = fmaf(w.z, x0, acc[2][0]);  acc[2][1] = fmaf(w.z, x1, acc[2][1]);
+F|                acc[3][0] = fmaf(w.w, x0, acc[3][0]);  acc[3][1] = fmaf(w.w, x1, acc[3][1]);
+F|            }
+2|        __syncthreads();
+ |    }
+E|    float4 b = bias ? *(const float4 *)(bias + r0 + 4 * tr) : float4{0};
+E|    for (int j = 0; j < 2; j++) {
+E|        unsigned t = t0 + 2 * tt + j;
+E|        if (t >= T) return;
+E|        float4 y = {acc[0][j] + b.x, acc[1][j] + b.y, acc[2][j] + b.z, acc[3][j] + b.w};
+E|        if (resid) y += *(const float4 *)(resid + t * ldy + r0 + 4 * tr);
+E|        *(float4 *)(Y + t * ldy + r0 + 4 * tr) = y;
+E|    }
+A|}`;
+const PTX = `A|    mov.u32             %r5, %tid.x;
+W|    and.b32             %r10, %r5, 63;          // lr (weight row loaded)
+W|    shr.u32             %r11, %r5, 6;           // q  (16-byte quarter of 64 k)
+X|    shr.u32             %r12, %r5, 3;           // tl (token loaded)
+X|    and.b32             %r13, %r5, 7;
+X|    shl.b32             %r13, %r13, 3;          // kk
+F|    and.b32             %r8, %r5, 15;           // tr
+F|    shr.u32             %r9, %r5, 4;            // tt
+ |    ...
+ |KSTEP:
+ |    setp.ge.u32         %p2, %r26, %r2;
+ |    @%p2 bra            EPILOGUE;
+W|    ld.global.nc.v4.u32 {%r27, %r28, %r29, %r30}, [%rd12];   // 16 int8
+W|    ld.global.nc.b16    %h1, [%rd13];                         // f16 scale
+W|    cvt.f32.f16         %f9, %h1;
+W|    call.uni st4_s8, (%r27, %f9, %r21);       // bfe.s32 x4, cvt, mul, st.shared x4
+W|    add.u32             %r32, %r21, 1024;
+W|    call.uni st4_s8, (%r28, %f9, %r32);
+W|    ...                                       // two more st4_s8
+X|    @!%p1 bra           XSTORE;               // token >= T: keep the zeros
+X|    ld.global.v4.f32    {%f10, %f11, %f12, %f13}, [%rd14];
+X|    ld.global.v4.f32    {%f14, %f15, %f16, %f17}, [%rd14+16];
+X|XSTORE:
+X|    st.shared.v4.f32    [%r23], {%f10, %f11, %f12, %f13};
+X|    st.shared.v4.f32    [%r23+16], {%f14, %f15, %f16, %f17};
+1|    bar.sync            0;
+F|    @!%p7 bra           SKIP_FMA;             // both tokens >= T
+F|Q8_K4:
+F|    ld.shared.v4.f32    {%w0, %w1, %w2, %w3}, [%kw];          // Ws[k][4tr..]
+F|    ld.shared.v4.f32    {%w4, %w5, %w6, %w7}, [%kw+256];      // Ws[k+1]
+F|    ld.shared.v4.f32    {%w8, %w9, %w10, %w11}, [%kw+512];    // Ws[k+2]
+F|    ld.shared.v4.f32    {%w12, %w13, %w14, %w15}, [%kw+768];  // Ws[k+3]
+F|    ld.shared.v4.f32    {%x0, %x1, %x2, %x3}, [%kx];          // Xs[2tt][k..k+3]
+F|    ld.shared.v4.f32    {%x4, %x5, %x6, %x7}, [%kx+272];      // Xs[2tt+1][k..k+3]
+F|    fma.rn.f32          %f1, %w0, %x0, %f1;
+F|    fma.rn.f32          %f2, %w0, %x4, %f2;
+F|    fma.rn.f32          %f3, %w1, %x0, %f3;
+F|    ...                                       // 29 more fma.rn.f32
+F|    add.u32             %kw, %kw, 1024;
+F|    add.u32             %kx, %kx, 16;
+F|    setp.lt.u32         %pk, %kx, %ke;
+F|    @%pk bra            Q8_K4;
+2|SKIP_FMA:
+2|    bar.sync            0;
+ |    add.u32             %r26, %r26, 64;
+ |    bra.uni             KSTEP;
+E|EPILOGUE:
+E|    ld.global.v4.f32    {%f20, %f21, %f22, %f23}, [%rd15];   // bias
+E|    add.f32             %f24, %f1, %f20;      // acc[0][0] + bias
+E|    ...
+E|    ld.global.v4.f32    {%f28, %f29, %f30, %f31}, [%rd17];   // resid
+E|    add.f32             %f24, %f24, %f28;
+E|    ...
+E|    st.global.v4.f32    [%rd18], {%f24, %f25, %f26, %f27};`;
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function highlight(src, lang) {
+  let code = esc(src), comment = '';
+  const ci = code.indexOf('//'); if (ci >= 0) { comment = code.slice(ci); code = code.slice(0, ci); }
+  const kw = lang === 'cpp'
+    ? /\b(extern|__global__|__launch_bounds__|__shared__|const|unsigned|float|float4|uint4|int|int8_t|void|for|if|return|__syncthreads|__ldg|__half2float|fmaf)\b/g
+    : /\b(ld\.[\w.]+|st\.[\w.]+|fma\.rn\.f32|bar\.sync|bra(\.uni)?|call\.uni|setp\.[\w.]+|add\.[\w.]+|and\.b32|shr\.u32|shl\.b32|mov\.u32|cvt\.[\w.]+)\b/g;
+  code = code.replace(kw, '<span class="k">$&</span>');
+  return code + (comment ? `<span class="c">${comment}</span>` : '');
+}
+function drawCode() {
+  const tag = PHASES.find(p => p.id === S.phase).tag, src = S.lang === 'cpp' ? CPP : PTX;
+  $('code').innerHTML = src.split('\n').map(l => {
+    const i = l.indexOf('|'), t = l.slice(0, i).trim(), body = l.slice(i + 1);
+    return `<span class="ln${t === tag ? ' on' : ''}">${highlight(body, S.lang) || ' '}</span>`;
+  }).join('');
+}
+$('t-cpp').addEventListener('click', () => { S.lang = 'cpp'; $('t-cpp').setAttribute('aria-pressed', 'true'); $('t-ptx').setAttribute('aria-pressed', 'false'); drawCode(); });
+$('t-ptx').addEventListener('click', () => { S.lang = 'ptx'; $('t-ptx').setAttribute('aria-pressed', 'true'); $('t-cpp').setAttribute('aria-pressed', 'false'); drawCode(); });
+
+// ---------- stepper ----------
+$('chips').innerHTML = PHASES.map(p => `<button class="chip" data-ph="${p.id}" aria-pressed="false"><i style="background: var(${p.color})"></i>${p.label}</button>`).join('');
+$('chips').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  stop(); S.phase = b.dataset.ph; S.kin = 0; render();
+});
+const slider = $('kslider'); slider.max = NSTEP - 1;
+slider.addEventListener('input', () => { stop(); S.step = +slider.value; if (S.phase === 'epilogue') S.phase = 'loadW'; render(); });
+function next() {
+  if (S.phase === 'epilogue') return false;
+  if (S.phase === 'fma') { if (S.kin < 60) { S.kin += 4; return true; } S.phase = 'sync2'; return true; }
+  if (S.phase === 'sync2') { if (S.step < NSTEP - 1) { S.step++; S.phase = 'loadW'; } else S.phase = 'epilogue'; return true; }
+  S.phase = PH[PH.indexOf(S.phase) + 1]; S.kin = 0; return true;
+}
+function prev() {
+  if (S.phase === 'epilogue') { S.phase = 'sync2'; S.step = NSTEP - 1; return true; }
+  if (S.phase === 'fma') { if (S.kin > 0) S.kin -= 4; else S.phase = 'sync1'; return true; }
+  if (S.phase === 'loadW') { if (S.step === 0) return false; S.step--; S.phase = 'sync2'; return true; }
+  if (S.phase === 'sync2') { S.phase = 'fma'; S.kin = 60; return true; }
+  S.phase = PH[PH.indexOf(S.phase) - 1]; return true;
+}
+let timer = null;
+function stop() { S.playing = false; clearTimeout(timer); $('b-play').textContent = 'Play'; $('b-play').setAttribute('aria-pressed', 'false'); }
+function tick() {
+  if (!S.playing) return;
+  if (!next()) { stop(); return; }
+  render();
+  if (S.phase === 'epilogue') { stop(); return; }
+  timer = setTimeout(tick, S.phase === 'fma' ? 110 : 650);
+}
+$('b-play').addEventListener('click', () => {
+  if (S.playing) { stop(); return; }
+  if (S.phase === 'epilogue') { S.step = 0; S.phase = 'loadW'; S.kin = 0; render(); }
+  S.playing = true; $('b-play').textContent = 'Pause'; $('b-play').setAttribute('aria-pressed', 'true'); timer = setTimeout(tick, 400);
+});
+$('b-next').addEventListener('click', () => { stop(); if (next()) render(); });
+$('b-prev').addEventListener('click', () => { stop(); if (prev()) render(); });
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, .tile')) return;
+  if (e.key === 'ArrowRight') { stop(); if (next()) render(); }
+  if (e.key === 'ArrowLeft') { stop(); if (prev()) render(); }
+});
+
+// ---------- cost table ----------
+(function cost() {
+  const blocks = BX * BY, useful = P.rows * P.cols * P.T, issued = blocks * NSTEP * 64 * 32 * 64;
+  const wBytes = P.rows * P.cols + P.rows * P.cols / 32 * 2;
+  const rows = [
+    ['Per block, per k-step', ''],
+    ['Weights read', '4,096 B int8 + 256 B scales'],
+    ['Activations read', '8,192 B (32 tokens × 64 × 4 B)'],
+    ['FMAs', '131,072 (512 per thread)'],
+    ['Whole launch', ''],
+    ['Blocks × k-steps', `${blocks} × ${NSTEP}`],
+    ['Useful FMAs (rows × cols × T)', (useful / 1e6).toFixed(1) + ' M'],
+    ['FMAs issued (padding tokens are loaded as zeros; whole idle threads are skipped)', '≤ ' + (issued / 1e6).toFixed(1) + ' M'],
+    ['Weight matrix, read once per token row of tiles', `${(wBytes / 1048576).toFixed(2)} MiB × ${BY}`],
+    ['Time, CUDA C++ / hand PTX', '174 µs / 204 µs'],
+    ['Throughput (2 × useful FMAs ÷ 174 µs)', (2 * useful / 174e-6 / 1e12).toFixed(1) + ' TFLOP/s'],
+    ['Resources (ptxas, sm_89)', ''],
+    ['Registers', '57 per thread'],
+    ['Shared memory', '25,088 B per block'],
+    ['Blocks per SM (Ada: 100 KB shared memory per SM)', '3, limited by shared memory (calculated)'],
+  ];
+  $('cost').innerHTML = rows.map(([a, b]) => b === '' ? `<tr><th colspan="2">${a}</th></tr>` : `<tr><td>${a}</td><td class="num">${b}</td></tr>`).join('');
+})();
+
+// ---------- whole-block check ----------
+$('b-check').addEventListener('click', () => {
+  const d = blockData(S.bx, S.by); let maxRel = 0, n = 0;
+  for (let tid = 0; tid < 256; tid++) {
+    const a = accAt(d, tid, P.cols); if (!a) continue;
+    const m = map(tid);
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) {
+      if (2 * m.tt + j >= d.nValid) continue;
+      const y = yOut(d, tid, a, i, j), ref = yRef(d, tid, i, j);
+      maxRel = Math.max(maxRel, Math.abs(y - ref) / Math.max(1, Math.abs(ref))); n++;
+    }
+  }
+  $('checkout').innerHTML = `Block (${S.bx}, ${S.by}): <span class="ok">${n} outputs</span> checked against a float64 reference. Largest error: ${maxRel.toExponential(2)} relative (scaled by max(1, |ref|)). That is ordinary float32 rounding over ${P.cols} terms.`;
+});
+
+// ---------- render ----------
+function drawAll() { const d = blockData(S.bx, S.by); drawWs(d); drawXs(d); drawY(d); drawThreads(d); }
+function render() {
+  const d = blockData(S.bx, S.by);
+  drawOverview(); drawAll(); drawBits(); drawCard(d); caption(d); legend(); drawCode();
+  slider.value = S.step;
+  $('klabel').textContent = S.phase === 'epilogue' ? 'done' : `${S.step + 1}/${NSTEP} · k0 = ${S.step * 64}`;
+  document.querySelectorAll('.chip').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.ph === S.phase)));
+}
+readColors();
+render();
+new ResizeObserver(() => drawAll()).observe(document.querySelector('.block'));
+const mq = matchMedia('(prefers-color-scheme: dark)');
+const recolor = () => { readColors(); render(); };
+mq.addEventListener('change', recolor);
+new MutationObserver(recolor).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+if (document.fonts) document.fonts.ready.then(() => drawAll());
+})();
+</script>
+</body>
+</html>

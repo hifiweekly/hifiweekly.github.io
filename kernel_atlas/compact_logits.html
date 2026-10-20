@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>compact_logits Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.fig svg { display: block; width: 100%; height: auto; }
+.outarr td:nth-child(2), .outarr th:nth-child(2) { text-align: right; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">gpt-oss + Gemma 3 · identical in gptoss.ptx and gemma3.ptx · sampling with top-k / top-p</div>
+    <h1>Inside <code>compact_logits</code></h1>
+    <p>Top-k and top-p sampling need the best candidates in sorted order, which is awkward on the GPU and slow to do on the host over all 201,088 logits. But tokens far below the best one have essentially zero probability. This kernel keeps only logits within a margin of the maximum (8 temperature units: a weight of e<sup>−8</sup> ≈ 0.03% of the best) and packs them into a short list with one global atomic counter. The host then sorts a few dozen or hundred entries instead of 201,088.</p>
+    <div class="formula">keep i ⇔ <span class="x">x</span>[i] ≥ x[best] − <span class="s">margin</span> &nbsp;→&nbsp; j = atomicAdd(&amp;<span class="y">out</span>[0], 1); if j &lt; cap: out[2 + 2j] = i, out[3 + 2j] = x[i] &nbsp;&nbsp;<span class="muted">// margin = 8·T, then 16·T, cap = 16,384</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">201,088 logits, a few hundred candidates</h2>
+      <p>The kernel runs as a grid-stride loop: 448 blocks × 256 threads = 114,688 threads, so each thread checks one or two logits. Each cell of the map is the 256 logits one block checks in one lap; the shading counts how many pass. Change the temperature to move the threshold.</p>
+    </div>
+    <div class="panel">
+      <div class="controls">
+        <label for="temp">temperature T <input id="temp" type="range" min="0.2" max="2" step="0.05" value="1"> <span id="tv" class="mono"></span></label>
+        <label for="mg">margin <select id="mg"><option value="8">8·T (first try)</option><option value="16">16·T (retry if top-p needs more)</option></select></label>
+      </div>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x">logit distribution (log count)</b><span id="thr"></span></div>
+        <div class="fig"><svg id="hist" role="img" aria-label="Histogram of logits with the threshold"></svg></div>
+        <div class="cvlabel"><b class="y">which blocks find candidates</b><span>rows = laps, columns = 448 blocks</span></div>
+        <canvas id="map"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over the map.</div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <dl class="kv" id="card"></dl>
+        <div class="tablewrap"><table class="nums outarr" id="out"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>One atomic per survivor</h3>
+        <p>Only threads whose logit passes touch the counter, so a few hundred atomics compete instead of 201,088. The returned old value is the thread's private slot, so writes never collide and need no further synchronization. Each candidate is stored as one 8-byte pair (index, logit bits) with a single <code>st.global.v2.u32</code>.</p>
+      </div>
+      <div class="panel">
+        <h3>The fallback ladder</h3>
+        <p>The host zeroes the counter before launch, reads it back afterwards and sorts the list by logit, then by index; the order in the list depends on which threads reach the atomic first. For top-p it uses the full-vocabulary normalizer Z that <code>sample_logits</code> already computed, so it can tell when the nucleus reaches past the candidates. In that case, or when top-k asks for more tokens than were kept, it retries with a 16·T margin. If the count exceeds the 16,384-entry cap (only the first 16,384 are stored), it falls back to copying all logits.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>compact_logits</code>, and <code>next_token()</code> in <code>gptoss.c</code> (margins 8 and 16 in units of the temperature, CAND_CAP = 16384). It is launched with <code>launch_1d()</code> after <code>argmax</code>. Logits here are generated: a broad bulk plus a small head of likely tokens.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('compact_logits');
+const N = 201088, BLOCKS = 448, STRIDE = BLOCKS * 256, LAPS = Math.ceil(N / STRIDE), CAP = 16384;
+Atlas.facts($('facts'), [['448', 'blocks (8 × 56 SMs)'], ['256', 'threads per block'], ['1–2', 'logits per thread'], ['1 global', 'atomic counter'], ['8 B', 'per candidate']]);
+
+const r = Atlas.rng(99), x = new Float32Array(N);
+for (let i = 0; i < N; i++) x[i] = fr(Atlas.gauss(r) * 2.4 - 2);
+for (let k = 0; k < 600; k++) x[Math.floor(r() * N)] = fr(6 + Math.abs(Atlas.gauss(r)) * 3.2);
+let best = 0; for (let i = 1; i < N; i++) if (x[i] > x[best]) best = i;
+
+const S = { T: 1, mg: 8, sel: null };
+let M;
+function compute() {
+  const margin = S.mg * S.T, thr = fr(x[best] - fr(margin));
+  // arrival order of the atomics: blocks run in an arbitrary order; within a block, warps in order
+  const rr = Atlas.rng(5 + Math.round(S.T * 100) + S.mg), border = Array.from({ length: BLOCKS }, (_, b) => b);
+  for (let i = BLOCKS - 1; i > 0; i--) { const j = Math.floor(rr() * (i + 1)); [border[i], border[j]] = [border[j], border[i]]; }
+  const out = [], perCell = []; let count = 0;
+  for (let lap = 0; lap < LAPS; lap++) { perCell.push(new Array(BLOCKS).fill(0)); }
+  for (let lap = 0; lap < LAPS; lap++) for (const b of border) for (let t = 0; t < 256; t++) {
+    const i = lap * STRIDE + b * 256 + t; if (i >= N) continue;
+    if (x[i] >= thr) { perCell[lap][b]++; const j = count++; if (j < CAP) out.push({ i, v: x[i], lap }); }
+  }
+  M = { margin, thr, out, perCell, count };
+}
+const steps = [
+  { tag: 'T', kind: 'thr', short: 'threshold', title: 'every thread reads x[best] and computes the threshold', text: 'The argmax result is already on the GPU. Each thread loads it and x[best] (the same two addresses for all threads, served from cache) and subtracts the margin.' },
+  { tag: 'L', kind: 'lap', lap: 0, short: 'lap 0: compare', title: 'lap 0: each thread compares x[i] with the threshold', text: `Threads i = 0 … ${STRIDE - 1} each load one logit, a fully coalesced read of 448 KB. Most fail the test and move on immediately.` },
+  { tag: 'A', kind: 'atomic', lap: 0, short: 'lap 0: append', title: 'lap 0: survivors take a slot with atomicAdd(&out[0], 1)', text: 'Each passing thread increments the counter and gets its old value j, its own slot. If j < cap it stores (i, x[i]) at out[2 + 2j]. Blocks reach the atomic in no fixed order, so the list is unordered.' },
+  { tag: 'L', kind: 'lap', lap: 1, short: 'lap 1: compare', title: `lap 1: i += stride (${Atlas.int(STRIDE)})`, text: `Only ${Atlas.int(N - STRIDE)} logits remain, so in this lap threads past n exit immediately.` },
+  { tag: 'A', kind: 'atomic', lap: 1, short: 'lap 1: append', title: 'lap 1: survivors append', text: 'Same as lap 0. When every thread has left the loop the kernel ends; there is no barrier anywhere.' },
+  { tag: 'H', kind: 'host', short: 'host', title: 'host: read the count, sort, filter', text: 'The host copies out[0] and the used part of the list, sorts the candidates by logit (then index), applies top-k / top-p / min-p and samples. If top-k or the top-p nucleus reaches past the candidates, it reruns with the 16·T margin; past the cap, it falls back to all logits.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `A|extern "C" __global__ void compact_logits(const float *x, unsigned n, const unsigned *best,
+A|                                          float margin, unsigned *out, unsigned cap)
+A|{                                                         // host zeroes out[0] first
+T|    float thr = x[*best] - margin;
+L|    for (unsigned i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += gridDim.x * blockDim.x) {
+L|        float v = x[i];
+L|        if (v < thr) continue;
+A|        unsigned j = atomicAdd(&out[0], 1);                // my slot
+A|        if (j >= cap) continue;                            // count still grows: host sees overflow
+A|        ((uint2 *)(out + 2))[j] = make_uint2(i, __float_as_uint(v));   // one 8-byte store
+L|    }
+A|}
+H|// host: n_cand = out[0]; sort (logit desc, index asc); top-k / top-p / min-p; draw` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `T|    ld.global.u32       %r3, [%rd2];            // best
+T|    ld.global.f32       %f2, [%rd4];            // x[best]
+T|    sub.f32             %f3, %f2, %f1;          // threshold
+L|LOOP:
+L|    setp.ge.u32         %p1, %r8, %r1;
+L|    @%p1 bra            DONE;
+L|    ld.global.f32       %f4, [%rd6];
+L|    setp.lt.f32         %p2, %f4, %f3;
+L|    @%p2 bra            NEXT;
+A|    atom.global.add.u32 %r10, [%rd3], 1;        // j = out[0]++
+A|    setp.ge.u32         %p3, %r10, %r2;
+A|    @%p3 bra            NEXT;                   // past cap
+A|    shl.b32             %r11, %r10, 1;
+A|    add.u32             %r11, %r11, 2;          // 8-byte aligned pair
+A|    mov.b32             %r12, %f4;
+A|    st.global.v2.u32    [%rd8], {%r8, %r12};
+L|NEXT:
+L|    add.u32             %r8, %r8, %r9;          // i += stride
+L|    bra.uni             LOOP;` },
+});
+
+const mg = Atlas.grid($('map'), LAPS, BLOCKS);
+$('map').style.aspectRatio = `${BLOCKS} / 40`;
+let hover = null;
+function draw() {
+  const st = stepper.step;
+  $('tv').textContent = S.T.toFixed(2);
+  const curLap = st.kind === 'lap' || st.kind === 'atomic' ? st.lap : st.kind === 'host' ? LAPS : -1;
+  const appended = M.out.filter(o => o.lap < curLap || (o.lap === curLap && st.kind === 'atomic'));
+  // histogram (log counts)
+  const W = 640, H = 200, ml = 36, mr = 10, mt = 10, mb = 26, lo = -14, hi = 20, nb = 136, bins = new Array(nb).fill(0);
+  for (let i = 0; i < N; i++) { const k = Math.floor((x[i] - lo) / (hi - lo) * nb); if (k >= 0 && k < nb) bins[k]++; }
+  const X = v => ml + (v - lo) / (hi - lo) * (W - ml - mr), maxL = Math.log10(Math.max(...bins) + 1), Y = c => mt + (1 - Math.log10(c + 1) / maxL) * (H - mt - mb);
+  let s = '';
+  for (let v = lo; v <= hi; v += 4) s += `<line x1="${X(v)}" y1="${mt}" x2="${X(v)}" y2="${H - mb}" stroke="${C.line}" stroke-width="0.6"/><text x="${X(v)}" y="${H - mb + 14}" font-size="10" text-anchor="middle" fill="${C.muted}">${v}</text>`;
+  [1, 10, 100, 1000, 10000].forEach(c => { if (Math.log10(c + 1) <= maxL) s += `<text x="${ml - 4}" y="${Y(c) + 3}" font-size="9" text-anchor="end" fill="${C.muted}">${c}</text>`; });
+  const bw = (W - ml - mr) / nb;
+  bins.forEach((c, k) => { if (!c) return; const v0 = lo + (hi - lo) * k / nb, keep = v0 + (hi - lo) / nb > M.thr; s += `<rect x="${X(v0)}" y="${Y(c)}" width="${bw - 0.5}" height="${H - mb - Y(c)}" fill="${keep && st.kind !== 'thr' ? C.y : C.x}" opacity="${keep ? 0.9 : 0.45}"/>`; });
+  s += `<line x1="${X(M.thr)}" y1="${mt}" x2="${X(M.thr)}" y2="${H - mb}" stroke="${C.sync}" stroke-width="2"/><text x="${X(M.thr) - 4}" y="${mt + 10}" font-size="10" text-anchor="end" fill="${C.sync}">threshold ${M.thr.toFixed(2)}</text>`;
+  s += `<line x1="${X(x[best])}" y1="${mt}" x2="${X(x[best])}" y2="${H - mb}" stroke="${C.fg}" stroke-dasharray="3 3"/><text x="${X(x[best]) - 4}" y="${mt + 24}" font-size="10" text-anchor="end" fill="${C.fg}">x[best] ${x[best].toFixed(2)}</text>`;
+  $('hist').setAttribute('viewBox', `0 0 ${W} ${H}`); $('hist').innerHTML = s;
+  $('thr').textContent = `margin = ${S.mg}·T = ${M.margin.toFixed(2)}`;
+  // map
+  const g = mg.prep(), maxc = Math.max(1, ...M.perCell.flat());
+  for (let lap = 0; lap < LAPS; lap++) for (let b = 0; b < BLOCKS; b++) {
+    const first = lap * STRIDE + b * 256;
+    if (first >= N) { g.hatch(lap, b); continue; }
+    const c = M.perCell[lap][b], active = lap === curLap || lap < curLap;
+    g.cell(lap, b, c ? C.y : C.x, c ? (active ? 0.35 + 0.65 * c / maxc : 0.15) : (lap === curLap ? 0.22 : 0.08), 0);
+  }
+  if (curLap >= 0 && curLap < LAPS) g.box(curLap, 0, 1, BLOCKS, C.sync, 2);
+  if (hover) g.box(hover.r, hover.c, 1, 1, C.fg, 1.5);
+  // card + out table
+  $('card').innerHTML = [['best', `x[${best}] = ${x[best].toFixed(3)}`], ['threshold', M.thr.toFixed(3)], ['kept', `${Atlas.int(M.count)} of ${Atlas.int(N)} (${(100 * M.count / N).toFixed(2)}%)`],
+    ['out[0] now', st.kind === 'thr' ? 0 : Atlas.int(appended.length)], ['bytes to host', st.kind === 'host' ? `${Atlas.int(8 + 8 * Math.min(M.count, CAP))} instead of ${Atlas.int(4 * N)}` : '–']]
+    .map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  const show = st.kind === 'host' ? [...M.out].sort((a, b) => b.v - a.v || a.i - b.i) : appended;
+  const rows = show.slice(0, 14);
+  $('out').innerHTML = `<caption>${st.kind === 'host' ? 'after the host sort' : 'out[2 + 2j], in arrival order'} (first 14)</caption><tr><th>j</th><th>index</th><th>logit</th></tr>` +
+    (rows.length ? rows.map((o, j) => `<tr><td>${j}</td><td>${o.i}</td><td>${o.v.toFixed(3)}</td></tr>`).join('') : `<tr><td colspan="3" style="text-align:left">empty: counter = 0</td></tr>`) +
+    (show.length > 14 ? `<tr><td colspan="3" style="text-align:left">… ${Atlas.int(show.length - 14)} more</td></tr>` : '');
+  Atlas.legend($('legend'), [['--y', 'logits that pass (darker = more in that block)'], ['--x', 'logits below the threshold'], ['--sync', 'threshold / current lap'], ['--zero', 'hatched: past n']]);
+}
+mg.hook(p => { hover = p; const f = p.r * STRIDE + p.c * 256; $('status').textContent = f < N ? `lap ${p.r}, block ${p.c}: logits ${Atlas.int(f)}–${Atlas.int(Math.min(N, f + 256) - 1)} · ${M.perCell[p.r][p.c]} pass` : `lap ${p.r}, block ${p.c}: past n, threads exit`; draw(); }, null, () => { hover = null; draw(); });
+$('temp').addEventListener('input', () => { S.T = +$('temp').value; compute(); stepper.refresh(); });
+$('mg').addEventListener('change', () => { S.mg = +$('mg').value; compute(); stepper.refresh(); });
+compute();
+const stepper = Atlas.stepper({ steps, code, render: draw });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

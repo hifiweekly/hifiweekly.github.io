@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>argmax Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">gpt-oss + Gemma 3 · identical in gptoss.ptx and gemma3.ptx · greedy decoding</div>
+    <h1>Inside <code>argmax</code></h1>
+    <p>Greedy decoding picks the token with the largest logit out of the 201,088-entry vocabulary. The answer is a single index, and only the GPU has the logits, so one block of 1024 threads finds it and the host copies back 4 bytes instead of 786 KB. Ties go to the smaller index, which makes the result independent of thread timing and matches a plain CPU loop.</p>
+    <div class="formula"><span class="y">out</span> = min { i : <span class="x">x</span>[i] = max<sub>j</sub> x[j] } &nbsp;&nbsp;<span class="muted">// pairs (value, index) compared as: larger value wins, equal values → smaller index</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">Three levels: thread, warp, block</h2>
+      <p>The grid below is the block's 1024 threads as 32 warps × 32 lanes, colored by the best value each holds. The logits here contain a deliberate tie: two tokens share the top value, and the smaller index has to win. Click a thread to see its share of the vocabulary.</p>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="y" id="glabel"></b><span>rows = warps, columns = lanes</span></div>
+        <canvas id="threads"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over a thread.</div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="tcard"></dl>
+        <div class="cvlabel"><b class="x">its logits: x[t], x[t + 1024], …</b><span>best marked</span></div>
+        <canvas id="strip"></canvas>
+        <dl class="kv" id="final"></dl>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="y" id="bflabel"></b><span>value shown; the index travels with it</span></div>
+      <div class="figure"><svg id="bfly" style="min-width: 760px"></svg></div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Tie-breaking at every level</h3>
+        <p>In the scan, a thread replaces its best only on <code>setp.gt</code> (strictly greater). Its elements come in increasing index order, so it keeps the first of equal values. In the butterflies, a partner's pair wins if its value is greater, or equal with a smaller index. Each level therefore returns the smallest index among the maxima, and so does the whole reduction, whatever order the hardware runs warps in.</p>
+      </div>
+      <div class="panel">
+        <h3>Why a single block</h3>
+        <p>The vocabulary is read once: 786 KB. A single block of 1024 threads reads it with coalesced loads in about 197 rounds. More blocks would need a second launch or global atomics to combine their results, and decode runs this once per token. With greedy decoding, the host then copies only the 4-byte index.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>argmax</code> (Gemma 3 has the same kernel); launched as one block of 1024 threads after the output head. Its result also seeds <code>compact_logits</code> and <code>sample_logits</code>. Logits here are generated, with two planted equal maxima.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('argmax');
+const N = 201088, NT = 1024, TIE = [61803, 141421];
+Atlas.facts($('facts'), [['1', 'block'], ['1024', 'threads'], ['2 × 32 × 4 B', 'shared memory'], ['≈ 197', 'elements per thread'], ['4 B', 'copied to the host']]);
+
+const r = Atlas.rng(21), x = new Float32Array(N);
+for (let i = 0; i < N; i++) x[i] = fr(Atlas.gauss(r) * 2.2 - 1);
+for (let k = 0; k < 40; k++) x[Math.floor(r() * N)] = fr(10 + r() * 6);
+TIE.forEach(i => { x[i] = fr(18.75); });
+
+// kernel emulation
+const better = (v1, i1, v0, i0) => v1 > v0 || (v1 === v0 && i1 < i0);
+const tv = new Float32Array(NT), ti = new Int32Array(NT);
+for (let t = 0; t < NT; t++) { let bv = -Infinity, bi = -1; for (let i = t; i < N; i += NT) if (x[i] > bv) { bv = x[i]; bi = i; } tv[t] = bv; ti[t] = bi; }
+function bfly(vals, idxs) {
+  const tbl = [vals.map((v, l) => [v, idxs[l]])];
+  for (let s = 0, off = 16; off >= 1; s++, off >>= 1) {
+    const prev = tbl[s]; tbl.push(prev.map((p, l) => { const q = prev[l ^ off]; return better(q[0], q[1], p[0], p[1]) ? q : p; }));
+  }
+  return tbl;
+}
+const warpT = []; for (let w = 0; w < 32; w++) warpT.push(bfly(Array.from(tv.slice(w * 32, w * 32 + 32)), Array.from(ti.slice(w * 32, w * 32 + 32))));
+const finalT = bfly(warpT.map(t => t[5][0][0]), warpT.map(t => t[5][0][1]));
+const answer = finalT[5][0][1];
+
+const S = { tid: TIE[0] % NT };
+const steps = [{ tag: 'S', kind: 'scan', short: 'scan', title: 'each thread scans x[t], x[t + 1024], … (≈197 values)', text: `Thread t keeps the largest value it sees and its index, replacing it only when a value is strictly greater. Consecutive threads read consecutive logits, so each round is one coalesced 4 KB read by the block. Threads 0–${N % NT - 1} see 197 values, the rest 196.` }];
+for (let s = 1; s <= 5; s++) steps.push({ tag: 'B', kind: 'warp', s, short: `warp xor ${32 >> s}`, title: `every warp: butterfly round ${s} (offset ${32 >> s})`, delay: 1000,
+  text: `Two shuffles move the partner's value and index; the pair is taken if its value is greater, or equal with a smaller index (<code>setp.gt</code>, <code>setp.eq</code>, <code>setp.lt.u32</code>, combined with <code>and.pred</code> / <code>or.pred</code>).${s === 5 ? ' Every lane of each warp now holds its warp\'s winner.' : ''}` });
+steps.push({ tag: 'R', kind: 'shared', short: 'to shared', title: 'lane 0 of each warp → am_val[warp], am_idx[warp]; bar.sync', text: '32 (value, index) pairs go through shared memory. After the barrier, warps 1–31 exit; only warp 0 continues.' });
+for (let s = 1; s <= 5; s++) steps.push({ tag: 'F', kind: 'final', s, short: `final xor ${32 >> s}`, title: `warp 0: butterfly over the 32 warp winners, round ${s}`, delay: 1000,
+  text: `Lane l of warp 0 loads the winner of warp l and runs the same comparison butterfly.${s === 5 ? ` Result: index ${answer}.` : ''}` });
+steps.push({ tag: 'O', kind: 'out', short: 'store', title: `lane 0 of warp 0 writes out = ${answer}`, text: `The two planted maxima, x[${TIE[0]}] and x[${TIE[1]}], are equal (${x[TIE[0]]}); the smaller index wins at every level. The host copies these 4 bytes for greedy decoding; the sampling kernels read the index directly on the GPU.` });
+
+const tg = Atlas.grid($('threads'), 32, 32), sg = Atlas.grid($('strip'), 1, 197);
+$('strip').style.aspectRatio = '197 / 14';
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `A|__device__ void pick(float &v, unsigned &i, float v2, unsigned i2) {
+A|    if (v2 > v || (v2 == v && i2 < i)) { v = v2; i = i2; }    // larger, or equal with smaller index
+A|}
+A|extern "C" __global__ void argmax(const float *x, unsigned n, unsigned *out)   // 1 block, 1024 threads
+A|{
+A|    __shared__ float sv[32]; __shared__ unsigned si[32];
+A|    unsigned lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+S|    float v = -INFINITY; unsigned idx = 0xFFFFFFFF;
+S|    for (unsigned i = threadIdx.x; i < n; i += blockDim.x)
+S|        if (x[i] > v) { v = x[i]; idx = i; }                    // strictly greater: keeps the first
+B|    for (int off = 16; off >= 1; off >>= 1)
+B|        pick(v, idx, __shfl_xor_sync(~0u, v, off), __shfl_xor_sync(~0u, idx, off));
+R|    if (lane == 0) { sv[warp] = v; si[warp] = idx; }
+R|    __syncthreads();
+R|    if (warp != 0) return;
+F|    v = lane < blockDim.x / 32 ? sv[lane] : -INFINITY;
+F|    idx = lane < blockDim.x / 32 ? si[lane] : 0xFFFFFFFF;
+F|    for (int off = 16; off >= 1; off >>= 1)
+F|        pick(v, idx, __shfl_xor_sync(~0u, v, off), __shfl_xor_sync(~0u, idx, off));
+O|    if (lane == 0) *out = idx;
+A|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `S|SCAN:
+S|    ld.global.f32       %f2, [%rd4];
+S|    setp.gt.f32         %p2, %f2, %f1;          // strictly greater keeps the first index
+S|    selp.f32            %f1, %f2, %f1, %p2;
+S|    selp.b32            %r6, %r7, %r6, %p2;
+S|    add.u32             %r7, %r7, %r3;
+S|    bra.uni             SCAN;
+B,F|WARP_RED:
+B,F|    shfl.sync.bfly.b32  %f3, %f1, %r8, 31, -1;  // partner value
+B,F|    shfl.sync.bfly.b32  %r9, %r6, %r8, 31, -1;  // partner index
+B,F|    setp.gt.f32         %p3, %f3, %f1;
+B,F|    setp.eq.f32         %p4, %f3, %f1;
+B,F|    setp.lt.u32         %p5, %r9, %r6;
+B,F|    and.pred            %p4, %p4, %p5;
+B,F|    or.pred             %p3, %p3, %p4;          // take partner?
+B,F|    selp.f32            %f1, %f3, %f1, %p3;
+B,F|    selp.b32            %r6, %r9, %r6, %p3;
+B,F|    shr.u32             %r8, %r8, 1;            // offset 16, 8, 4, 2, 1
+B,F|    @%p6 bra            WARP_RED;
+R|    @!%p6 st.shared.f32 [%r13], %f1;
+R|    @!%p6 st.shared.u32 [%r14], %r6;
+R|    bar.sync            0;
+R|    @%p7 bra            DONE;                   // warps 1-31 leave
+F|    ld.shared.f32       %f1, [%r13];            // winner of warp "lane"
+F|    ld.shared.u32       %r6, [%r14];
+O|    st.global.u32       [%rd2], %r6;` },
+});
+
+let hover = null;
+function cellVal(st, w, l) {
+  if (st.kind === 'scan') return tv[w * 32 + l];
+  if (st.kind === 'warp') return warpT[w][st.s][l][0];
+  return warpT[w][5][l][0];
+}
+function draw() {
+  const st = stepper.step, warp = S.tid >> 5, lane = S.tid & 31;
+  const g = tg.prep(), lo = 6, hi = 19;
+  for (let w = 0; w < 32; w++) for (let l = 0; l < 32; l++) {
+    const v = cellVal(st, w, l), dim = (st.kind === 'final' || st.kind === 'out') && w > 0;
+    g.cell(w, l, C.y, (0.08 + 0.9 * Math.max(0, (v - lo) / (hi - lo)) ** 1.5) * (dim ? 0.35 : 1), 0.12);
+  }
+  const holders = new Set(); for (let t = 0; t < NT; t++) if (TIE.includes(ti[t]) && st.kind === 'scan') holders.add(t);
+  holders.forEach(t => g.box(t >> 5, t & 31, 1, 1, C.sync, 2));
+  if (st.kind === 'final' || st.kind === 'out' || st.kind === 'shared') g.box(0, 0, 1, 32, C.sync, 2);
+  g.box(warp, lane, 1, 1, C.fg, 2.5);
+  if (hover) g.box(hover.r, hover.c, 1, 1, C.sync, 1.5);
+  $('glabel').textContent = st.kind === 'scan' ? 'each thread\'s best value after the scan' : st.kind === 'warp' ? `after warp round ${st.s}` : 'after the warp reductions';
+
+  // thread card + strip
+  const els = []; for (let i = S.tid; i < N; i += NT) els.push(i);
+  $('thlabel').textContent = `thread ${S.tid} · warp ${warp}, lane ${lane}`;
+  $('tcard').innerHTML = [['elements', `${els.length}: ${els[0]}, ${els[1]}, … ${els[els.length - 1]}`], ['its best', `x[${ti[S.tid]}] = ${tv[S.tid].toFixed(4)}`],
+    ['warp winner', `x[${warpT[warp][5][0][1]}] = ${warpT[warp][5][0][0].toFixed(4)}`]].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  if (sg.cols !== els.length) sg.resize(1, els.length);
+  $('strip').style.aspectRatio = `${els.length} / 14`;
+  const sp = sg.prep();
+  els.forEach((i, k) => sp.cell(0, k, i === ti[S.tid] ? C.y : C.x, i === ti[S.tid] ? 1 : 0.12 + 0.6 * Math.max(0, (x[i] + 6) / 25), 0.05));
+  $('final').innerHTML = st.kind === 'out' ? [['result', answer], ['x[result]', x[answer]], ['tied with', TIE.filter(i => i !== answer).map(i => `x[${i}] = ${x[i]}`).join(', ')]].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('') : '';
+
+  // butterfly
+  const final = st.kind === 'final' || st.kind === 'out' || st.kind === 'shared';
+  const tbl = final ? finalT : warpT[warp], stage = st.kind === 'scan' ? 0 : st.kind === 'warp' ? st.s : st.kind === 'shared' ? 0 : st.kind === 'final' ? st.s : 5;
+  Atlas.butterfly($('bfly'), tbl.map(row => row.map(p => p[0])), stage, { sel: final ? 0 : lane, fmt: v => v === -Infinity ? '−∞' : v.toFixed(2) });
+  $('bflabel').textContent = final ? 'warp 0: the 32 warp winners' : `warp ${warp}: its 32 threads' best values`;
+  Atlas.legend($('legend'), [['--y', 'best value held (darker = larger)'], ['--sync', st.kind === 'scan' ? 'outlined: threads holding one of the tied maxima' : 'outlined: warp 0, which finishes the job'], ['--fg', 'selected thread']]);
+}
+tg.hook(p => { hover = p; const t = p.r * 32 + p.c; $('status').textContent = `thread ${t} (warp ${p.r}, lane ${p.c}): best x[${ti[t]}] = ${tv[t].toFixed(3)}`; draw(); },
+  p => { S.tid = p.r * 32 + p.c; draw(); }, () => { hover = null; draw(); });
+const stepper = Atlas.stepper({ steps, code, render: draw });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

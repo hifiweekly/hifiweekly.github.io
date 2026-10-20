@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>mv_q5 Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Gemma 3 · gemma3.ptx · decode: one warp per row, Q5_0 weights × Q8 activations</div>
+    <h1>Inside <code>mv_q5</code></h1>
+    <p>Gemma 3's feed-forward weights are two thirds of the model, so the engine stores them in Q5_0: 5-bit integers with one f16 scale per 32 values, 5.5 bits per weight. <code>mv_q5</code> multiplies them by the token's activation, which <code>quant_q8</code> has just turned into int8. It runs twice per layer in decode: once for the stacked gate ‖ up matrix and once for down. The interesting part is rebuilding each 5-bit weight from a nibble and a separately stored fifth bit, four at a time, without a loop.</p>
+    <div class="formula"><span class="y">y</span>[r] = Σ<sub>b</sub> <span class="w">d</span>[r][b] · xd[b] · ( Σ<sub>j&lt;32</sub> <span class="w">q</span><sub>j</sub> · <span class="x">x</span><sub>j</sub> − 16 · Σ<sub>j&lt;32</sub> <span class="x">x</span><sub>j</sub> ) &nbsp;&nbsp;<span class="muted">// weight = (q − 16) · d, q in 0…31</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-blk">
+    <div class="sechead">
+      <h2 id="s-blk">One lane, one Q5_0 block</h2>
+      <p>A block is 16 bytes of nibbles (qs), a 32-bit word of fifth bits (qh) and an f16 scale (d), kept in three separate arrays. Step through how a lane rebuilds the 32 weights and takes the dot product with integer instructions only, until one float multiply-add at the end.</p>
+    </div>
+    <div class="controls">
+      <span class="seg" id="useSeg" role="group" aria-label="Which launch"></span>
+      <label>block <input id="blk" type="range" min="0" value="5"> <span id="blkv" class="mono"></span></label>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="figure"><svg id="block" role="img" aria-label="Rebuilding one Q5_0 block"></svg></div>
+        <div class="legend" id="legend"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b class="w">spreading 4 fifth-bits to bit 4 of 4 bytes</b><span id="spreadsub"></span></div>
+        <div class="figure"><svg id="spread" role="img" aria-label="The multiply that spreads four bits"></svg></div>
+        <dl class="kv" id="card"></dl>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-map">
+    <div class="sechead">
+      <h2 id="s-map">Lanes over the blocks of a row</h2>
+      <p id="mapdesc"></p>
+    </div>
+    <div class="panel">
+      <canvas id="map"></canvas>
+      <div class="legend" id="maplegend"></div>
+      <div class="status" id="mapstatus"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>The −16 once per block, not per weight</h3>
+        <p>Q5_0 stores q = w/d + 16, an unsigned 0…31. Subtracting 16 from every weight would cost 32 operations per block. Instead the kernel multiplies the unsigned q directly (<code>dp4a.u32.s32</code>: unsigned weights, signed activations) and corrects once: Σ(q − 16)·x = Σ q·x − 16·Σ x. The Σ x comes from eight more <code>dp4a</code> against 0x01010101, and the 16· is a shift.</p>
+        <p>Everything up to that point is exact integer arithmetic. The one rounding step per block is the final FMA with d · xd.</p>
+      </div>
+      <div class="panel">
+        <h3>Stacked gate ‖ up, split arrays</h3>
+        <p>Gemma's gate and up projections read the same input, so the engine stacks them into one 30,720 × 3840 matrix at load time: one launch, one pass over xq, and geglu reads both halves from <code>gu</code>. The down projection is a separate 3840 × 15,360 matrix.</p>
+        <p>In the GGUF a Q5_0 block is 22 contiguous bytes, which is not 16-byte aligned. The loader splits blocks into qs, qh and d arrays, so each lane reads its 16 nibble bytes with one aligned <code>v4.u32</code> and a warp reads 512 consecutive bytes of qs per round.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gemma3/gemma3.ptx</code>, kernel <code>mv_q5</code>; launched by <code>mv_q5()</code> in <code>gemma3.c</code> with ⌈rows / 8⌉ blocks of 256 threads, after <code>quant_q8</code>; <code>upload_q5()</code> splits the GGUF blocks. Weights and activations here are generated. In prefill, <code>gemm_q5</code> does this work as a tiled matrix product.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('mv_q5');
+const USES = {
+  gu: { label: 'gate ‖ up (1st)', rows: 30720, cols: 3840, w: 'ffn_gate ‖ ffn_up', in: 'xq: quantized xn', out: 'gu' },
+  down: { label: 'down (2nd)', rows: 3840, cols: 15360, w: 'ffn_down', in: 'xq: quantized h (geglu output)', out: 'y' },
+};
+const S = { use: 'gu', blk: 5, row: 0 };
+const nb = () => USES[S.use].cols / 32;
+
+function blockData() {
+  const r = Atlas.rng(Atlas.h32(S.blk * 977 + (S.use === 'down' ? 50000 : 0) + 13)), q = [], x = [];
+  for (let j = 0; j < 32; j++) q.push(Math.max(0, Math.min(31, Math.round(16 + 5.5 * Atlas.gauss(r)))));
+  for (let j = 0; j < 32; j++) x.push(Math.max(-127, Math.min(127, Math.round(45 * Atlas.gauss(r)))));
+  const qs = [], qh = q.reduce((h, v, j) => (h | (((v >> 4) & 1) << j)) >>> 0, 0);
+  for (let i = 0; i < 16; i++) qs.push((q[i] & 15) | ((q[16 + i] & 15) << 4));
+  return { q, x, qs, qh, d: Atlas.f16(0.0009 + 0.0006 * r()), xd: fr(0.004 + 0.02 * r()) };
+}
+// dp4a order: word w low (values 4w..4w+3, qh bits 4w..) then high (16+4w.., qh bits 16+4w..)
+const order8 = () => { const o = []; for (let w = 0; w < 4; w++) { o.push({ j0: 4 * w, w, half: 'lo' }); o.push({ j0: 16 + 4 * w, w, half: 'hi' }); } return o; };
+
+const steps = [
+  { tag: 'I', short: 'which row', title: 'row = blockIdx.x · 8 + warp; lane b starts at block b', text: 'Pointers to the row\'s qs (16 B per block), qh (4 B) and d (2 B) arrays.' },
+  { tag: 'L', short: 'loads', title: 'load qs, qh, d, the activation scale, and 32 int8 activations', text: 'One <code>v4.u32</code> for the 16 nibble bytes, one <code>u32</code> of fifth bits, one f16 scale, one f32 activation scale, two <code>v4.u32</code> for x.' },
+  { tag: 'N', w: 0, short: 'nibbles', title: 'word 0: the low nibbles give bits 0–3 of values 0–3', text: '<code>and 0x0F0F0F0F</code> leaves one 4-bit value per byte. The high nibbles (after a shift by 4) are values 16–19.' },
+  { tag: 'H', w: 0, short: '5th bits', title: 'their fifth bits: bfe, multiply by 0x00204081, mask, shift', text: 'Bits 0–3 of qh belong to values 0–3. The multiply adds copies of the 4-bit field shifted by 0, 7, 14 and 21, so bit i lands at bit 8i; the mask keeps just those, and the shift moves them to bit 4 of each byte.' },
+  { tag: 'D', w: 0, short: 'dp4a', title: 'OR the bits in and dp4a: 4 unsigned q times 4 signed x', text: 'Each byte is now q in 0…31. <code>dp4a.u32.s32</code> treats the weights as unsigned and the activations as signed.' },
+  { tag: 'D', w: 3, short: 'all 8', title: 'eight dp4a cover the 32 values', text: 'Low and high halves of the four qs words, each with its own four fifth-bits.' },
+  { tag: 'M', short: '− 16 Σx', title: 'subtract 16 · Σx', text: 'Eight dp4a against 0x01010101 sum the activations; a shift by 4 multiplies by 16. Now the integer sum equals Σ (q − 16) · x exactly.' },
+  { tag: 'X', short: 'scale', title: 'term = sum · (d · xd), one FMA into the lane\'s accumulator', text: 'The f16 weight scale is converted to f32 and multiplied by the activation scale.' },
+  { tag: 'R', short: 'reduce, store', title: 'after all rounds: warp butterfly, lane 0 stores y[row]', text: 'No bias in Gemma\'s feed-forward. For gate ‖ up, rows 0–15,359 of gu are the gate and 15,360–30,719 the up projection.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `H|__device__ unsigned bits4(unsigned qh, int pos) {           // bit pos+i -> bit 8i+4
+H|    return ((((qh >> pos) & 15) * 0x00204081u) & 0x01010101u) << 4;
+H|}
+I|extern "C" __global__ void mv_q5(const uint4 *qs, const unsigned *qh, const __half *d,
+I|        const int8_t *xq, const float *xd, float *y, unsigned rows, unsigned cols)
+I|{
+I|    unsigned lane = threadIdx.x & 31, row = blockIdx.x * 8 + (threadIdx.x >> 5);
+I|    if (row >= rows) return;
+I|    unsigned nb = cols / 32;  size_t g = (size_t)row * nb;
+X|    float acc = 0.0f;
+X|    for (unsigned b = lane; b < nb; b += 32) {
+L|        uint4 c = __ldg(&qs[g + b]);
+L|        unsigned h = __ldg(&qh[g + b]);
+L|        const int4 *xv = (const int4 *)(xq + 32 * b);
+L|        int4 x0 = __ldg(xv), x1 = __ldg(xv + 1);
+N,H,D|        int s = __dp4a((c.x & 0x0F0F0F0F) | bits4(h, 0), x0.x, 0);         // values 0..3
+N,H,D|        s = __dp4a(((c.x >> 4) & 0x0F0F0F0F) | bits4(h, 16), x1.x, s);     // 16..19
+D|        s = __dp4a((c.y & 0x0F0F0F0F) | bits4(h, 4), x0.y, s);             // 4..7
+D|        s = __dp4a(((c.y >> 4) & 0x0F0F0F0F) | bits4(h, 20), x1.y, s);     // 20..23
+D|        ...                                                               // c.z, c.w
+M|        int sx = __dp4a(0x01010101, x0.x, 0);  sx = __dp4a(0x01010101, x0.y, sx);
+M|        ...                                                               // all 8 words
+M|        s -= sx << 4;                                                     // - 16 * sum x
+X|        acc = fmaf((float)s, __half2float(d[g + b]) * __ldg(&xd[b]), acc);
+X|    }
+R|    for (int off = 16; off >= 1; off >>= 1) acc += __shfl_xor_sync(0xffffffff, acc, off);
+R|    if (lane == 0) y[row] = acc;
+I|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    mad.lo.u32          %r8, %r7, %r6, %r5;     // row
+I|    shr.u32             %r9, %r2, 5;            // nb = blocks per row
+I|    mov.u32             %r50, 0x01010101;       // ones, for sum_j x_j
+L|    ld.global.nc.v4.u32 {%r11, %r12, %r13, %r14}, [%rd12];
+L|    ld.global.nc.u32    %r15, [%rd14];          // 5th bits
+L|    ld.global.nc.f32    %f2, [%rd15];           // activation scale
+L|    ld.global.nc.b16    %h1, [%rd17];           // weight scale
+L|    ld.global.nc.v4.u32 {%r20, %r21, %r22, %r23}, [%rd19];      // x[0..15]
+L|    ld.global.nc.v4.u32 {%r24, %r25, %r26, %r27}, [%rd19+16];   // x[16..31]
+N|    and.b32             %r30, %r11, 0x0F0F0F0F;
+H|    bfe.u32             %r31, %r15, 0, 4;
+H|    mul.lo.u32          %r31, %r31, 0x00204081;
+H|    and.b32             %r31, %r31, 0x01010101;
+H|    shl.b32             %r31, %r31, 4;
+D|    or.b32              %r30, %r30, %r31;
+D|    dp4a.u32.s32        %r40, %r30, %r20, 0;
+N|    shr.u32             %r30, %r11, 4;
+N|    and.b32             %r30, %r30, 0x0F0F0F0F;
+H|    bfe.u32             %r31, %r15, 16, 4;
+H|    ...                                         // same spread
+D|    dp4a.u32.s32        %r40, %r30, %r24, %r40;
+D|    ...                                         // words 1-3 (bits 4, 20, 8, 24, 12, 28)
+M|    dp4a.s32.s32        %r41, %r50, %r20, 0;
+M|    dp4a.s32.s32        %r41, %r50, %r21, %r41;
+M|    ...                                         // %r22 .. %r27
+M|    shl.b32             %r41, %r41, 4;
+M|    sub.s32             %r40, %r40, %r41;
+X|    cvt.f32.f16         %f3, %h1;
+X|    mul.f32             %f3, %f3, %f2;          // weight scale * activation scale
+X|    cvt.rn.f32.s32      %f4, %r40;
+X|    fma.rn.f32          %f1, %f4, %f3, %f1;
+R|REDUCE:
+R|    shfl.sync.bfly.b32  %f5, %f1, 16, 31, -1;
+R|    ...
+R|    st.global.f32       [%rd21], %f1;` },
+});
+
+$('useSeg').innerHTML = Object.entries(USES).map(([k, u]) => `<button type="button" data-v="${k}">${u.label}</button>`).join('');
+const syncSeg = () => $('useSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === S.use));
+$('useSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.use = b.dataset.v; S.blk = Math.min(S.blk, nb() - 1); $('blk').max = nb() - 1; $('blk').value = S.blk; syncSeg(); facts(); draw(); });
+function facts() {
+  const U = USES[S.use], n = nb();
+  Atlas.facts($('facts'), [[`${Atlas.int(U.rows / 8)} × 256`, 'blocks × threads'], [`${Atlas.int(U.rows)} × ${Atlas.int(U.cols)}`, `${U.w} (rows × cols)`], [String(n), 'Q5_0 blocks per row'], [String(Math.ceil(n / 32)), 'rounds per lane (max)'], ['22 B', 'per 32 weights (5.5 bits)'], [`${(U.rows * n * 22 / 1048576).toFixed(1)} MiB`, 'weights read']]);
+}
+
+const bin = (v, n) => (v >>> 0).toString(2).padStart(n, '0');
+function draw() {
+  const st = stepper.step, B = blockData(), U = USES[S.use], O = ['I', 'L', 'N', 'H', 'D', 'M', 'X', 'R'], at = t => O.indexOf(st.tag) >= O.indexOf(t);
+  const wsel = st.w ?? 3;
+  $('blkv').textContent = `${S.blk} of ${nb()} → lane ${S.blk % 32}, round ${Math.floor(S.blk / 32)}`;
+  const W = 760, H = 360, x0 = 76, cw = (W - x0 - 10) / 32;
+  let s = '';
+  // qs bytes
+  const by = 22, bwid = (W - x0 - 10) / 16, curWord = (st.tag === 'N' || st.tag === 'H' || (st.tag === 'D' && st.w === 0)) ? wsel : -1;
+  s += `<text x="4" y="${by + 16}" font-size="10.5" fill="${C.fg}">qs</text>`;
+  for (let i = 0; i < 16; i++) {
+    const w = i >> 2, x = x0 + i * bwid;
+    s += `<rect x="${x + 1}" y="${by}" width="${bwid - 2}" height="24" rx="2" fill="${w === curWord ? C.hl : C.bg}" stroke="${w % 2 ? C.line : C.muted}"/>`;
+    if (at('L')) s += `<text x="${x + bwid * 0.3}" y="${by + 16}" font-size="10.5" text-anchor="middle" fill="${C.w}">${(B.qs[i] >> 4).toString(16)}</text><text x="${x + bwid * 0.7}" y="${by + 16}" font-size="10.5" text-anchor="middle" fill="${C.w}" font-weight="600">${(B.qs[i] & 15).toString(16)}</text>`;
+    if (i % 4 === 0) s += `<text x="${x + 2}" y="${by - 5}" font-size="9" fill="${C.muted}">word ${w}</text>`;
+  }
+  // qh bits
+  const hy = 66;
+  s += `<text x="4" y="${hy + 14}" font-size="10.5" fill="${C.fg}">qh bits</text>`;
+  for (let j = 0; j < 32; j++) {
+    const x = x0 + j * cw, w = (j % 16) >> 2, hot = st.tag === 'H' && w === wsel && j < 16 && st.w === 0;
+    s += `<rect x="${x + 1}" y="${hy}" width="${cw - 2}" height="20" rx="2" fill="${hot ? C.hl : C.bg}" stroke="${C.line}"/>`;
+    if (at('L')) s += `<text x="${x + cw / 2}" y="${hy + 14}" font-size="9.5" text-anchor="middle" fill="${(B.qh >>> j) & 1 ? C.w : C.muted}">${(B.qh >>> j) & 1}</text>`;
+  }
+  // q, x, products
+  const vy = 120, rowsLab = ['q (0…31)', 'x (int8)', 'q · x'];
+  rowsLab.forEach((l, k) => s += `<text x="4" y="${vy + 15 + k * 34}" font-size="10.5" fill="${C.fg}">${l}</text>`);
+  for (let j = 0; j < 32; j++) {
+    const w = (j % 16) >> 2, x = x0 + j * cw, built = at('D') ? (at('M') || w <= wsel) : false, partial = (st.tag === 'N' || st.tag === 'H') && w === wsel && (j < 16 || true);
+    const q = B.q[j];
+    s += `<rect x="${x + 1}" y="${vy}" width="${cw - 2}" height="22" rx="2" fill="${partial && j % 16 < 4 + 4 * wsel && j % 16 >= 4 * wsel ? C.hl : C.bg}" stroke="${C.line}"/>`;
+    if (built) s += `<text x="${x + cw / 2}" y="${vy + 15}" font-size="9.5" text-anchor="middle" fill="${q >= 16 ? C.x : C.y}">${q}</text>`;
+    else if (partial && (j % 16) >> 2 === wsel) s += `<text x="${x + cw / 2}" y="${vy + 15}" font-size="9" text-anchor="middle" fill="${C.w}">${st.tag === 'N' ? q & 15 : q}</text>`;
+    s += `<rect x="${x + 1}" y="${vy + 34}" width="${cw - 2}" height="22" rx="2" fill="${C.bg}" stroke="${C.line}"/>`;
+    if (at('L')) s += `<text x="${x + cw / 2}" y="${vy + 49}" font-size="9" text-anchor="middle" fill="${C.fg}">${B.x[j]}</text>`;
+    s += `<rect x="${x + 1}" y="${vy + 68}" width="${cw - 2}" height="22" rx="2" fill="${C.bg}" stroke="${C.line}"/>`;
+    if (built) s += `<text x="${x + cw / 2}" y="${vy + 83}" font-size="8" text-anchor="middle" fill="${C.fg}">${q * B.x[j]}</text>`;
+    if (j % 4 === 0) s += `<text x="${x + 2}" y="${vy - 4}" font-size="8.5" fill="${C.muted}">${j}</text>`;
+  }
+  s += `<line x1="${x0 + 16 * cw}" x2="${x0 + 16 * cw}" y1="${hy - 4}" y2="${vy + 94}" stroke="${C.sync}" stroke-dasharray="3 3"/>`;
+  // dp4a chain
+  const dy = 236; let acc = 0;
+  s += `<text x="4" y="${dy + 15}" font-size="10.5" fill="${C.fg}">dp4a</text>`;
+  order8().forEach(({ j0, w, half }, k) => {
+    for (let q = 0; q < 4; q++) acc += B.q[j0 + q] * B.x[j0 + q];
+    const x = x0 + k * ((W - x0 - 10) / 8), wd = (W - x0 - 10) / 8 - 6, done = at('M') || (st.tag === 'D' && w <= wsel);
+    s += `<rect x="${x}" y="${dy}" width="${wd}" height="38" rx="3" fill="${done ? C.panel : C.bg}" stroke="${done ? C.sync : C.line}"/>`;
+    s += `<text x="${x + wd / 2}" y="${dy + 14}" font-size="9" text-anchor="middle" fill="${C.muted}">w${w} ${half} · ${j0}–${j0 + 3}</text>`;
+    if (done) s += `<text x="${x + wd / 2}" y="${dy + 30}" font-size="10.5" text-anchor="middle" fill="${C.fg}">${acc}</text>`;
+  });
+  const sx = B.x.reduce((a, b) => a + b, 0), isum = acc - 16 * sx, ref = B.q.reduce((a, q, j) => a + (q - 16) * B.x[j], 0), term = fr(isum * fr(fr(B.d) * B.xd));
+  s += `<text x="4" y="${H - 34}" font-size="10.5" fill="${at('M') ? C.fg : C.muted}">${at('M') ? `Σ q·x − 16·Σ x = ${acc} − 16 · ${sx} = ${isum}   (check: Σ (q − 16)·x = ${ref})` : 'then: − 16 · Σ x'}</text>`;
+  s += `<text x="4" y="${H - 12}" font-size="10.5" fill="${at('X') ? C.fg : C.muted}">${at('X') ? `term = ${isum} · d ${B.d.toExponential(3)} · xd ${B.xd.toFixed(5)} = ${term.toExponential(4)}` : 'scale applied once per block'}</text>`;
+  $('block').setAttribute('viewBox', `0 0 ${W} ${H}`); $('block').innerHTML = s;
+  Atlas.legend($('legend'), [['--w', 'stored bits'], ['--x', 'q ≥ 16 (weight ≥ 0)'], ['--y', 'q < 16 (weight < 0)'], ['--hl', 'current word']]);
+  drawSpread(B, st, at);
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`;
+  $('card').innerHTML = row('matrix', `${U.w}: ${Atlas.int(U.rows)} × ${Atlas.int(U.cols)}`) + row('input', U.in) + row('block bytes', `qs ${16}, qh 4, d 2 (three arrays)`) +
+    row('d (f16)', at('L') ? B.d.toExponential(4) : '–') + row('xd', at('L') ? B.xd.toFixed(5) : '–') + row('writes', `${U.out}[row]${S.use === 'gu' ? ' (gate rows, then up rows)' : ''}`);
+  drawMap();
+}
+function drawSpread(B, st, at) {
+  const W = 330, H = 210, f4 = B.qh & 15, prod = (f4 * 0x00204081) >>> 0, mask = (prod & 0x01010101) >>> 0, out = (mask << 4) >>> 0;
+  const lines = [
+    ['qh bits 0–3', bin(f4, 4).padStart(32, '·')],
+    ['× 0x00204081', bin(prod, 32)],
+    ['& 0x01010101', bin(mask, 32)],
+    ['<< 4', bin(out, 32)],
+  ];
+  const show = at('H') ? 4 : 0;
+  let s = '', cw = 7.1, x0 = 86;
+  for (let b = 0; b < 4; b++) s += `<rect x="${x0 + (24 - 8 * b) * cw - 1}" y="8" width="${8 * cw}" height="${H - 60}" fill="${b % 2 ? C.bg : 'none'}" opacity="0.6"/><text x="${x0 + (28 - 8 * b) * cw}" y="${H - 40}" font-size="9" text-anchor="middle" fill="${C.muted}">byte ${b}</text>`;
+  lines.forEach(([lab, bits], k) => {
+    const y = 28 + k * 34, vis = k < show;
+    s += `<text x="4" y="${y}" font-size="9.5" fill="${vis ? C.fg : C.muted}">${lab}</text>`;
+    if (vis) for (let i = 0; i < 32; i++) { const ch = bits[i], hot = ch === '1' && (k === 3 ? ((31 - i) % 8 === 4) : k === 2 ? ((31 - i) % 8 === 0) : false); s += `<text x="${x0 + i * cw + cw / 2}" y="${y}" font-size="10" text-anchor="middle" fill="${hot ? C.y : ch === '1' ? C.fg : C.muted}" font-weight="${hot ? 600 : 400}">${ch}</text>`; }
+  });
+  s += `<text x="4" y="${H - 18}" font-size="9.5" fill="${C.muted}">0x00204081 = 1 + 2⁷ + 2¹⁴ + 2²¹: bit i of the field</text><text x="4" y="${H - 5}" font-size="9.5" fill="${C.muted}">appears at i, i+7, i+14, i+21, so at 8i for copy i.</text>`;
+  $('spread').setAttribute('viewBox', `0 0 ${W} ${H}`); $('spread').innerHTML = s;
+  $('spreadsub').textContent = at('H') ? `values 0–3: fifth bits ${bin(f4, 4).split('').reverse().join(' ')}` : '';
+}
+const mg = Atlas.grid($('map'), 8, 120);
+function drawMap() {
+  const n = nb(), U = USES[S.use], cols = Math.min(n, 120), rr = Math.ceil(n / cols);
+  if (mg.rows !== 8 * rr || mg.cols !== cols) mg.resize(8 * rr, cols);
+  $('map').style.aspectRatio = `${cols} / ${Math.max(8 * rr * 2.2, 10)}`;
+  const g = mg.prep(), rounds = Math.ceil(n / 32);
+  for (let w = 0; w < 8; w++) for (let b = 0; b < n; b++) {
+    const r = w * rr + Math.floor(b / cols), c = b % cols, round = Math.floor(b / 32);
+    g.cell(r, c, b === S.blk && w === 0 ? C.y : C.w, b === S.blk && w === 0 ? 1 : 0.25 + 0.5 * (round % 2), 0.1);
+  }
+  for (let w = 1; w < 8; w++) g.hline(w * rr, C.line, 1.5);
+  const full = n % 32 === 0;
+  $('mapdesc').textContent = `Each row of cells is one warp's matrix row (8 per thread block), split into its ${n} blocks${rr > 1 ? ` (drawn ${cols} per line)` : ''}. Lane l takes blocks l, l + 32, … : shading alternates by round. ${full ? `${n} = ${n / 32} × 32, so all lanes do ${n / 32} rounds.` : `${n} = ${Math.floor(n / 32)} × 32 + ${n % 32}: lanes 0–${n % 32 - 1} do ${rounds} rounds, lanes ${n % 32}–31 do ${rounds - 1}.`}`;
+  Atlas.legend($('maplegend'), [['--w', 'Q5_0 block, shaded by round'], ['--y', 'the selected block (warp 0)']]);
+  $('mapstatus').textContent = `per round a warp reads 32 × 16 = 512 B of qs, 128 B of qh, 64 B of d and 1 KB of x`;
+}
+mg.hook(p => { const n = nb(), cols = Math.min(n, 120), rr = Math.ceil(n / cols), b = (p.r % rr) * cols + p.c; if (b < n) $('mapstatus').textContent = `warp ${Math.floor(p.r / rr)}, block ${b}: lane ${b % 32}, round ${Math.floor(b / 32)}`; },
+  p => { const n = nb(), cols = Math.min(n, 120), rr = Math.ceil(n / cols), b = (p.r % rr) * cols + p.c; if (b < n) { S.blk = b; $('blk').value = b; draw(); } }, () => drawMap());
+$('blk').addEventListener('input', () => { S.blk = +$('blk').value; draw(); });
+
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1400 });
+$('blk').max = nb() - 1;
+syncSeg(); facts();
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

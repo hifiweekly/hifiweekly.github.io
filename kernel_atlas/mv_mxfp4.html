@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>mv_mxfp4 Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.lut td, .lut th { text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">gpt-oss · gptoss.ptx · decode: 4 experts per token, one warp per row</div>
+    <h1>Inside <code>mv_mxfp4</code></h1>
+    <p>Each gpt-oss layer has 32 experts, and each expert has three 2880 × 2880 matrices (gate, up, down) stored in MXFP4: 4-bit floating-point codes with one shared power-of-two scale per 32 values. In decode a token uses only 4 experts, so <code>mv_mxfp4</code> multiplies the token by just those 4 matrices: the grid's y index is the expert slot, and the expert id comes from <code>router_topk</code>. It runs three times per layer; pick which one below.</p>
+    <div class="formula"><span class="y">y</span>[s][r] = Σ<sub>b</sub> 2<sup>e[b] − 128</sup> · xd<sub>s</sub>[b] · Σ<sub>j&lt;32</sub> <span class="w">fp4×2</span>(code[r][32b+j]) · <span class="x">xq<sub>s</sub></span>[32b+j] + bias<sub>E</sub>[r] &nbsp;&nbsp;<span class="muted">// E = ids[s]</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-exp">
+    <div class="sechead"><h2 id="s-exp">Which weights are read</h2><p id="expdesc"></p></div>
+    <div class="controls">
+      <span class="seg" id="useSeg" role="group" aria-label="Which launch"></span>
+      <label>token <input id="tok" type="range" min="0" max="15" value="0"> <span id="tokv" class="mono"></span></label>
+    </div>
+    <div class="panel">
+      <div class="figure"><svg id="experts" role="img" aria-label="The 32 expert matrices and the 4 selected"></svg></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-blk">
+    <div class="sechead">
+      <h2 id="s-blk">One lane, one MXFP4 block of 32 weights</h2>
+      <p>Lane b of a warp takes blocks b, b + 32, b + 64 of its row (90 blocks of 32 values; lanes 26–31 skip the third round). A block is 16 bytes of codes plus one scale byte. Step through how a lane turns them into one float term: split nibbles, decode four codes at a time with byte permutes, multiply with the int8 activation using <code>dp4a</code>, scale.</p>
+    </div>
+    <div class="controls"><label>row <input id="row" type="range" min="0" max="2879" value="1234"> <span id="rowv" class="mono"></span></label><label>block <input id="blk" type="range" min="0" max="89" value="7"> <span id="blkv" class="mono"></span></label></div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="figure"><svg id="block" role="img" aria-label="Decoding one MXFP4 block"></svg></div>
+        <div class="legend" id="legend"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="card"></dl>
+        <div class="cvlabel"><b class="w">E2M1 code → value (× 2 in the kernel)</b></div>
+        <div class="tablewrap"><table class="nums lut" id="lut"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Integer dot products on 4-bit floats</h3>
+        <p>An E2M1 value is one of ±{0, 0.5, 1, 1.5, 2, 3, 4, 6}. Doubled, every one is an integer that fits in a signed byte, so after decoding, four weights and four int8 activations go through one <code>dp4a</code> (4 multiplies and adds in one instruction). The doubling is undone by using 2<sup>e−128</sup> instead of the format's 2<sup>e−127</sup>.</p>
+        <p>The decode itself is three <code>prmt</code> byte permutes per four codes: the low 3 bits of each code index a byte of {0,1,2,3,4,6,8,12} or of its negated copy, and the sign bit picks which. No lookup table in memory, no branches.</p>
+      </div>
+      <div class="panel">
+        <h3>Reading 4 of 32 experts</h3>
+        <p>Each expert matrix is 2880 rows × 90 blocks × 17 bytes = 4.4 MB, so a decode step reads 3 × 4 × 4.4 = 53 MB of expert weights per layer instead of 423 MB. The activation was quantized by <code>quant_q8</code> just before: gate and up share one input vector (<code>xstride = 0</code>), while down gives every slot its own (<code>xstride = 2880</code>), the swiglu output of that expert.</p>
+        <p>The engine keeps MXFP4 exactly as stored in the GGUF, only split into a code array and a scale array so the 16 code bytes of a block load as one aligned <code>v4.u32</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>mv_mxfp4</code> and its helper <code>fp4x4</code>; launched by <code>mv_mxfp4()</code> in <code>gptoss.c</code> with grid (⌈2880 / 8⌉, 4 slots) and 256 threads. In prefill, <code>gemm_mxfp4</code> does this work per expert bucket. Codes, scales and activations here are generated.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('mv_mxfp4');
+const FP4 = [0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12];
+const USES = {
+  gate: { label: 'gate (1st)', w: 'ffn_gate_exps', xs: 0, in: 'xq, xd: the quantized xn, shared by all 4 slots', out: 'gate' },
+  up: { label: 'up (2nd)', w: 'ffn_up_exps', xs: 0, in: 'xq, xd: the same vector as gate', out: 'up' },
+  down: { label: 'down (3rd)', w: 'ffn_down_exps', xs: 2880, in: 'xq + 2880·s: each slot\'s own swiglu_oai output, quantized', out: 'down' },
+};
+const S = { use: 'gate', tok: 0, row: 1234, blk: 7 };
+
+function route(t) {
+  const r = Atlas.rng(900 + t * 37), ids = [];
+  while (ids.length < 4) { const e = Math.floor(r() * 32); if (!ids.includes(e)) ids.push(e); }
+  return ids;
+}
+function blockData() {
+  const key = `${S.use}|${S.tok}|${S.row}|${S.blk}`, r = Atlas.rng(Atlas.h32(key.length * 7 + S.row * 131 + S.blk * 17 + S.tok * 3 + (S.use === 'up' ? 5000 : S.use === 'down' ? 9000 : 0)));
+  const codes = [], xq = [];
+  for (let j = 0; j < 32; j++) { const m = Math.min(7, Math.floor(Math.abs(Atlas.gauss(r)) * 2.2)); codes.push(m + (r() < 0.5 ? 8 : 0)); }
+  for (let j = 0; j < 32; j++) xq.push(Math.max(-127, Math.min(127, Math.round(Atlas.gauss(r) * 40))));
+  const e = 117 + Math.floor(r() * 6), xd = fr(0.01 + 0.03 * r());
+  const qs = []; for (let i = 0; i < 16; i++) qs.push(codes[i] | (codes[16 + i] << 4));
+  return { codes, xq, e, xd, qs };
+}
+const dec = c => FP4[c];
+// dp4a order in the kernel: word w low (vals 4w..4w+3 with x 4w..), then high (16+4w.. with x 16+4w..)
+function dpOrder() { const o = []; for (let w = 0; w < 4; w++) { o.push([4 * w, 'lo', w]); o.push([16 + 4 * w, 'hi', w]); } return o; }
+
+const steps = [
+  { tag: 'I', short: 'which row', title: 'row from the warp, expert from the slot', text: 'row = blockIdx.x · 8 + warp; slot s = blockIdx.y; E = ids[s]. The code row is qs + (E · 2880 + row) · 90 blocks · 16 bytes.' },
+  { tag: 'L', short: 'loads', title: 'load 16 code bytes, 1 scale byte, 32 int8 activations, 1 activation scale', text: 'Four non-coherent loads: <code>v4.u32</code> for the codes, <code>u8</code> for the e8m0 scale, two <code>v4.u32</code> for x and one <code>f32</code> for its scale.' },
+  { tag: 'N', w: 0, short: 'nibbles', title: 'split word 0: low nibbles are values 0–3, high nibbles 16–19', text: 'Byte i holds value i in its low nibble and value 16 + i in its high nibble (ggml\'s layout). <code>and 0x0F0F0F0F</code> keeps one code per byte; a shift by 4 first gives the other four.' },
+  { tag: 'F', w: 0, short: 'fp4x4', title: 'fp4x4: four codes → four signed bytes with prmt', text: 'Bits 0–2 of each code index the byte tables {0,1,2,3 | 4,6,8,12} and {0,−1,−2,−3 | −4,−6,−8,−12}; a third <code>prmt</code> takes each byte from the negative table when bit 3 is set.' },
+  { tag: 'D', w: 0, short: 'dp4a', title: 'dp4a: 4 products and their sum in one instruction', text: 'The four decoded weights times the four matching int8 activations, added to the running integer sum.' },
+  { tag: 'D', w: 3, short: 'all 8 dp4a', title: 'repeat for words 1–3: eight dp4a cover all 32 values', text: 'The integer sum of the block\'s 32 products is exact: at most 32 · 12 · 127 in magnitude.' },
+  { tag: 'X', short: 'scale', title: 'one float term: sum · 2^(e − 128) · xd', text: 'The e8m0 byte becomes the float bits (e − 1) &lt;&lt; 23, a power of two, without any arithmetic. Then a <code>cvt</code> and one FMA into the lane\'s accumulator.' },
+  { tag: 'R', short: 'reduce, store', title: 'after 3 rounds: butterfly sum, lane 0 adds bias[E][row]', text: 'The same five-step warp reduction as mv_q8. Lane 0 writes y[s][row] for the slot.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `F|__device__ int fp4x4(unsigned q) {        // 4 codes (low nibble of each byte) -> 4 int8
+F|    unsigned t = (q >> 4) | q;
+F|    unsigned sel = (t & 0xFF) | ((t >> 8) & 0xFF00);       // c0 | c1<<4 | c2<<8 | c3<<12
+F|    unsigned pos = __byte_perm(0x03020100, 0x0C080604, sel & 0x7777);
+F|    unsigned neg = __byte_perm(0xFDFEFF00, 0xF4F8FAFC, sel & 0x7777);
+F|    return __byte_perm(pos, neg, ((sel & 0x8888) >> 1) | 0x3210);
+F|}
+I|extern "C" __global__ void mv_mxfp4(const uint4 *qs, const uint8_t *sc, const unsigned *ids,
+I|        const int8_t *xq, const float *xd, unsigned xstride, const float *bias, float *y,
+I|        unsigned rows, unsigned cols)
+I|{
+I|    unsigned lane = threadIdx.x & 31, row = blockIdx.x * 8 + (threadIdx.x >> 5);
+I|    if (row >= rows) return;
+I|    unsigned s = blockIdx.y, E = ids[s], nb = cols / 32;
+I|    size_t g = (size_t)(E * rows + row) * nb;                // this expert's row
+I|    xq += s * xstride;  xd += s * xstride / 32;
+X|    float acc = 0.0f;
+X|    for (unsigned b = lane; b < nb; b += 32) {
+L|        uint4 c = __ldg(&qs[g + b]);
+L|        unsigned e = __ldg(&sc[g + b]);
+L|        const int4 *xv = (const int4 *)(xq + 32 * b);
+L|        int4 x0 = __ldg(xv), x1 = __ldg(xv + 1);
+N,F,D|        int sum = __dp4a(fp4x4(c.x & 0x0F0F0F0F), x0.x, 0);
+N,F,D|        sum = __dp4a(fp4x4((c.x >> 4) & 0x0F0F0F0F), x1.x, sum);
+D|        sum = __dp4a(fp4x4(c.y & 0x0F0F0F0F), x0.y, sum);
+D|        sum = __dp4a(fp4x4((c.y >> 4) & 0x0F0F0F0F), x1.y, sum);
+D|        ...                                                  // c.z, c.w the same way
+X|        float ws = __int_as_float(e < 2 ? 0x00200000 << e : (e - 1) << 23);  // 2^(e-128)
+X|        acc = fmaf((float)sum, ws * __ldg(&xd[b]), acc);
+X|    }
+R|    for (int off = 16; off >= 1; off >>= 1) acc += __shfl_xor_sync(0xffffffff, acc, off);
+R|    if (lane == 0) y[s * rows + row] = acc + bias[E * rows + row];
+I|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    mov.u32             %r10, %ctaid.y;         // slot
+I|    ld.global.u32       %r11, [%rd8];           // e = ids[slot]
+I|    mad.lo.u32          %r13, %r11, %r2, %r9;   // global row = e*rows + row
+L|    ld.global.nc.v4.u32 {%r17, %r18, %r19, %r20}, [%rd15];
+L|    ld.global.nc.u8     %r21, [%rd17];          // e8m0 scale
+L|    ld.global.nc.v4.u32 {%r22, %r23, %r24, %r25}, [%rd19];      // x[0..15]
+L|    ld.global.nc.v4.u32 {%r26, %r27, %r28, %r29}, [%rd19+16];   // x[16..31]
+N|    and.b32             %r30, %r17, 0x0F0F0F0F;
+F|    call (%r31), fp4x4, (%r30);
+D|    dp4a.s32.s32        %r40, %r31, %r22, 0;
+N|    shr.u32             %r30, %r17, 4;
+N|    and.b32             %r30, %r30, 0x0F0F0F0F;
+F|    call (%r31), fp4x4, (%r30);
+D|    dp4a.s32.s32        %r40, %r31, %r26, %r40;
+D|    ...                                         // words %r18, %r19, %r20
+X|    setp.lt.u32         %p3, %r21, 2;
+X|    sub.u32             %r41, %r21, 1;
+X|    shl.b32             %r41, %r41, 23;         // 2^(e-128) as float bits
+X|    mov.u32             %r42, 0x00200000;
+X|    shl.b32             %r42, %r42, %r21;       // subnormal for e < 2
+X|    selp.b32            %r43, %r42, %r41, %p3;
+X|    mov.b32             %f2, %r43;
+X|    ld.global.nc.f32    %f3, [%rd21];           // xd
+X|    mul.f32             %f4, %f2, %f3;
+X|    cvt.rn.f32.s32      %f5, %r40;
+X|    fma.rn.f32          %f1, %f5, %f4, %f1;
+R|REDUCE:
+R|    shfl.sync.bfly.b32  %f6, %f1, 16, 31, -1;
+R|    ...
+R|    ld.global.f32       %f7, [%rd23];           // bias[e][row]
+R|    add.f32             %f1, %f1, %f7;
+R|    st.global.f32       [%rd25], %f1;
+F|// fp4x4:
+F|    shr.u32             %t1, q, 4;
+F|    or.b32              %t1, %t1, q;
+F|    ...                                         // sel = c0 | c1<<4 | c2<<8 | c3<<12
+F|    and.b32             %t4, %t2, 0x7777;       // magnitude indices
+F|    prmt.b32            %t5, %t8, %t9, %t4;     // from {0,1,2,3,4,6,8,12}
+F|    prmt.b32            %t6, %t10, %t11, %t4;   // from the negated table
+F|    and.b32             %t7, %t2, 0x8888;
+F|    shr.u32             %t7, %t7, 1;            // sign bit -> +4 (pick from %t6)
+F|    or.b32              %t7, %t7, 0x3210;
+F|    prmt.b32            out, %t5, %t6, %t7;` },
+});
+Atlas.facts($('facts'), [['(360, 4)', 'grid: rows / 8, slots'], ['256', 'threads (8 warps = 8 rows)'], ['17 B', 'per 32 weights (4.25 bits)'], ['8 dp4a', 'per block'], ['4.4 MB', 'per expert matrix'], ['0 B', 'shared memory']]);
+$('lut').innerHTML = '<tr><th>code</th>' + [0, 1, 2, 3, 4, 5, 6, 7].map(c => `<th>${c} / ${c + 8}</th>`).join('') + '</tr><tr><td>value</td>' + [0, 0.5, 1, 1.5, 2, 3, 4, 6].map(v => `<td>±${v}</td>`).join('') + '</tr><tr><td>× 2</td>' + [0, 1, 2, 3, 4, 6, 8, 12].map(v => `<td>±${v}</td>`).join('') + '</tr>';
+
+$('useSeg').innerHTML = Object.entries(USES).map(([k, u]) => `<button type="button" data-v="${k}">${u.label}</button>`).join('');
+const syncSeg = () => $('useSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === S.use));
+$('useSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.use = b.dataset.v; syncSeg(); draw(); });
+
+function drawExperts() {
+  const U = USES[S.use], ids = route(S.tok), W = 760, H = 250, ex = 32, bw = 19, gap = 3.6, x0 = 20, y0 = 34, bh = 80;
+  $('tokv').textContent = `${S.tok} → experts ${ids.join(', ')}`;
+  $('expdesc').textContent = `blk.N.${U.w}.weight holds all 32 experts' matrices, 2880 × 2880 each. Grid row blockIdx.y = slot s reads only expert ids[s]; ${U.xs ? 'each slot multiplies its own input vector' : 'all four slots multiply the same input vector'}.`;
+  let s = `<text x="${x0}" y="20" font-size="11" fill="${C.fg}">${U.w}.weight · 32 experts × 2880 rows × 90 blocks × 17 B</text>`;
+  for (let e = 0; e < ex; e++) {
+    const x = x0 + e * (bw + gap), k = ids.indexOf(e);
+    s += `<rect x="${x}" y="${y0}" width="${bw}" height="${bh}" rx="2" fill="${k >= 0 ? C.w : C.zero}" opacity="${k >= 0 ? 0.9 : 0.35}"/>`;
+    s += `<text x="${x + bw / 2}" y="${y0 + bh + 12}" font-size="8.5" text-anchor="middle" fill="${k >= 0 ? C.fg : C.muted}">${e}</text>`;
+    if (k >= 0) s += `<text x="${x + bw / 2}" y="${y0 + bh / 2 + 4}" font-size="10" text-anchor="middle" fill="${C.panel}" font-weight="600">s${k}</text>`;
+  }
+  // slots row
+  const sy = 170, sw = 168;
+  for (let k = 0; k < 4; k++) {
+    const sx = x0 + k * (sw + 16), e = ids[k], ex0 = x0 + e * (bw + gap) + bw / 2;
+    s += `<path d="M${ex0} ${y0 + bh + 16} C ${ex0} ${sy - 30}, ${sx + sw / 2} ${sy - 40}, ${sx + sw / 2} ${sy}" fill="none" stroke="${C.w}" stroke-width="1.4"/>`;
+    s += `<rect x="${sx}" y="${sy}" width="${sw}" height="30" rx="4" fill="${C.panel}" stroke="${C.sync}"/>`;
+    s += `<text x="${sx + sw / 2}" y="${sy + 13}" font-size="9.5" text-anchor="middle" fill="${C.fg}">blockIdx.y = ${k} · expert ${e}</text>`;
+    s += `<text x="${sx + sw / 2}" y="${sy + 25}" font-size="9.5" text-anchor="middle" fill="${C.muted}">x: ${U.xs ? `xq + ${2880 * k}` : 'xq'} → ${U.out}[${k}]</text>`;
+  }
+  s += `<text x="${x0}" y="${H - 6}" font-size="10" fill="${C.muted}">${U.in}. Read per launch: 4 × 4.4 MB = 17.6 MB of the 141 MB tensor.</text>`;
+  $('experts').setAttribute('viewBox', `0 0 ${W} ${H}`); $('experts').innerHTML = s;
+}
+
+function draw() {
+  drawExperts();
+  const st = stepper.step, B = blockData(), ids = route(S.tok), U = USES[S.use];
+  $('rowv').textContent = `${S.row} (block ${S.row >> 3}, warp ${S.row & 7})`;
+  $('blkv').textContent = `${S.blk} → lane ${S.blk % 32}, round ${Math.floor(S.blk / 32)}`;
+  const order = ['I', 'L', 'N', 'F', 'D', 'X', 'R'], at = t => order.indexOf(st.tag) >= order.indexOf(t);
+  const wsel = st.w ?? 3, dps = dpOrder();
+  const wordDone = w => st.tag === 'D' ? w <= wsel : (at('X'));
+  const W = 760, H = 330, x0 = 70, cw = (W - x0 - 10) / 32;
+  let s = '';
+  // row 1: qs bytes
+  const by = 24, bwid = (W - x0 - 10) / 16;
+  s += `<text x="4" y="${by + 16}" font-size="10.5" fill="${C.fg}">qs bytes</text>`;
+  for (let i = 0; i < 16; i++) {
+    const w = i >> 2, x = x0 + i * bwid, hot = (st.tag === 'N' || st.tag === 'F' || st.tag === 'D') && w === (st.tag === 'D' && st.w === 3 ? w : wsel) && !(st.tag === 'D' && st.w === 3);
+    const shown = at('L');
+    s += `<rect x="${x + 1}" y="${by}" width="${bwid - 2}" height="24" rx="2" fill="${hot ? C.hl : C.bg}" stroke="${w % 2 ? C.line : C.muted}"/>`;
+    if (shown) s += `<text x="${x + bwid * 0.3}" y="${by + 16}" font-size="10.5" text-anchor="middle" fill="${C.w}">${B.codes[16 + i].toString(16)}</text><text x="${x + bwid * 0.7}" y="${by + 16}" font-size="10.5" text-anchor="middle" fill="${C.w}" font-weight="600">${B.codes[i].toString(16)}</text>`;
+    if (i % 4 === 0) s += `<text x="${x + 2}" y="${by - 5}" font-size="9" fill="${C.muted}">word ${w}</text>`;
+  }
+  s += `<text x="${W - 10}" y="${by + 38}" font-size="9" text-anchor="end" fill="${C.muted}">each byte: high nibble | low nibble (hex)</text>`;
+  // row 2: decoded values
+  const vy = 92;
+  s += `<text x="4" y="${vy + 15}" font-size="10.5" fill="${C.fg}">2 × w</text><text x="4" y="${vy + 50}" font-size="10.5" fill="${C.fg}">x (int8)</text><text x="4" y="${vy + 85}" font-size="10.5" fill="${C.fg}">2w · x</text>`;
+  for (let j = 0; j < 32; j++) {
+    const w = (j % 16) >> 2, hiHalf = j >= 16, x = x0 + j * cw;
+    const decoded = at('F') && (st.tag !== 'F' || w === wsel) && (st.tag !== 'D' || w <= wsel || true);
+    const showDec = st.tag === 'F' ? w === wsel : at('D');
+    const inWord = (st.tag === 'N' || st.tag === 'F') && w === wsel || (st.tag === 'D' && st.w === 0 && w === 0);
+    const v = dec(B.codes[j]);
+    s += `<rect x="${x + 1}" y="${vy}" width="${cw - 2}" height="22" rx="2" fill="${inWord ? C.hl : C.bg}" stroke="${C.line}"/>`;
+    if (showDec) s += `<text x="${x + cw / 2}" y="${vy + 15}" font-size="9.5" text-anchor="middle" fill="${v < 0 ? C.y : C.x}">${v}</text>`;
+    else if (at('L') && inWord) s += `<text x="${x + cw / 2}" y="${vy + 15}" font-size="9" text-anchor="middle" fill="${C.w}">c${B.codes[j].toString(16)}</text>`;
+    s += `<rect x="${x + 1}" y="${vy + 35}" width="${cw - 2}" height="22" rx="2" fill="${C.bg}" stroke="${C.line}"/>`;
+    if (at('L')) s += `<text x="${x + cw / 2}" y="${vy + 50}" font-size="9" text-anchor="middle" fill="${C.fg}">${B.xq[j]}</text>`;
+    const prodShown = at('D') && (at('X') || w <= wsel);
+    s += `<rect x="${x + 1}" y="${vy + 70}" width="${cw - 2}" height="22" rx="2" fill="${C.bg}" stroke="${C.line}"/>`;
+    if (prodShown) s += `<text x="${x + cw / 2}" y="${vy + 85}" font-size="8" text-anchor="middle" fill="${C.fg}">${v * B.xq[j]}</text>`;
+    if (j % 4 === 0) s += `<text x="${x + 2}" y="${vy - 4}" font-size="8.5" fill="${C.muted}">${j}</text>`;
+  }
+  s += `<line x1="${x0 + 16 * cw}" x2="${x0 + 16 * cw}" y1="${vy - 12}" y2="${vy + 96}" stroke="${C.sync}" stroke-dasharray="3 3"/>`;
+  s += `<text x="${x0 + 8 * cw}" y="${vy - 14}" font-size="9" text-anchor="middle" fill="${C.muted}">low nibbles of bytes 0–15</text><text x="${x0 + 24 * cw}" y="${vy - 14}" font-size="9" text-anchor="middle" fill="${C.muted}">high nibbles of bytes 0–15</text>`;
+  // row 3: dp4a chain
+  const dy = 222; let acc = 0;
+  s += `<text x="4" y="${dy + 15}" font-size="10.5" fill="${C.fg}">dp4a</text>`;
+  dps.forEach(([j0, half, w], k) => {
+    let part = 0; for (let q = 0; q < 4; q++) part += dec(B.codes[j0 + q]) * B.xq[j0 + q];
+    acc += part;
+    const x = x0 + k * ((W - x0 - 10) / 8), wd = (W - x0 - 10) / 8 - 6, done = at('X') || (st.tag === 'D' && w <= wsel);
+    s += `<rect x="${x}" y="${dy}" width="${wd}" height="38" rx="3" fill="${done ? C.panel : C.bg}" stroke="${done ? C.sync : C.line}"/>`;
+    s += `<text x="${x + wd / 2}" y="${dy + 14}" font-size="9" text-anchor="middle" fill="${C.muted}">w${w} ${half} · ${j0}–${j0 + 3}</text>`;
+    if (done) s += `<text x="${x + wd / 2}" y="${dy + 30}" font-size="10.5" text-anchor="middle" fill="${C.fg}">${acc}</text>`;
+  });
+  const total = acc, ws = 2 ** (B.e - 128), term = fr(total * fr(fr(ws) * B.xd));
+  s += `<text x="4" y="${H - 14}" font-size="10.5" fill="${at('X') ? C.fg : C.muted}">${at('X') ? `term = ${total} · 2^(${B.e} − 128) · ${B.xd.toFixed(5)} = ${term.toExponential(4)}  (true weights: ${total}/2 · 2^(${B.e} − 127) · xd, the same)` : 'scale applied after the eight dp4a'}</text>`;
+  $('block').setAttribute('viewBox', `0 0 ${W} ${H}`); $('block').innerHTML = s;
+  Atlas.legend($('legend'), [['--w', 'E2M1 codes'], ['--x', 'positive weight'], ['--y', 'negative weight'], ['--hl', 'current word']]);
+  // card
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`, slot = 0, E = ids[slot];
+  $('thlabel').textContent = `slot 0 (expert ${E}) · row ${S.row} · lane ${S.blk % 32}`;
+  let c = row('launch', `${U.label.split(' ')[0]} → ${U.out}[0][${S.row}]`) + row('expert row', at('I') ? `${E} · 2880 + ${S.row} = ${Atlas.int(E * 2880 + S.row)}` : '–');
+  c += row('code bytes at', at('I') ? `byte ${Atlas.int(((E * 2880 + S.row) * 90 + S.blk) * 16)}` : '–');
+  c += row('x block', at('L') ? `xq[${U.xs ? '2880·s + ' : ''}${32 * S.blk} …]` : '–');
+  c += row('scale byte e', at('L') ? `${B.e} → 2^${B.e - 128} = ${(2 ** (B.e - 128)).toExponential(3)}` : '–');
+  c += row('float bits', at('X') ? `(${B.e} − 1) << 23 = 0x${(((B.e - 1) << 23) >>> 0).toString(16).padStart(8, '0')}` : '–');
+  c += row('xd', at('L') ? B.xd.toFixed(5) : '–');
+  c += row('blocks of this lane', `${S.blk % 32}, ${S.blk % 32 + 32}${S.blk % 32 + 64 < 90 ? ', ' + (S.blk % 32 + 64) : ' (no 3rd)'}`);
+  $('card').innerHTML = c;
+}
+$('tok').addEventListener('input', () => { S.tok = +$('tok').value; draw(); });
+$('row').addEventListener('input', () => { S.row = +$('row').value; draw(); });
+$('blk').addEventListener('input', () => { S.blk = +$('blk').value; draw(); });
+
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1400 });
+syncSeg();
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

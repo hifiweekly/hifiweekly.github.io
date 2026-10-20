@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gemma 3 12B Graph</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script src="atlas.js"></script>
+<script src="model.js"></script>
+
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Model graph · gemma3/gemma-3-12b-it-Q5_0.gguf · engine gemma3.ptx</div>
+    <h1>Gemma 3 12B</h1>
+    <p>The dataflow of the GGUF file, drawn with the kernel the engine launches at each step. Weight shapes and types come from the file header; each operation is named after its PTX kernel, and the operations that have a walkthrough link to it. Click any box for details.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="h-ov">
+    <div class="sechead"><h2 id="h-ov">Whole model</h2><p class="muted">48 layers in 8 groups of five local layers (sliding window of 1024 tokens) and one global layer (full context). Click a layer box to show it below.</p></div>
+    <div class="mgrid">
+      <div class="panel graph" id="ovGraph" aria-label="Whole-model graph"></div>
+      <div class="panel side" aria-live="polite"><div id="detail"><h3>Details</h3><p class="muted">Click a box in either graph.</p></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-ly">
+    <div class="sechead"><h2 id="h-ly">One layer</h2><p class="muted" id="lyTitle"></p></div>
+    <div class="controls">
+      <span class="seg" id="passSeg" role="group" aria-label="Pass"></span>
+      <span class="seg" id="kindSeg" role="group" aria-label="Layer kind"></span>
+      <label>Highlight kernel <select id="hotSel"></select></label>
+    </div>
+    <div class="key">
+      <span><i style="border-color:var(--sync)"></i>kernel with a walkthrough</span>
+      <span><i style="border-color:var(--muted);border-style:dashed"></i>kernel, no page yet</span>
+      <span><i style="border-color:var(--w)"></i>GGUF tensor</span>
+      <span><i style="border-color:var(--x);border-radius:8px"></i>activations or cache</span>
+      <span><i style="border-color:var(--line)"></i>host (CPU) step</span>
+    </div>
+    <div class="panel graph" id="lyGraph" aria-label="Layer graph"></div>
+  </section>
+
+  <section aria-labelledby="h-ln">
+    <div class="sechead"><h2 id="h-ln">Launch order</h2><p class="muted" id="launchCount"></p></div>
+    <div class="panel tablewrap"><table class="list" id="launches"></table></div>
+  </section>
+
+  <section aria-labelledby="h-t">
+    <div class="sechead"><h2 id="h-t">Tensors of one layer, plus the shared ones</h2><p class="muted">Shapes are rows × cols, that is output × input, the way the kernels index them. The GGUF header lists the same dimensions in the other order (3840 × 4096 for attn_q.weight). The engine loads either file: BF16 tensors are converted at load time; the Q5_0 file already holds Q8_0 attention and Q5_0 feed-forward weights.</p></div>
+    <div class="panel tablewrap"><table class="list" id="tensors"></table></div>
+  </section>
+
+  <footer>Sources: the wiring of <code>model_htmls/gemma3_graph.html</code>, regenerated with <code>gguf_graph.py</code> from <code>gemma3/gemma-3-12b-it-BF16.gguf</code> because that file was drawn from Gemma 3 27B (62 layers, 5376 wide). Its attention scale 1/√240 follows the 27B rule; the 12B uses 1/√256, as <code>read_config()</code> does. Kernels and launch shapes: <code>forward()</code> in <code>gemma3/gemma3.c</code>. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.</footer>
+</div>
+
+<script>
+const GS = '≤ 448 blocks · 256 · grid-stride';
+const mm = rows => ({ decode: `${Atlas.int(rows / 8)} blocks · 256`, prefill: `grid (${rows / 64}, ⌈T/32⌉) · 256` });
+const M = {
+  id: 'gemma3', engine: 'Gemma 3', nLayers: 48,
+  facts: [['48', 'layers (40 local + 8 global)'], ['3840', 'n_embd'], ['16 / 8', 'q heads / kv heads'], ['256', 'head dim'], ['15360', 'n_ff'], ['1024', 'local window (tokens)'], ['262,208', 'vocabulary'], ['10k / 1M ÷8', 'RoPE base local / global'], ['1/16', 'attention scale'], ['1e-6', 'RMSNorm ε']],
+  layerTitle: (p, k) => `${k === 'local' ? 'Local layers (all but 5, 11, … 47): attention over the last 1024 positions' : 'Global layers 5, 11, 17, … 47: attention over every earlier position'}; ${p === 'decode' ? 'decode, T = 1: matrix × vector kernels' : 'prefill, a chunk of T tokens: tiled GEMM kernels'}.`,
+  overview() {
+    const loc = i => ({ id: 'b' + i, kind: 'blk', label: 'local layer', sub: 'window 1024', layerKind: 'local' });
+    return {
+      nodes: [
+        { id: 'tok', kind: 'io', label: 'tokens' },
+        { id: 'emb', kind: 'w', label: 'token_embd.weight', sub: '262,208 × 3840 · BF16 / Q8_0' },
+        { id: 'look', kind: 'op', label: 'embedding lookup', sub: 'CPU: row → f32, × √3840, copied to x', io: 'tokens → x' },
+        { id: 'an0', kind: 'w', label: 'attn_norm.weight', sub: 'of layer 0' },
+        { id: 'n0', kind: 'op', kernel: 'rmsnorm', sub: 'attn_norm of layer 0', launch: { decode: '1 block · 1024', prefill: 'T blocks · 1024' }, io: 'x → xn' },
+        { group: 'rep', label: '× 8', nodes: [loc(0), loc(1), loc(2), loc(3), loc(4),
+          { id: 'b5', kind: 'blk', label: 'global layer', sub: 'full context', layerKind: 'global' }] },
+        { id: 'onw', kind: 'w', label: 'output_norm.weight', sub: '3840 · F32' },
+        { id: 'on', kind: 'op', kernel: 'add_rmsnorm', sub: 'last launch of layer 47:<br/>x += post_ffw_norm(y), xn = output_norm(x)', launch: { decode: '1 block · 1024', prefill: 'T blocks · 1024' }, io: 'y, x → x, xn' },
+        { id: 'ow', kind: 'w', label: 'token_embd.weight', t: 'token_embd.weight', sub: 'tied output head · Q8_0' },
+        { id: 'head', kind: 'op', kernel: 'mv_q8', sub: 'output head → 262,208 logits, last token', launch: { any: '32,776 blocks · 256' }, io: 'xn → logits' },
+        { id: 'am', kind: 'op', kernel: 'argmax', sub: 'best token (greedy result)', launch: { any: '1 block · 1024' }, io: 'logits → next' },
+        { id: 'sm', kind: 'op', kernel: 'sample_logits', sub: 'temperature sampling, min-p', launch: { any: '1 block · 1024' }, io: 'logits, next → draw' },
+        { id: 'cl', kind: 'op', kernel: 'compact_logits', sub: 'candidates near the max', launch: { any: GS }, io: 'logits, next → cand' },
+        { id: 'hs', kind: 'op', label: 'host sampler', sub: 'sort, top-k / top-p, draw' },
+        { id: 'nt', kind: 'io', label: 'next token' },
+      ],
+      edges: [['tok', 'look'], ['emb', 'look'], ['look', 'n0', 'x'], ['an0', 'n0'], ['n0', 'b0', 'x, xn'], ['b0', 'b1'], ['b1', 'b2'], ['b2', 'b3'], ['b3', 'b4'], ['b4', 'b5'],
+        ['b5', 'on', 'y, x'], ['onw', 'on'], ['on', 'head', 'xn'], ['ow', 'head'],
+        ['head', 'am', 'logits'], ['am', 'nt', 'temperature 0'], ['am', 'sm'], ['sm', 'nt', 'no top-k / top-p'], ['sm', 'cl', 'top-k / top-p'], ['cl', 'hs'], ['hs', 'nt']],
+    };
+  },
+  layer(pass, kind) {
+    const d = pass === 'decode', mv = d ? 'mv_q8' : 'gemm_q8', m5 = d ? 'mv_q5' : 'gemm_q5', loc = kind === 'local';
+    const nodes = [
+      { id: 'x', kind: 'io', label: 'x, xn', sub: 'residual stream and its attn_norm,<br/>from the previous add_rmsnorm' },
+      { id: 'wq', kind: 'w', label: 'attn_q.weight', sub: '4096 × 3840 · BF16 → Q8_0' },
+      { id: 'wk', kind: 'w', label: 'attn_k.weight', sub: '2048 × 3840 · BF16 → Q8_0' },
+      { id: 'wv', kind: 'w', label: 'attn_v.weight', sub: '2048 × 3840 · BF16 → Q8_0' },
+      { id: 'q', kind: 'op', kernel: mv, sub: 'q = W·xn', launch: mm(4096), io: 'xn → qkv[q]' },
+      { id: 'k', kind: 'op', kernel: mv, sub: 'k = W·xn', launch: mm(2048), io: 'xn → qkv[k]' },
+      { id: 'v', kind: 'op', kernel: mv, sub: 'v = W·xn', launch: mm(2048), io: 'xn → qkv[v]' },
+      { id: 'qnw', kind: 'w', label: 'attn_q_norm.weight', sub: '256 · F32' },
+      { id: 'knw', kind: 'w', label: 'attn_k_norm.weight', sub: '256 · F32' },
+      { id: 'qkr', kind: 'op', kernel: 'qk_norm_rope', sub: `per-head RMSNorm (256) on q and k<br/>RoPE ${loc ? 'base 10000' : 'base 1,000,000, linear ÷8'}<br/>k, v → f16 cache slot`, launch: { any: 'grid (32 heads, T) · 32' }, io: 'qkv → qkv, kc, vc' },
+      { id: 'kv', kind: 'io', label: 'KV cache', sub: loc ? 'f16 ring of 1024 + batch slots' : 'f16, one slot per position' },
+      { id: 'att', kind: 'op', kernel: 'attention', sub: `softmax(q·kᵀ / 16)·v<br/>16 q / 8 kv heads<br/>${loc ? 'last 1024 positions' : 'all earlier positions'}`, launch: { any: 'grid (16, T) · 256' }, io: 'qkv, kc, vc → att' },
+      { id: 'wo', kind: 'w', label: 'attn_output.weight', sub: '3840 × 4096 · BF16 → Q8_0' },
+      { id: 'o', kind: 'op', kernel: mv, sub: 'y = W·att', launch: mm(3840), io: 'att → y' },
+      { id: 'pan', kind: 'w', label: 'post_attention_norm.weight', sub: '3840 · F32' },
+      { id: 'fnw', kind: 'w', label: 'ffn_norm.weight', sub: '3840 · F32' },
+      { id: 'ar1', kind: 'op', kernel: 'add_rmsnorm', sub: 'x += post_attention_norm(y)<br/>xn = ffn_norm(x)', launch: { decode: '1 block · 1024', prefill: 'T blocks · 1024' }, io: 'y, x → x, xn' },
+      { id: 'qx', kind: 'op', kernel: 'quant_q8', sub: d ? 'xn → int8 + scale per 32' : 'round xn to Q8 in place', launch: { any: GS }, io: d ? 'xn → xq, xd' : 'xn → xn' },
+      { id: 'wgu', kind: 'w', label: 'ffn_gate.weight ‖ ffn_up.weight', t: 'ffn_gate.weight', sub: 'stacked: 30720 × 3840 · Q5_0' },
+      { id: 'gu', kind: 'op', kernel: m5, sub: 'gate and up in one product', launch: d ? { decode: '3,840 blocks · 256' } : { prefill: 'grid (480, ⌈T/32⌉) · 256' }, io: d ? 'xq, xd → gu' : 'xn → gu' },
+      { id: 'act', kind: 'op', kernel: 'geglu', sub: 'h = GELU_tanh(gate) · up', launch: { any: GS }, io: 'gu → h' },
+      { id: 'qh', kind: 'op', kernel: 'quant_q8', sub: d ? 'h → int8 + scale per 32' : 'round h to Q8 in place', launch: { any: GS }, io: d ? 'h → xq, xd' : 'h → h' },
+      { id: 'wd', kind: 'w', label: 'ffn_down.weight', sub: '3840 × 15360 · BF16 → Q5_0' },
+      { id: 'dn', kind: 'op', kernel: m5, sub: 'y = W·h', launch: d ? { decode: '480 blocks · 256' } : { prefill: 'grid (60, ⌈T/32⌉) · 256' }, io: d ? 'xq, xd → y' : 'h → y' },
+      { id: 'pfw', kind: 'w', label: 'post_ffw_norm.weight', sub: '3840 · F32' },
+      { id: 'nnw', kind: 'w', label: 'next attn_norm.weight', t: 'attn_norm.weight', sub: 'output_norm after layer 47' },
+      { id: 'ar2', kind: 'op', kernel: 'add_rmsnorm', sub: 'x += post_ffw_norm(y)<br/>xn = next layer’s attn_norm(x)', launch: { decode: '1 block · 1024', prefill: 'T blocks · 1024' }, io: 'y, x → x, xn' },
+      { id: 'y', kind: 'io', label: 'x, xn', sub: 'to the next layer' },
+    ];
+    const edges = [['x', 'q', 'xn'], ['x', 'k', 'xn'], ['x', 'v', 'xn'], ['wq', 'q'], ['wk', 'k'], ['wv', 'v'],
+      ['q', 'qkr'], ['k', 'qkr'], ['v', 'qkr'], ['qnw', 'qkr'], ['knw', 'qkr'], ['qkr', 'kv', 'k, v'], ['qkr', 'att', 'q'], ['kv', 'att'],
+      ['att', 'o', 'att'], ['wo', 'o'], ['o', 'ar1', 'y'], ['x', 'ar1', 'x'], ['pan', 'ar1'], ['fnw', 'ar1'],
+      ['ar1', 'qx', 'xn'], ['qx', 'gu'], ['wgu', 'gu'], ['gu', 'act', 'gu'], ['act', 'qh', 'h'], ['qh', 'dn'], ['wd', 'dn'],
+      ['dn', 'ar2', 'y'], ['ar1', 'ar2', 'x'], ['pfw', 'ar2'], ['nnw', 'ar2'], ['ar2', 'y']];
+    return { nodes, edges };
+  },
+  tensors: [
+    { name: 'token_embd.weight', file: '262,208 × 3840 · BF16 / Q8_0', engine: 'host rows for the lookup; a Q8_0 copy on the GPU is the tied output head', by: 'embedding lookup on the CPU · mv_q8' },
+    { name: 'attn_norm.weight', file: '3840 · F32', engine: 'F32', by: 'rmsnorm (layer 0) · add_rmsnorm' },
+    { name: 'attn_q.weight', file: '4096 × 3840 · BF16 / Q8_0', engine: 'Q8_0: int8 + f16 scale per 32', by: 'mv_q8 · gemm_q8' },
+    { name: 'attn_k.weight', file: '2048 × 3840 · BF16 / Q8_0', engine: 'Q8_0', by: 'mv_q8 · gemm_q8' },
+    { name: 'attn_v.weight', file: '2048 × 3840 · BF16 / Q8_0', engine: 'Q8_0', by: 'mv_q8 · gemm_q8' },
+    { name: 'attn_q_norm.weight', file: '256 · F32', engine: 'F32', by: 'qk_norm_rope' },
+    { name: 'attn_k_norm.weight', file: '256 · F32', engine: 'F32', by: 'qk_norm_rope' },
+    { name: 'attn_output.weight', file: '3840 × 4096 · BF16 / Q8_0', engine: 'Q8_0', by: 'mv_q8 · gemm_q8' },
+    { name: 'post_attention_norm.weight', file: '3840 · F32', engine: 'F32', by: 'add_rmsnorm' },
+    { name: 'ffn_norm.weight', file: '3840 · F32', engine: 'F32', by: 'add_rmsnorm' },
+    { name: 'ffn_gate.weight', file: '15360 × 3840 · BF16 / Q5_0', engine: 'Q5_0, rows 0 … 15359 of the stacked gate_up matrix', by: 'mv_q5 · gemm_q5' },
+    { name: 'ffn_up.weight', file: '15360 × 3840 · BF16 / Q5_0', engine: 'Q5_0, rows 15360 … 30719 of gate_up', by: 'mv_q5 · gemm_q5' },
+    { name: 'ffn_down.weight', file: '3840 × 15360 · BF16 / Q5_0', engine: 'Q5_0', by: 'mv_q5 · gemm_q5' },
+    { name: 'post_ffw_norm.weight', file: '3840 · F32', engine: 'F32', by: 'add_rmsnorm' },
+    { name: 'output_norm.weight', file: '3840 · F32', engine: 'F32', by: 'add_rmsnorm (end of layer 47)' },
+  ],
+};
+Atlas.model(M);
+</script>

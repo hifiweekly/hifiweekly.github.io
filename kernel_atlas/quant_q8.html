@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>quant_q8 Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.lanes td:first-child, .lanes th:first-child { text-align: left; }
+.sites td, .sites th { text-align: left; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">gpt-oss + Gemma 3 · identical in gptoss.ptx and gemma3.ptx · one warp per 32-value block</div>
+    <h1>Inside <code>quant_q8</code></h1>
+    <p>The 4-bit and 5-bit expert and feed-forward weights are multiplied with integer dot products (<code>dp4a</code>), so the activation they meet has to be 8-bit integers too. <code>quant_q8</code> converts a float vector into Q8 blocks: every 32 consecutive values share one float scale d, and each value becomes round(x / d), between −127 and 127. One warp handles one block, one lane per value, so the block's maximum comes from a five-step butterfly with no shared memory.</p>
+    <p>The kernel is the same PTX, byte for byte, in both engines. What differs is where it runs: gpt-oss calls it before the MXFP4 expert products, Gemma 3 before the Q5_0 feed-forward products. Pick a call site below; the data and sizes follow.</p>
+    <div class="formula"><span class="s">d</span> = max<sub>j&lt;32</sub> |<span class="x">x</span><sub>j</sub>| / 127 &nbsp;&nbsp; <span class="y">q</span><sub>j</sub> = round(<span class="x">x</span><sub>j</sub> · (1/<span class="s">d</span>)) &nbsp;&nbsp;<span class="muted">// in-place mode instead writes x<sub>j</sub> ← q<sub>j</sub> · d</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-sites">
+    <div class="sechead"><h2 id="s-sites">Where it runs</h2><p>Four launches per layer in decode, two per engine; in prefill the same two run in place. Selecting a row sets the data and grid on the rest of the page.</p></div>
+    <div class="panel tablewrap"><table class="list sites" id="sites"></table></div>
+  </section>
+
+  <section aria-labelledby="s-one">
+    <div class="sechead">
+      <h2 id="s-one">One block of 32 values, one warp</h2>
+      <p>Each bar is one lane's value. Step through the kernel: load, absolute value, the butterfly that gives every lane the block maximum, the scale, and the rounding. Click a bar to follow a lane.</p>
+    </div>
+    <div class="controls"><label>block <input id="blk" type="range" min="0" value="0" step="1"> <span id="blkv" class="mono"></span></label></div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x" id="barlabel"></b><span id="barsub"></span></div>
+        <div class="figure"><svg id="bars" role="img" aria-label="The 32 values of the block"></svg></div>
+        <div class="legend" id="legend"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="lanelabel"></b></div>
+        <dl class="kv" id="lanecard"></dl>
+        <div class="tablewrap"><table class="nums lanes" id="lanes"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="s">shfl.sync.bfly + max.f32: every lane ends with the block's max |x|</b><span id="bfsub"></span></div>
+      <div class="figure"><svg id="bfly" style="min-width: 760px"></svg></div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-map">
+    <div class="sechead">
+      <h2 id="s-map">Warps over blocks: a grid-stride loop</h2>
+      <p>The host launches <code>launch_1d(nblk · 32)</code>: 256-thread blocks, 8 warps each, capped at 448 blocks. Global warp w quantizes Q8 blocks w, w + warps, w + 2·warps … Each cell is one warp; rows are laps. Click a cell to pick that Q8 block above.</p>
+    </div>
+    <div class="panel">
+      <canvas id="map"></canvas>
+      <div class="status" id="mapstatus"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>A warp is exactly one block</h3>
+        <p>Q8 blocks are 32 values and a warp is 32 lanes, so the reduction for the scale never leaves registers: five <code>shfl.sync.bfly</code> + <code>max</code> pairs, no shared memory and no barrier. The loop condition depends only on the warp index, so whole warps leave together and the shuffles always have all 32 lanes.</p>
+        <p>The scale is computed once as d = amax / 127 with an IEEE division, then each lane multiplies by 1/d instead of dividing, as ggml's <code>quantize_row_q8_0</code> does. An all-zero block gets d = 0 and 1/d forced to 0, so q = 0 instead of NaN.</p>
+      </div>
+      <div class="panel">
+        <h3>The in-place ("fake") mode</h3>
+        <p>Decode uses int8 output: <code>xq</code> (1 byte per value) and <code>xd</code> (one float per block), read directly by <code>mv_mxfp4</code> and <code>mv_q5</code>. The prefill GEMMs read float tiles instead, so the host passes q = 0 and the kernel overwrites x with q · d. The GEMM then sees exactly the values the int8 path would have used, which keeps decode and prefill outputs consistent.</p>
+        <p>Rounding is <code>cvt.rni</code>: to nearest, ties to even. The error per value is at most d / 2, about 0.4% of the block's largest value.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code> and <code>gemma3/gemma3.ptx</code>, kernel <code>quant_q8</code> (identical); launched by <code>quant_q8()</code> → <code>launch_1d()</code> in <code>gptoss.c</code> and <code>gemma3.c</code>. Values are generated to resemble each call site's input: RMS-normalized activations with a few outlier dimensions, or the sparse outputs of swiglu_oai and geglu.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('quant_q8');
+const MAXB = 448;
+
+const SITES = [
+  { eng: 'gpt-oss', when: 'decode', input: 'xn (after post_attention_norm)', n: 2880, out: 'xq, xd', next: 'mv_mxfp4 gate, up', kind: 'norm', fake: false },
+  { eng: 'gpt-oss', when: 'decode', input: 'gate (swiglu_oai output, 4 experts)', n: 4 * 2880, out: 'xq, xd', next: 'mv_mxfp4 down', kind: 'swiglu', fake: false },
+  { eng: 'Gemma 3', when: 'decode', input: 'xn (after ffn_norm)', n: 3840, out: 'xq, xd', next: 'mv_q5 gate ‖ up', kind: 'norm', fake: false },
+  { eng: 'Gemma 3', when: 'decode', input: 'h (geglu output)', n: 15360, out: 'xq, xd', next: 'mv_q5 down', kind: 'geglu', fake: false },
+  { eng: 'gpt-oss', when: 'prefill', input: 'xn, then gate, for T = 128', n: 128 * 2880, out: 'in place', next: 'gemm_mxfp4', kind: 'norm', fake: true },
+  { eng: 'Gemma 3', when: 'prefill', input: 'xn, then h, for T = 128', n: 128 * 3840, out: 'in place', next: 'gemm_q5', kind: 'norm', fake: true },
+];
+const S = { site: 0, blk: 0, lane: 5 };
+
+// input values of one Q8 block, generated per call site
+function blockVals(site, b) {
+  const r = Atlas.rng(1000 + site * 7919 + b * 31), v = [];
+  const k = SITES[site].kind;
+  for (let j = 0; j < 32; j++) {
+    let x;
+    if (k === 'norm') { x = Atlas.gauss(r); if (Atlas.h32(b * 32 + j + 17) % 61 === 0) x *= 9; }
+    else if (k === 'swiglu') { const g = 1.4 * Atlas.gauss(r), u = 1.2 * Atlas.gauss(r), xg = Math.min(g, 7); x = xg / (1 + Math.exp(-1.702 * xg)) * (Math.max(-7, Math.min(7, u)) + 1); }
+    else { const g = 1.1 * Atlas.gauss(r) - 0.6, u = Atlas.gauss(r); x = 0.5 * g * (1 + Math.tanh(0.7978845608 * g * (1 + 0.044715 * g * g))) * u; }
+    v.push(fr(x));
+  }
+  return v;
+}
+function quant(v) {
+  const amax = v.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+  const d = fr(amax / 127), id = d > 0 ? fr(1 / d) : 0;
+  const q = v.map(x => { const t = fr(x * id), f = Math.floor(t), r = t - f; return r > 0.5 || (r === 0.5 && f % 2 !== 0) ? f + 1 : f; });
+  return { amax, d, id, q, deq: q.map(k => fr(k * d)) };
+}
+
+const steps = [
+  { tag: 'I', short: 'index', title: 'warp w takes Q8 block w; lane = element', text: 'The global warp index (blockIdx · 8 + threadIdx / 32) is the Q8 block number; the lane is the position inside it. Element = 32 · w + lane.' },
+  { tag: 'L', short: 'load', title: 'load one float per lane', text: '32 lanes read 32 consecutive floats: a single 128-byte transaction.' },
+  { tag: 'A', short: 'abs', title: 'take |x|', text: 'Each lane keeps its own x for later and works on |x| for the maximum.' },
+  { tag: 'B', b: 1, short: 'xor 16', title: 'butterfly round 1: max with lane ^ 16', text: 'Each lane swaps |x| with the lane 16 away and keeps the larger. After this round, lanes l and l + 16 agree.' },
+  { tag: 'B', b: 2, short: 'xor 8', title: 'butterfly round 2: max with lane ^ 8', text: 'Groups of 4 lanes now agree.' },
+  { tag: 'B', b: 3, short: 'xor 4', title: 'butterfly round 3: max with lane ^ 4', text: 'Groups of 8 agree.' },
+  { tag: 'B', b: 4, short: 'xor 2', title: 'butterfly round 4: max with lane ^ 2', text: 'Groups of 16 agree.' },
+  { tag: 'B', b: 5, short: 'xor 1', title: 'butterfly round 5: max with lane ^ 1', text: 'All 32 lanes hold the block\'s max |x|, with no shared memory and no barrier.' },
+  { tag: 'D', short: 'scale', title: 'd = amax / 127, then 1/d', text: 'Every lane computes the same d with <code>div.rn</code> and its reciprocal with <code>rcp.rn</code>; d = 0 (an all-zero block) gives 1/d = 0.' },
+  { tag: 'Q', short: 'round', title: 'q = round(x · 1/d)', text: '<code>cvt.rni.s32.f32</code> rounds to nearest, ties to even. The largest |x| maps to ±127; the others land on the 255-level grid.' },
+  { tag: 'S', short: 'store', title: 'store: int8 q, and d from lane 0 (or x ← q·d in place)', text: 'Decode: each lane stores one byte of <code>xq</code> and lane 0 stores the float <code>xd</code>. Prefill (q = 0): each lane overwrites its x with q · d, the value the int8 path represents.' },
+  { tag: 'N', short: 'next', title: 'next block: w += warps in grid', text: 'Warp-uniform loop: the whole warp moves on to block w + 8·gridDim.x, or exits.' },
+];
+const stage = st => st.tag === 'B' ? st.b : (['I', 'L', 'A'].includes(st.tag) ? 0 : 5);
+const after = (st, t) => 'ILABDQSN'.indexOf(st.tag) >= 'ILABDQSN'.indexOf(t);
+
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `I|extern "C" __global__ void quant_q8(float *x, int8_t *q, float *d, unsigned nblk)
+I|{
+I|    unsigned lane = threadIdx.x & 31;
+I|    unsigned w = (blockIdx.x * blockDim.x + threadIdx.x) >> 5;   // Q8 block of this warp
+N|    unsigned warps = gridDim.x * blockDim.x >> 5;
+N|    for (; w < nblk; w += warps) {                               // warp-uniform
+L|        float v = x[w * 32 + lane];
+A|        float a = fabsf(v);
+B|        for (int off = 16; off >= 1; off >>= 1)
+B|            a = fmaxf(a, __shfl_xor_sync(0xffffffff, a, off));
+D|        float s = a / 127.0f;
+D|        float is = s > 0.0f ? 1.0f / s : 0.0f;
+Q|        int qi = __float2int_rn(v * is);                         // ties to even
+S|        if (q) {
+S|            q[w * 32 + lane] = (int8_t)qi;
+S|            if (lane == 0) d[w] = s;
+S|        } else {
+S|            x[w * 32 + lane] = (float)qi * s;                     // in place ("fake")
+S|        }
+N|    }
+N|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    and.b32             %r6, %r2, 31;           // lane
+I|    mad.lo.u32          %r7, %r4, %r3, %r2;
+I|    shr.u32             %r7, %r7, 5;            // global warp = block index
+N|    mul.lo.u32          %r8, %r5, %r3;
+N|    shr.u32             %r8, %r8, 5;            // warps in grid
+N|LOOP:
+N|    setp.ge.u32         %p1, %r7, %r1;          // warp-uniform
+N|    @%p1 bra            DONE;
+L|    shl.b32             %r9, %r7, 5;
+L|    add.u32             %r9, %r9, %r6;          // element
+L|    ld.global.f32       %f1, [%rd5];
+A|    abs.f32             %f2, %f1;
+B|    shfl.sync.bfly.b32  %f3, %f2, 16, 31, -1;
+B|    max.f32             %f2, %f2, %f3;
+B|    shfl.sync.bfly.b32  %f3, %f2, 8, 31, -1;
+B|    max.f32             %f2, %f2, %f3;
+B|    ...                                         // offsets 4, 2, 1
+D|    div.rn.f32          %f4, %f2, 0f42FE0000;   // d = amax / 127
+D|    setp.gt.f32         %p3, %f4, 0f00000000;
+D|    rcp.rn.f32          %f5, %f4;
+D|    selp.f32            %f5, %f5, 0f00000000, %p3;
+Q|    mul.f32             %f6, %f1, %f5;
+Q|    cvt.rni.s32.f32     %r10, %f6;
+S|    @%p4 bra            FAKE;
+S|    st.global.u8        [%rd7], %r10;
+S|    @!%p2 bra           NEXT;                   // lane 0 only:
+S|    st.global.f32       [%rd9], %f4;            //   the scale
+S|    bra.uni             NEXT;
+S|FAKE:
+S|    cvt.rn.f32.s32      %f7, %r10;
+S|    mul.f32             %f7, %f7, %f4;
+S|    st.global.f32       [%rd5], %f7;            // x = q * d
+N|NEXT:
+N|    add.u32             %r7, %r7, %r8;
+N|    bra.uni             LOOP;` },
+});
+
+function geom() {
+  const s = SITES[S.site], nblk = s.n / 32, blocks = Math.min(MAXB, Math.ceil(nblk * 32 / 256)), warps = blocks * 8;
+  return { nblk, blocks, warps, laps: Math.ceil(nblk / warps) };
+}
+function drawSites() {
+  $('sites').innerHTML = '<thead><tr><th>engine</th><th>pass</th><th>input</th><th>n</th><th>Q8 blocks</th><th>output</th><th>read next by</th></tr></thead><tbody>' +
+    SITES.map((s, i) => `<tr class="${i === S.site ? 'on' : ''}" data-i="${i}" tabindex="0" style="cursor:pointer"><td>${s.eng}</td><td>${s.when}</td><td>${s.input}</td><td class="mono">${Atlas.int(s.n)}</td><td class="mono">${Atlas.int(s.n / 32)}</td><td>${s.out}</td><td><code>${s.next}</code></td></tr>`).join('') + '</tbody>';
+}
+$('sites').addEventListener('click', e => { const tr = e.target.closest('tr[data-i]'); if (tr) pickSite(+tr.dataset.i); });
+$('sites').addEventListener('keydown', e => { const tr = e.target.closest('tr[data-i]'); if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickSite(+tr.dataset.i); } });
+function pickSite(i) { S.site = i; S.blk = Math.min(S.blk, geom().nblk - 1); $('blk').max = geom().nblk - 1; $('blk').value = S.blk; drawSites(); facts(); draw(); }
+function facts() {
+  const G = geom(), s = SITES[S.site];
+  Atlas.facts($('facts'), [[Atlas.int(G.nblk), 'Q8 blocks of 32 values'], [`${G.blocks} × 256`, 'blocks × threads'], [Atlas.int(G.warps), 'warps in the grid'], [String(G.laps), G.laps > 1 ? 'laps of the loop' : 'lap of the loop'], [s.fake ? '0 B' : `${Atlas.int(s.n + s.n / 8)} B`, s.fake ? 'extra memory (in place)' : 'written: q + d'], ['0 B', 'shared memory']]);
+}
+
+function draw() {
+  const st = stepper.step, v = blockVals(S.site, S.blk), Q = quant(v), sg = stage(st), s = SITES[S.site];
+  $('blkv').textContent = `${S.blk} of ${geom().nblk} · elements ${Atlas.int(S.blk * 32)}–${Atlas.int(S.blk * 32 + 31)}`;
+  $('barlabel').textContent = `x[${S.blk * 32} … ${S.blk * 32 + 31}] · ${s.input}`;
+  $('barsub').textContent = after(st, 'D') ? `d = ${Q.d.toPrecision(5)}` : '';
+  // bars
+  const W = 760, H = 300, ml = 46, mr = 10, mt = 16, mb = 26, cw = (W - ml - mr) / 32;
+  const top = Math.max(Q.amax, 1e-6) * 1.08, Y = y => mt + (top - y) / (2 * top) * (H - mt - mb);
+  let g = '';
+  [-1, -0.5, 0, 0.5, 1].forEach(f => { const y = Y(f * Q.amax); g += `<line x1="${ml}" x2="${W - mr}" y1="${y}" y2="${y}" stroke="${C.line}" stroke-width="${f ? 0.6 : 1}"/><text x="${ml - 5}" y="${y + 3}" font-size="9.5" text-anchor="end" fill="${C.muted}">${(f * Q.amax).toFixed(2)}</text>`; });
+  if (after(st, 'D')) {
+    for (const sgn of [1, -1]) { const y = Y(sgn * Q.amax); g += `<line x1="${ml}" x2="${W - mr}" y1="${y}" y2="${y}" stroke="${C.sync}" stroke-dasharray="4 3"/>`; }
+    g += `<text x="${W - mr}" y="${Y(Q.amax) - 4}" font-size="10" text-anchor="end" fill="${C.sync}">±127 · d</text>`;
+  }
+  const absMode = after(st, 'A') && !after(st, 'D');
+  const tbl = Atlas.bflyTable(v.map(Math.abs), (a, b) => Math.max(a, b));
+  for (let j = 0; j < 32; j++) {
+    const x = ml + j * cw, val = absMode ? Math.abs(v[j]) : v[j], y0 = Y(0), y1 = Y(val);
+    const shown = after(st, 'L');
+    const col = j === S.lane ? C.y : C.x;
+    if (shown) g += `<rect x="${x + 2}" y="${Math.min(y0, y1)}" width="${cw - 4}" height="${Math.max(1, Math.abs(y1 - y0))}" fill="${col}" opacity="${j === S.lane ? 0.95 : 0.55}" data-j="${j}"/>`;
+    if (absMode && sg > 0) { const m = tbl[sg][j]; g += `<line x1="${x + 2}" x2="${x + cw - 2}" y1="${Y(m)}" y2="${Y(m)}" stroke="${C.sync}" stroke-width="2"/>`; }
+    if (after(st, 'Q')) { const yq = Y(Q.deq[j]); g += `<line x1="${x + 1}" x2="${x + cw - 1}" y1="${yq}" y2="${yq}" stroke="${C.fg}" stroke-width="1.6"/>`; g += `<text x="${x + cw / 2}" y="${H - 8}" font-size="8.5" text-anchor="middle" fill="${j === S.lane ? C.fg : C.muted}">${Q.q[j]}</text>`; }
+    else g += `<text x="${x + cw / 2}" y="${H - 8}" font-size="8.5" text-anchor="middle" fill="${C.muted}">${j % 4 === 0 ? j : ''}</text>`;
+    g += `<rect x="${x}" y="${mt}" width="${cw}" height="${H - mt - mb}" fill="transparent" data-j="${j}" style="cursor:pointer"/>`;
+  }
+  $('bars').setAttribute('viewBox', `0 0 ${W} ${H}`); $('bars').innerHTML = g;
+  Atlas.legend($('legend'), after(st, 'Q') ? [['--x', 'x (bars)'], ['--fg', 'q · d, the value int8 represents'], ['--sync', '±127 · d'], ['--y', 'selected lane']] :
+    absMode ? [['--x', '|x|'], ['--sync', 'running max after this round'], ['--y', 'selected lane']] : [['--x', 'x, one bar per lane'], ['--y', 'selected lane']]);
+  // lane card
+  const j = S.lane, row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`;
+  $('lanelabel').textContent = `lane ${j} · element ${Atlas.int(S.blk * 32 + j)}`;
+  let card = row('x', after(st, 'L') ? v[j].toFixed(5) : '–') + row('running max |x|', after(st, 'A') ? tbl[sg][j].toFixed(5) : '–');
+  card += row('d · 1/d', after(st, 'D') ? `${Q.d.toPrecision(6)} · ${Q.id.toPrecision(6)}` : '–');
+  card += row('x · 1/d → q', after(st, 'Q') ? `${fr(v[j] * Q.id).toFixed(3)} → ${Q.q[j]}` : '–');
+  card += row('error x − q·d', after(st, 'Q') ? `${(v[j] - Q.deq[j]).toExponential(2)} (≤ d/2 = ${(Q.d / 2).toExponential(2)})` : '–');
+  card += row('writes', after(st, 'S') ? (s.fake ? `x[${S.blk * 32 + j}] = ${Q.deq[j].toFixed(5)}` : `xq[${S.blk * 32 + j}] = ${Q.q[j]}${j === 0 ? `, xd[${S.blk}] = ${Q.d.toPrecision(6)}` : ''}`) : '–');
+  $('lanecard').innerHTML = card;
+  // all lanes table (summary)
+  const maxErr = v.reduce((m, x, i) => Math.max(m, Math.abs(x - Q.deq[i])), 0);
+  $('lanes').innerHTML = `<caption>whole block</caption><tr><th>quantity</th><th>value</th></tr>` +
+    [['max |x|', after(st, 'B') && sg === 5 || after(st, 'D') ? Q.amax.toFixed(5) : '–'], ['d', after(st, 'D') ? Q.d.toPrecision(6) : '–'], ['q range used', after(st, 'Q') ? `${Math.min(...Q.q)} … ${Math.max(...Q.q)}` : '–'],
+     ['max |error|', after(st, 'Q') ? maxErr.toExponential(2) : '–'], ['bytes out', after(st, 'S') ? (s.fake ? '128 (f32, in place)' : '32 + 4') : '–']].map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('');
+  // butterfly
+  Atlas.butterfly($('bfly'), tbl, after(st, 'D') ? 5 : sg, { fmt: x => x.toFixed(2), color: C.sync, sel: j });
+  $('bfsub').textContent = st.tag === 'B' ? `round ${st.b} of 5` : '';
+  drawMap();
+}
+$('bars').addEventListener('click', e => { const t = e.target.closest('[data-j]'); if (t) { S.lane = +t.dataset.j; draw(); } });
+$('blk').addEventListener('input', () => { S.blk = +$('blk').value; draw(); });
+
+const mg = Atlas.grid($('map'), 1, 96);
+function drawMap() {
+  const G = geom(), cols = Math.min(G.warps, 192), rowsPer = Math.ceil(G.warps / cols), rows = G.laps * rowsPer;
+  if (mg.rows !== rows || mg.cols !== cols) mg.resize(rows, cols);
+  $('map').style.aspectRatio = `${cols} / ${Math.max(rows * 3, 8)}`;
+  const g = mg.prep(), sw = S.blk % G.warps, slap = Math.floor(S.blk / G.warps);
+  for (let lap = 0; lap < G.laps; lap++) for (let w = 0; w < G.warps; w++) {
+    const r = lap * rowsPer + Math.floor(w / cols), c = w % cols, b = lap * G.warps + w;
+    if (b >= G.nblk) { g.hatch(r, c); continue; }
+    g.cell(r, c, b === S.blk ? C.y : (w === sw ? C.sync : C.x), b === S.blk ? 1 : (0.3 + 0.35 * (lap % 2)), 0.12);
+  }
+  $('mapstatus').innerHTML = `${Atlas.int(G.nblk)} Q8 blocks · ${G.blocks} thread blocks × 8 = ${Atlas.int(G.warps)} warps${G.warps > cols ? ` (drawn ${cols} per row)` : ''} · ${G.laps} lap${G.laps > 1 ? 's' : ''}` +
+    `<br>Q8 block ${S.blk} is quantized by warp ${sw} (thread block ${Math.floor(sw / 8)}, warp ${sw % 8}) in lap ${slap}` + (G.laps === 1 && G.warps > G.nblk ? `; ${G.warps - G.nblk} warps have nothing to do` : '');
+}
+mg.hook(p => { const G = geom(), cols = Math.min(G.warps, 192), rowsPer = Math.ceil(G.warps / cols), lap = Math.floor(p.r / rowsPer), w = (p.r % rowsPer) * cols + p.c, b = lap * G.warps + w;
+  $('mapstatus').textContent = w < G.warps && b < G.nblk ? `warp ${w}, lap ${lap}: Q8 block ${b} (elements ${Atlas.int(b * 32)}–${Atlas.int(b * 32 + 31)})` : `warp ${w}, lap ${lap}: past the last block, exits`; },
+  p => { const G = geom(), cols = Math.min(G.warps, 192), rowsPer = Math.ceil(G.warps / cols), lap = Math.floor(p.r / rowsPer), w = (p.r % rowsPer) * cols + p.c, b = lap * G.warps + w; if (w < G.warps && b < G.nblk) { S.blk = b; $('blk').value = b; draw(); } }, () => drawMap());
+
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1100 });
+$('blk').max = geom().nblk - 1;
+drawSites(); facts();
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

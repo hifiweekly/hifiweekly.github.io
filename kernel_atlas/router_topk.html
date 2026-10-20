@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>router_topk Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.picks td:first-child, .picks th:first-child { text-align: left; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">gpt-oss · gptoss.ptx · one warp per token, lane = expert</div>
+    <h1>Inside <code>router_topk</code></h1>
+    <p>gpt-oss sends each token through 4 of its 32 experts. <code>router_topk</code> takes the 32 router logits from <code>mv_f32</code>, picks the 4 largest and turns them into mixing weights with a softmax over just those 4. With 32 experts and 32 lanes, each lane holds one expert's logit, and the whole selection happens in registers: four rounds of a warp-wide argmax, each removing its winner.</p>
+    <div class="formula"><span class="y">ids</span> = top-4 of <span class="x">logit</span>[0…31] &nbsp;&nbsp; <span class="y">w</span><sub>j</sub> = exp(<span class="x">logit</span><sub>ids[j]</sub> − m) / Σ<sub>k&lt;4</sub> exp(<span class="x">logit</span><sub>ids[k]</sub> − m) &nbsp;&nbsp;<span class="muted">// m = the largest; ties go to the smaller expert</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">Four rounds of argmax, then a softmax</h2>
+      <p>Each round, every lane offers its (logit, expert) pair to a five-step butterfly that keeps the larger logit, or the smaller expert on a tie. After the round all lanes agree on the winner; lane j stores the j-th pick and the winning lane replaces its logit with −∞ so it cannot win again.</p>
+    </div>
+    <div class="controls">
+      <label>token <input id="tok" type="range" min="0" max="15" value="0"> <span id="tokv" class="mono"></span></label>
+      <label><input id="tie" type="checkbox"> plant a tie for 2nd place</label>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x">32 lanes, one router logit each</b><span id="barsub"></span></div>
+        <div class="figure"><svg id="bars" role="img" aria-label="Router logits per lane"></svg></div>
+        <div class="legend" id="legend"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b>lanes 0–3: the picks</b><span>registers %f2 (logit) and %r4 (expert)</span></div>
+        <div class="tablewrap"><table class="nums picks" id="picks"></table></div>
+        <dl class="kv" id="card"></dl>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="s" id="bflabel"></b><span>each cell: the expert a lane currently holds as the winner</span></div>
+      <div class="figure"><svg id="bfly" style="min-width: 760px"></svg></div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Selection instead of sorting</h3>
+        <p>Only 4 of 32 values are needed, so a full sort would be wasted work. Four argmax rounds cost 4 × 5 shuffle pairs (value and index), all in registers, and the picks land in lanes 0–3 already in descending order. That order matters downstream: <code>moe_combine</code> and the routing log see slot 0 as the strongest expert.</p>
+        <p>The tie rule (equal logits → smaller expert number) makes the choice deterministic regardless of shuffle order, the same rule <code>argmax</code> uses for the vocabulary.</p>
+      </div>
+      <div class="panel">
+        <h3>Softmax over the chosen four only</h3>
+        <p>gpt-oss normalizes after selecting, so the four weights always sum to 1. The maximum is lane 0's pick (the first round's winner), fetched with one <code>shfl.sync.idx</code>. Lanes 4–31 still hold −∞ as their "pick", so exp gives exactly 0 and the 32-lane butterfly sum counts only the four real terms: no special cases.</p>
+        <p>exp is <code>ex2.approx</code> of (logit − max) · log₂e; the division is IEEE <code>div.rn</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>router_topk</code>; launched by <code>router_topk()</code> in <code>gptoss.c</code> with one block of 32 threads per token, n = 32 experts and k = 4. Logits are generated; the tie option copies the 2nd-largest logit onto another expert.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('router_topk');
+const N = 32, K = 4, NEG = -Infinity;
+const S = { tok: 0, tie: false, lane: 0 };
+
+function logitsFor(t, tie) {
+  const r = Atlas.rng(77 + t * 1009), v = [];
+  for (let e = 0; e < N; e++) v.push(fr(1.3 * Atlas.gauss(r)));
+  if (tie) { const o = v.map((x, e) => [x, e]).sort((a, b) => b[0] - a[0]); const second = o[1]; let other = o[8][1]; v[other] = second[0]; }
+  return v;
+}
+const better = (a, b) => b.v > a.v || (b.v === a.v && b.l < a.l); // is b better than a
+function simulate() {
+  const v0 = logitsFor(S.tok, S.tie), rounds = [];
+  let cur = v0.slice();
+  const pickV = Array(32).fill(NEG), pickE = Array(32).fill(0);
+  for (let j = 0; j < K; j++) {
+    const tb = Atlas.bflyTable(cur.map((v, l) => ({ v, l })), (a, b) => better(a, b) ? b : a);
+    const win = tb[5][0];
+    rounds.push({ before: cur.slice(), tb, win });
+    pickV[j] = win.v; pickE[j] = win.l;
+    cur = cur.slice(); cur[win.l] = NEG;
+  }
+  const m = pickV[0], ex = pickV.map(v => v === NEG ? 0 : fr(2 ** fr(fr(v - m) * 1.4426950216293335)));
+  const sum = Atlas.bflyTable(ex, (a, b) => fr(a + b))[5][0];
+  const w = ex.slice(0, K).map(e => fr(e / sum));
+  return { v0, rounds, pickV, pickE, m, ex, sum, w };
+}
+let R = simulate();
+
+const steps = [
+  { tag: 'L', r: -1, short: 'load', title: 'lane e loads logit[t][e]', text: 'One coalesced 128-byte load: lane = expert. With n &lt; 32, the extra lanes would hold −∞.' },
+  { tag: 'A', r: 0, s: 1, short: 'r1 xor 16', title: 'round 1, butterfly step 1: compare with lane ^ 16', text: 'Each lane shuffles both its value and its expert index, and keeps the pair with the larger value (smaller index on a tie).' },
+  { tag: 'A', r: 0, s: 3, short: 'r1 xor 4', title: 'round 1, steps 2–3: lane ^ 8, lane ^ 4', text: 'After three steps, groups of 8 lanes agree on their best expert.' },
+  { tag: 'A', r: 0, s: 5, short: 'r1 done', title: 'round 1, steps 4–5: every lane knows the largest logit', text: 'The winner is the same in all 32 lanes, so no broadcast is needed.' },
+  { tag: 'K', r: 0, short: 'keep 1', title: 'lane 0 keeps pick 1; the winner drops out', text: 'Lane j (here 0) copies the winner into its pick registers. The lane that owned the winning expert sets its value to −∞.' },
+  { tag: 'A', r: 1, s: 5, short: 'round 2', title: 'round 2: argmax again, without the first winner', text: 'Same five steps. Lane 1 will keep this result.' },
+  { tag: 'K', r: 1, short: 'keep 2', title: 'lane 1 keeps pick 2', text: 'Ties are resolved toward the smaller expert index; tick "plant a tie" to see one.' },
+  { tag: 'A', r: 2, s: 5, short: 'round 3', title: 'round 3', text: 'Two experts are out of the running now.' },
+  { tag: 'K', r: 2, short: 'keep 3', title: 'lane 2 keeps pick 3', text: '' },
+  { tag: 'A', r: 3, s: 5, short: 'round 4', title: 'round 4', text: 'The loop runs k = 4 times; k is a kernel argument.' },
+  { tag: 'K', r: 3, short: 'keep 4', title: 'lane 3 keeps pick 4', text: 'Lanes 0–3 now hold the four picks in descending order; the other lanes hold −∞.' },
+  { tag: 'X', r: 4, short: 'exp', title: 'softmax: e_j = exp(pick_j − max)', text: 'The maximum is lane 0\'s pick, read with <code>shfl.sync.idx</code>. exp is computed as 2^((v − max) · log₂e); for −∞ it is exactly 0.' },
+  { tag: 'Z', r: 4, short: 'sum', title: 'butterfly sum of e over all 32 lanes', text: 'Only lanes 0–3 contribute; the others add zeros.' },
+  { tag: 'S', r: 4, short: 'store', title: 'lanes 0–3 store ids[j] and w[j] = e_j / Σ', text: 'Two coalesced 16-byte stores per token. The weights sum to 1.' },
+];
+const order = ['L', 'A', 'K', 'X', 'Z', 'S'];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `L|extern "C" __global__ void router_topk(const float *logits, unsigned *ids, float *w,
+L|                                       unsigned n, unsigned k)
+L|{
+L|    unsigned lane = threadIdx.x, t = blockIdx.x;           // one warp per token
+L|    float v = lane < n ? logits[t * n + lane] : -INFINITY;
+K|    float pick = -INFINITY;  unsigned pick_e = 0;
+A,K|    for (unsigned j = 0; j < k; j++) {
+A|        float bv = v;  unsigned be = lane;
+A|        for (int off = 16; off >= 1; off >>= 1) {            // warp argmax
+A|            float ov = __shfl_xor_sync(0xffffffff, bv, off);
+A|            unsigned oe = __shfl_xor_sync(0xffffffff, be, off);
+A|            if (ov > bv || (ov == bv && oe < be)) { bv = ov; be = oe; }
+A|        }
+K|        if (lane == j) { pick = bv; pick_e = be; }            // lane j keeps pick j
+K|        if (lane == be) v = -INFINITY;                        // winner drops out
+A,K|    }
+X|    float m = __shfl_sync(0xffffffff, pick, 0);               // largest pick
+X|    float e = exp2f((pick - m) * 1.44269504f);                // 0 for lanes >= k
+Z|    float s = e;
+Z|    for (int off = 16; off >= 1; off >>= 1) s += __shfl_xor_sync(0xffffffff, s, off);
+S|    if (lane < k) { ids[t * k + lane] = pick_e;  w[t * k + lane] = e / s; }
+L|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `L|    mov.f32             %f1, 0fFF800000;        // -inf for lanes >= n
+L|    setp.ge.u32         %p1, %r3, %r1;
+L|    @%p1 bra            HAVE_V;
+L|    ld.global.f32       %f1, [%rd5];
+A,K|SELECT:
+A|    mov.f32             %f3, %f1;
+A|    mov.u32             %r6, %r3;
+A|    shfl.sync.bfly.b32  %f4, %f3, 16, 31, -1;
+A|    shfl.sync.bfly.b32  %r7, %r6, 16, 31, -1;
+A|    setp.gt.f32         %p3, %f4, %f3;
+A|    setp.eq.f32         %p4, %f4, %f3;
+A|    setp.lt.u32         %p5, %r7, %r6;
+A|    and.pred            %p4, %p4, %p5;
+A|    or.pred             %p3, %p3, %p4;
+A|    selp.f32            %f3, %f4, %f3, %p3;
+A|    selp.b32            %r6, %r7, %r6, %p3;
+A|    ...                                         // offsets 8, 4, 2, 1
+K|    setp.eq.u32         %p6, %r3, %r5;          // lane == j ?
+K|    selp.f32            %f2, %f3, %f2, %p6;
+K|    selp.b32            %r4, %r6, %r4, %p6;
+K|    setp.eq.u32         %p7, %r3, %r6;          // lane == winner ?
+K|    selp.f32            %f1, 0fFF800000, %f1, %p7;
+K|    add.u32             %r5, %r5, 1;
+K|    bra.uni             SELECT;
+X|SOFTMAX:
+X|    shfl.sync.idx.b32   %f5, %f2, 0, 31, -1;
+X|    sub.f32             %f6, %f2, %f5;
+X|    mul.f32             %f6, %f6, 0f3FB8AA3B;   // * log2(e)
+X|    ex2.approx.f32      %f7, %f6;
+Z|    shfl.sync.bfly.b32  %f9, %f8, 16, 31, -1;
+Z|    add.f32             %f8, %f8, %f9;
+Z|    ...
+S|    div.rn.f32          %f10, %f7, %f8;
+S|    st.global.u32       [%rd7], %r4;
+S|    st.global.f32       [%rd8], %f10;` },
+});
+Atlas.facts($('facts'), [['(tokens, 1, 1)', 'grid'], ['32', 'threads = experts'], ['4 × 5', 'argmax shuffle steps'], ['0 B', 'shared memory'], ['k = 4', 'picks per token']]);
+
+function draw() {
+  const st = stepper.step, oi = order.indexOf(st.tag);
+  $('tokv').textContent = String(S.tok);
+  // state of the lanes' values before this step's round
+  const roundIdx = st.r < 0 ? -1 : Math.min(st.r, K);
+  const vals = st.r < 0 ? R.v0 : (st.r < K ? (st.tag === 'K' ? R.rounds[st.r].before.map((v, l) => l === R.rounds[st.r].win.l ? NEG : v) : R.rounds[st.r].before) : R.rounds[K - 1].before.map((v, l) => l === R.rounds[K - 1].win.l ? NEG : v));
+  const pickedBy = {}; for (let j = 0; j < K; j++) { const done = st.r > j || (st.r === j && st.tag === 'K'); if (done) pickedBy[R.pickE[j]] = j; }
+  const W = 760, H = 270, ml = 40, mr = 8, mt = 18, mb = 34, cw = (W - ml - mr) / N, lim = Math.max(...R.v0.map(Math.abs)) * 1.15, Y = v => mt + (lim - v) / (2 * lim) * (H - mt - mb);
+  let s = `<line x1="${ml}" x2="${W - mr}" y1="${Y(0)}" y2="${Y(0)}" stroke="${C.line}"/>`;
+  [-2, -1, 1, 2].forEach(v => { if (Math.abs(v) < lim) s += `<line x1="${ml}" x2="${W - mr}" y1="${Y(v)}" y2="${Y(v)}" stroke="${C.line}" stroke-width="0.5"/><text x="${ml - 4}" y="${Y(v) + 3}" font-size="9.5" text-anchor="end" fill="${C.muted}">${v}</text>`; });
+  const win = st.tag === 'A' && st.s === 5 ? R.rounds[st.r].win.l : (st.tag === 'K' ? R.rounds[st.r].win.l : -1);
+  for (let l = 0; l < N; l++) {
+    const v = R.v0[l], x = ml + l * cw, out = vals[l] === NEG && st.r >= 0, j = pickedBy[l];
+    const col = j !== undefined ? C.y : (l === win ? C.sync : C.x);
+    s += `<rect x="${x + 2}" y="${Math.min(Y(0), Y(v))}" width="${cw - 4}" height="${Math.max(1, Math.abs(Y(v) - Y(0)))}" fill="${col}" opacity="${out && j === undefined ? 0.15 : (j !== undefined || l === win ? 0.95 : 0.5)}"/>`;
+    if (j !== undefined) s += `<text x="${x + cw / 2}" y="${(v >= 0 ? Y(v) - 4 : Y(v) + 12)}" font-size="10" text-anchor="middle" fill="${C.fg}" font-weight="600">${j + 1}</text>`;
+    s += `<text x="${x + cw / 2}" y="${H - 18}" font-size="8.5" text-anchor="middle" fill="${l === S.lane ? C.fg : C.muted}">${l}</text>`;
+    s += `<rect x="${x}" y="${mt}" width="${cw}" height="${H - mt - mb + 20}" fill="transparent" data-l="${l}" style="cursor:pointer"/>`;
+  }
+  s += `<text x="${ml}" y="${H - 4}" font-size="9.5" fill="${C.muted}">lane = expert</text>`;
+  $('bars').setAttribute('viewBox', `0 0 ${W} ${H}`); $('bars').innerHTML = s;
+  $('barsub').textContent = st.r >= 0 && st.r < K ? `round ${st.r + 1} of 4` : '';
+  Atlas.legend($('legend'), [['--x', 'still competing'], ['--sync', 'this round\'s winner'], ['--y', 'picked (number = rank)']]);
+  // picks table
+  $('picks').innerHTML = `<tr><th>lane</th><th>expert</th><th>logit</th><th>e = exp(v − max)</th><th>w</th></tr>` + [0, 1, 2, 3].map(j => {
+    const done = st.r > j || (st.r === j && st.tag === 'K');
+    return `<tr class="${(st.tag === 'K' && st.r === j) || (oi >= 3 && st.tag !== 'Z') ? 'on' : ''}"><td>${j}</td><td>${done ? R.pickE[j] : '–'}</td><td>${done ? R.pickV[j].toFixed(4) : '−∞'}</td><td>${oi >= 3 ? R.ex[j].toFixed(5) : '–'}</td><td>${st.tag === 'S' ? R.w[j].toFixed(5) : '–'}</td></tr>`;
+  }).join('') + `<tr><td>4–31</td><td>–</td><td>−∞</td><td>${oi >= 3 ? '0' : '–'}</td><td></td></tr>`;
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`;
+  $('card').innerHTML = row('max (lane 0\'s pick)', oi >= 3 ? R.m.toFixed(4) : '–') + row('Σ e', oi >= 4 ? R.sum.toFixed(5) : '–') + row('Σ w', st.tag === 'S' ? R.w.reduce((a, b) => fr(a + b), 0).toFixed(6) : '–') +
+    row('ids[t][0…3]', st.tag === 'S' ? R.pickE.slice(0, 4).join(', ') : '–');
+  // butterfly
+  if (st.r >= 0 && st.r < K) {
+    $('bflabel').textContent = `round ${st.r + 1}: warp argmax over (logit, expert)`;
+    Atlas.butterfly($('bfly'), R.rounds[st.r].tb, st.tag === 'K' ? 5 : st.s, { fmt: o => o.v === NEG ? '−∞' : String(o.l), color: C.sync, sel: S.lane });
+  } else if (st.r >= K) {
+    $('bflabel').textContent = 'softmax: butterfly sum of e over 32 lanes';
+    Atlas.butterfly($('bfly'), Atlas.bflyTable(R.ex, (a, b) => fr(a + b)), st.tag === 'X' ? 0 : 5, { fmt: v => v === 0 ? '0' : v.toFixed(2), sel: S.lane });
+  } else { $('bflabel').textContent = 'butterfly (round 1 starts next)'; Atlas.butterfly($('bfly'), R.rounds[0].tb, 0, { fmt: o => String(o.l), color: C.sync, sel: S.lane }); }
+}
+$('bars').addEventListener('click', e => { const t = e.target.closest('[data-l]'); if (t) { S.lane = +t.dataset.l; draw(); } });
+$('tok').addEventListener('input', () => { S.tok = +$('tok').value; R = simulate(); draw(); });
+$('tie').addEventListener('change', () => { S.tie = $('tie').checked; R = simulate(); draw(); });
+
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1200 });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

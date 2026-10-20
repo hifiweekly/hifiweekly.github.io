@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>moe_combine Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.regs td:first-child, .regs th:first-child { text-align: left; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">gpt-oss · gptoss.ptx · element-wise, grid-stride</div>
+    <h1>Inside <code>moe_combine</code></h1>
+    <p>After the down projection, each token has four expert outputs of 2880 values, one per expert the router chose. <code>moe_combine</code> mixes them with the router's weights and adds the result to the residual stream, in place. It is the last launch of every gpt-oss layer. One thread per output element; each reads the same element from the four expert rows.</p>
+    <div class="formula"><span class="y">x</span>[t][i] = <span class="x">x</span>[t][i] + Σ<sub>j&lt;4</sub> <span class="w">w</span>[t][j] · <span class="x">down</span>[t][j][i] &nbsp;&nbsp;<span class="muted">// w from router_topk (sums to 1), down from mv_mxfp4 / gemm_mxfp4</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-one">
+    <div class="sechead">
+      <h2 id="s-one">One output element</h2>
+      <p>The grid below shows 64 neighboring elements of one token: the four expert rows, the residual, and the result. The highlighted column is the selected thread's element; its warp covers the 32 columns outlined. Click a column to move.</p>
+    </div>
+    <div class="controls">
+      <label>pass <select id="mode"><option value="decode">decode: 1 token</option><option value="prefill">prefill chunk: 128 tokens</option></select></label>
+      <label>token <input id="tok" type="range" min="0" max="0" value="0"> <span id="tokv" class="mono"></span></label>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b id="gridlabel"></b><span id="gridsub"></span></div>
+        <canvas id="cells"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="card"></dl>
+        <div class="tablewrap"><table class="nums regs" id="regs"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-map">
+    <div class="sechead">
+      <h2 id="s-map">Threads over tokens × 2880 elements</h2>
+      <p>The flat index runs over all tokens' outputs, token-major. Each cell is one 256-thread block's 256 consecutive elements; rows are laps of the grid-stride loop, and the shading changes at token boundaries.</p>
+    </div>
+    <div class="panel">
+      <canvas id="map"></canvas>
+      <div class="status" id="mapstatus"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Layout [token][expert slot][2880]</h3>
+        <p>The down projection writes each (token, slot) pair's 2880 outputs as one contiguous row, so element i of slot j is at (t·4 + j)·2880 + i. A warp's 32 threads have 32 consecutive i, so each of its four loads from <code>down</code> is one 128-byte transaction, as are the loads of the residual and the store. The four weights are the same for the whole token and come from cache.</p>
+        <p>Splitting the flat index into (t, i) costs a <code>div.u32</code>, which is slow on GPUs (tens of instructions), but it runs once per element next to five memory reads.</p>
+      </div>
+      <div class="panel">
+        <h3>Why the residual add is fused here</h3>
+        <p>The attention half of the layer already folds its residual add into <code>mv_q8</code> (the <code>resid</code> argument). The expert half cannot: four expert outputs have to be weighted and summed first, and only this kernel sees all four. So the sum and the add happen in one pass: x is read once and written once.</p>
+        <p>The weights of the four chosen experts sum to 1 (a softmax over the four), so the mix is an average of the experts' opinions, not a sum that grows with k.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>moe_combine</code>; launched by <code>moe_combine()</code> → <code>launch_1d(n · T)</code> in <code>gptoss.c</code> with k = 4 and the residual buffer passed as both <code>resid</code> and <code>y</code>. Values are generated; expert ids and weights come from a softmax over four random router logits per token.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('moe_combine');
+const N = 2880, K = 4, MAXB = 448, WIN = 64;
+const S = { mode: 'decode', t: 0, i: 1000 };
+
+function tokenData(t) {
+  const r = Atlas.rng(500 + t * 131), ids = [], lg = [];
+  while (ids.length < K) { const e = Math.floor(r() * 32); if (!ids.includes(e)) { ids.push(e); lg.push(2 * Atlas.gauss(r)); } }
+  const o = lg.map((l, j) => [l, ids[j]]).sort((a, b) => b[0] - a[0]);
+  const m = o[0][0], ex = o.map(([l]) => Math.exp(l - m)), z = ex.reduce((a, b) => a + b, 0);
+  return { ids: o.map(p => p[1]), w: ex.map(e => fr(e / z)) };
+}
+const val = (t, j, i) => fr(0.9 * Atlas.gauss(Atlas.rng(Atlas.h32(t * 9973 + j * 7919 + i * 31 + 5))));
+const res = (t, i) => fr(14 * Atlas.gauss(Atlas.rng(Atlas.h32(t * 131 + i * 17 + 77))));
+function elem(t, i) {
+  const D = tokenData(t), acc = []; let a = 0;
+  for (let j = 0; j < K; j++) { a = fr(val(t, j, i) * D.w[j] + a); acc.push(a); }
+  return { D, acc, sum: a, r: res(t, i), y: fr(a + res(t, i)) };
+}
+
+const steps = [
+  { tag: 'I', short: 'index', title: 'flat index → token t and element i', text: 'Thread starts at idx = block · 256 + tid. <code>div.u32</code> gives t = idx / 2880, and i = idx − t · 2880.' },
+  { tag: 'P', short: 'pointers', title: 'point at down[t][0][i] and w[t][0]', text: 'Row (t·k)·n + i in the expert outputs; the row stride between slots is n floats (11,520 bytes).' },
+  { tag: 'E', j: 0, short: 'slot 0', title: 'acc = w[t][0] · down[t][0][i]', text: 'One FMA per expert slot. Slot 0 holds the expert the router ranked highest.' },
+  { tag: 'E', j: 1, short: 'slot 1', title: 'acc += w[t][1] · down[t][1][i]', text: 'The pointer moves on by one row (n floats) and the weight pointer by 4 bytes.' },
+  { tag: 'E', j: 2, short: 'slot 2', title: 'acc += w[t][2] · down[t][2][i]', text: 'Each load here is one coalesced 128-byte transaction across the warp.' },
+  { tag: 'E', j: 3, short: 'slot 3', title: 'acc += w[t][3] · down[t][3][i]', text: 'The loop runs k = 4 times; k is a kernel argument, not a constant.' },
+  { tag: 'R', short: '+ x', title: 'add the residual x[t][i]', text: 'The mixed expert output joins the residual stream.' },
+  { tag: 'S', short: 'store', title: 'store x[t][i], idx += stride', text: 'Written in place over the residual (resid and y are the same buffer). The thread then moves on by gridDim · 256 elements, if any are left.' },
+];
+const order = ['I', 'P', 'E', 'R', 'S'], at = (st, t) => order.indexOf(st.tag) >= order.indexOf(t);
+
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `I|extern "C" __global__ void moe_combine(const float *d, const float *w, const float *resid,
+I|                                       float *y, unsigned n, unsigned k, unsigned tokens)
+I|{
+I,S|    for (unsigned idx = blockIdx.x * blockDim.x + threadIdx.x; idx < tokens * n;
+S|         idx += gridDim.x * blockDim.x) {
+I|        unsigned t = idx / n, i = idx - t * n;
+P|        const float *dp = d + (size_t)(t * k) * n + i;          // &d[t][0][i]
+P|        const float *wp = w + t * k;                             // &w[t][0]
+E|        float acc = 0.0f;
+E|        for (unsigned j = 0; j < k; j++, dp += n)
+E|            acc = fmaf(*dp, wp[j], acc);
+R|        acc += resid[idx];
+S|        y[idx] = acc;                                            // y may equal resid
+S|    }
+S|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    mul.lo.u32          %r10, %r10, %r1;        // total = tokens * n
+I|    mad.lo.u32          %r7, %r5, %r4, %r3;     // idx
+S|    mul.lo.u32          %r8, %r6, %r4;          // stride
+I|LOOP:
+I|    setp.ge.u32         %p1, %r7, %r10;
+I|    @%p1 bra            DONE;
+I|    div.u32             %r11, %r7, %r1;         // t
+I|    mul.lo.u32          %r12, %r11, %r1;
+I|    sub.u32             %r12, %r7, %r12;        // i within the token
+P|    mul.lo.u32          %r13, %r11, %r2;        // t*k
+P|    mad.lo.u32          %r14, %r13, %r1, %r12;  // (t*k)*n + i
+P|    mul.wide.u32        %rd6, %r14, 4;
+P|    add.s64             %rd6, %rd1, %rd6;       // &d[t][0][i]
+P|    mul.wide.u32        %rd7, %r1, 4;           // row stride
+P|    add.s64             %rd8, %rd2, %rd8;       // &w[t][0]
+E|EXP:
+E|    setp.ge.u32         %p2, %r9, %r2;
+E|    @%p2 bra            EXP_DONE;
+E|    ld.global.f32       %f2, [%rd6];
+E|    ld.global.f32       %f3, [%rd8];
+E|    fma.rn.f32          %f1, %f2, %f3, %f1;
+E|    add.s64             %rd6, %rd6, %rd7;
+E|    add.s64             %rd8, %rd8, 4;
+E|    add.u32             %r9, %r9, 1;
+E|    bra.uni             EXP;
+R|EXP_DONE:
+R|    ld.global.f32       %f4, [%rd9];            // resid
+R|    add.f32             %f1, %f1, %f4;
+S|    st.global.f32       [%rd10], %f1;
+S|    add.u32             %r7, %r7, %r8;
+S|    bra.uni             LOOP;` },
+});
+
+function geom() {
+  const T = S.mode === 'decode' ? 1 : 128, tot = T * N, blocks = Math.min(MAXB, Math.ceil(tot / 256)), stride = blocks * 256;
+  return { T, tot, blocks, stride, laps: Math.ceil(tot / stride) };
+}
+function facts() {
+  const G = geom();
+  Atlas.facts($('facts'), [[`${G.blocks} × 256`, 'blocks × threads'], [Atlas.int(G.tot), 'outputs (tokens × 2880)'], [String(G.laps), G.laps > 1 ? 'laps' : 'lap'], ['4 FMA', 'per output'], ['6 × 4 B', 'memory per output'], ['0 B', 'shared memory']]);
+}
+
+const cg = Atlas.grid($('cells'), 6, WIN);
+$('cells').style.aspectRatio = '64 / 11';
+function draw() {
+  const st = stepper.step, G = geom(), E = elem(S.t, S.i), j0 = Math.max(0, Math.min(N - WIN, S.i - (S.i % 32) - 16));
+  $('tokv').textContent = `${S.t} of ${G.T}`;
+  $('gridlabel').textContent = `token ${S.t} · elements ${j0}–${j0 + WIN - 1}`;
+  $('gridsub').textContent = `experts ${E.D.ids.join(', ')}`;
+  const g = cg.prep(), lim = 2.4;
+  for (let c = 0; c < WIN; c++) {
+    const i = j0 + c;
+    for (let j = 0; j < K; j++) { const v = val(S.t, j, i); g.cell(j, c, v >= 0 ? C.x : C.y, Math.min(1, Math.abs(v) / lim) * 0.85 + 0.08, 0.1); }
+    const r = res(S.t, i); g.cell(4, c, r >= 0 ? C.x : C.y, Math.min(1, Math.abs(r) / 30) * 0.85 + 0.08, 0.1);
+    if (at(st, 'S') || i < S.i) { const e = elem(S.t, i); g.cell(5, c, e.y >= 0 ? C.x : C.y, Math.min(1, Math.abs(e.y) / 30) * 0.85 + 0.08, 0.1); } else g.hatch(5, c);
+  }
+  const c0 = S.i - j0, w0 = S.i - (S.i % 32) - j0;
+  if (w0 >= 0) g.box(0, Math.max(0, w0), 6, Math.min(32, WIN - w0), C.sync, 1.5);
+  if (st.tag === 'E') g.box(st.j, c0, 1, 1, C.fg, 2.5);
+  else g.box(0, c0, 6, 1, C.fg, 2);
+  if (st.tag === 'E') g.box(st.j, 0, 1, WIN, C.w, 1);
+  Atlas.legend($('legend'), [['--x', 'positive'], ['--y', 'negative'], ['--sync', 'the selected thread\'s warp'], ['--fg', 'its element']]);
+  $('status').innerHTML = `rows: down[t][slot 0…3] (expert ${E.D.ids.join(', ')}), then x before, then x after`;
+  // card
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`, idx = S.t * N + S.i, blk = Math.floor(idx % G.stride / 256), lap = Math.floor(idx / G.stride);
+  $('thlabel').textContent = `thread ${idx % G.stride} (block ${blk}, lane ${idx % 32}) · lap ${lap}`;
+  $('card').innerHTML = row('idx', Atlas.int(idx)) + row('t, i', at(st, 'I') ? `${S.t}, ${S.i}` : '–') + row('&down[t][0][i]', at(st, 'P') ? `float ${Atlas.int(S.t * K * N + S.i)}` : '–') + row('&w[t][0]', at(st, 'P') ? `float ${S.t * K}` : '–');
+  $('regs').innerHTML = `<tr><th>slot</th><th>expert</th><th>w</th><th>down[i]</th><th>acc</th></tr>` + E.D.ids.map((e, j) => {
+    const done = at(st, 'R') || (st.tag === 'E' && st.j >= j), on = st.tag === 'E' && st.j === j;
+    return `<tr class="${on ? 'on' : ''}"${done ? '' : ' style="opacity:.4"'}><td>${j}</td><td>${e}</td><td>${E.D.w[j].toFixed(4)}</td><td>${val(S.t, j, S.i).toFixed(4)}</td><td>${done ? E.acc[j].toFixed(5) : '–'}</td></tr>`;
+  }).join('') + `<tr class="${st.tag === 'R' ? 'on' : ''}"><td colspan="3">+ x[t][i]</td><td>${E.r.toFixed(4)}</td><td>${at(st, 'R') ? E.y.toFixed(5) : '–'}</td></tr>`;
+  drawMap();
+}
+cg.hook(p => { const i = Math.max(0, Math.min(N - WIN, S.i - (S.i % 32) - 16)) + p.c, rows = ['down slot 0', 'down slot 1', 'down slot 2', 'down slot 3', 'x before', 'x after']; $('status').textContent = `${rows[p.r]} · element ${i}: ${(p.r < 4 ? val(S.t, p.r, i) : p.r === 4 ? res(S.t, i) : elem(S.t, i).y).toFixed(4)}`; },
+  p => { S.i = Math.max(0, Math.min(N - WIN, S.i - (S.i % 32) - 16)) + p.c; draw(); }, () => draw());
+
+const mg = Atlas.grid($('map'), 1, 12);
+function drawMap() {
+  const G = geom();
+  if (mg.rows !== G.laps || mg.cols !== G.blocks) mg.resize(G.laps, G.blocks);
+  $('map').style.aspectRatio = G.laps === 1 ? '20 / 1' : '10 / 1';
+  const g = mg.prep(), idx = S.t * N + S.i, sb = Math.floor(idx % G.stride / 256), sl = Math.floor(idx / G.stride);
+  for (let lap = 0; lap < G.laps; lap++) for (let b = 0; b < G.blocks; b++) {
+    const f = lap * G.stride + b * 256;
+    if (f >= G.tot) { g.hatch(lap, b); continue; }
+    const t = Math.floor(f / N);
+    g.cell(lap, b, lap === sl && b === sb ? C.y : (t === S.t ? C.sync : C.x), lap === sl && b === sb ? 1 : 0.25 + 0.4 * (t % 2), 0.12);
+  }
+  $('mapstatus').innerHTML = `${G.T} token${G.T > 1 ? 's' : ''} × 2880 = ${Atlas.int(G.tot)} outputs · ${G.blocks} blocks × 256 = stride ${Atlas.int(G.stride)} · ${G.laps} lap${G.laps > 1 ? 's' : ''}<br>token ${S.t}'s elements are drawn in blue; the selected element is in block ${sb}, lap ${sl}`;
+}
+mg.hook(p => { const G = geom(), f = p.r * G.stride + p.c * 256; $('mapstatus').textContent = f < G.tot ? `lap ${p.r}, block ${p.c}: elements ${Atlas.int(f)}–${Atlas.int(Math.min(G.tot, f + 256) - 1)} (token ${Math.floor(f / N)}${Math.floor((Math.min(G.tot, f + 256) - 1) / N) !== Math.floor(f / N) ? '–' + Math.floor((Math.min(G.tot, f + 256) - 1) / N) : ''})` : `lap ${p.r}, block ${p.c}: past the end`; },
+  p => { const G = geom(), f = p.r * G.stride + p.c * 256; if (f < G.tot) { S.t = Math.floor(f / N); S.i = f % N; $('tok').value = S.t; draw(); } }, () => drawMap());
+
+$('mode').addEventListener('change', () => { S.mode = $('mode').value; const G = geom(); $('tok').max = G.T - 1; S.t = Math.min(S.t, G.T - 1); $('tok').value = S.t; facts(); draw(); });
+$('tok').addEventListener('input', () => { S.t = +$('tok').value; draw(); });
+
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1100 });
+facts();
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>rmsnorm Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.passes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.passes .cv { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.red { display: grid; grid-template-columns: repeat(32, minmax(0, 1fr)); gap: 2px; }
+.red div { font-family: var(--font-mono); font-size: 9px; text-align: center; padding: 6px 0; border-radius: 2px; background: var(--bg); color: var(--muted); overflow: hidden; }
+.red div.on { background: var(--sync); color: var(--panel); }
+.red div.sel { outline: 2px solid var(--fg); }
+@media (max-width: 620px) { .passes { grid-template-columns: minmax(0, 1fr); } .red { grid-template-columns: repeat(16, minmax(0, 1fr)); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">gpt-oss + Gemma 3 · identical in gptoss.ptx and gemma3.ptx · one block per token</div>
+    <h1>Inside <code>rmsnorm</code></h1>
+    <p>RMSNorm rescales a token's hidden vector so its root-mean-square is 1, then multiplies by a learned weight per dimension. It runs before every attention and expert block. All 1024 threads of one block must agree on a single number, the row's sum of squares, so the kernel is mostly a lesson in reductions: a strided loop, a warp butterfly, then shared memory.</p>
+    <div class="formula"><span class="y">y</span>[i] = <span class="x">x</span>[i] · <span class="s">1 / √(Σ x² / n + ε)</span> · <span class="w">w</span>[i] &nbsp;&nbsp;<span class="muted">// n = 2880, ε = 1e-5, f32 throughout</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">One row, 1024 threads</h2>
+      <p>Each grid below is one pass of the strided loop, drawn as 32 warps (rows) × 32 lanes (columns). Thread <code>t</code> owns the same cell in every grid: elements <code>t</code>, <code>t + 1024</code> and <code>t + 2048</code>. The row has 2880 values, so the third pass stops at 832 and threads 832–1023 sit idle there. Click any cell to follow that thread.</p>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="passes">
+          <div class="cv"><div class="cvlabel"><b class="x">pass 0 · x[0 … 1023]</b></div><canvas id="p0"></canvas></div>
+          <div class="cv"><div class="cvlabel"><b class="x">pass 1 · x[1024 … 2047]</b></div><canvas id="p1"></canvas></div>
+          <div class="cv"><div class="cvlabel"><b class="x">pass 2 · x[2048 … 2879]</b></div><canvas id="p2"></canvas></div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over a cell to see its element and thread.</div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="tcard"></dl>
+        <div class="cvlabel"><b class="s">shared float red[32]</b><span>one partial sum per warp</span></div>
+        <div class="red" id="red"></div>
+        <div class="tablewrap"><table class="nums" id="scale"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="y" id="bflabel">warp butterfly</b><span>shfl.sync.bfly: lane l adds the value of lane l xor offset</span></div>
+      <div class="figure"><svg id="bfly" style="min-width: 760px"></svg></div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>The butterfly instead of a tree in shared memory</h3>
+        <p>A warp exchanges registers directly with <code>shfl.sync.bfly</code>. After five rounds (offsets 16, 8, 4, 2, 1) every lane holds the full warp sum, with no shared memory and no barrier. Only the 32 warp totals go through shared memory, so the whole kernel needs one <code>bar.sync</code>.</p>
+        <p>Because every lane ends up with the total, any lane could write it. Lane 0 does.</p>
+      </div>
+      <div class="panel">
+        <h3>Every thread repeats the final sum</h3>
+        <p>After the barrier, all 1024 threads add the same 32 partials and compute the same scale. That is 32 shared-memory reads each, but they are broadcasts (every thread reads the same address), and it avoids a second barrier that a "thread 0 computes, everyone waits" scheme would need.</p>
+        <p>The work is tiny next to the matrix products around it: per token, x is read twice and w once, and y is written once, about 46 KB of memory traffic. The second read of x usually hits in cache.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>rmsnorm</code>; launched from <code>gptoss.c</code> with 1024 threads and one block per token. Gemma 3 uses the same kernel with n = 3840 and ε = 1e-6. Values on this page are generated, computed in float32 in the kernel's order.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('rmsnorm');
+const N = 2880, NT = 1024, EPS = 1e-5;
+Atlas.facts($('facts'), [['(tokens, 1, 1)', 'grid'], ['1024', 'threads per block'], ['32 × 4 B', 'shared memory'], ['1', 'barrier'], ['3', 'passes over x per loop']]);
+
+// data: a residual-stream-like row with a few large outliers
+const r = Atlas.rng(7), x = new Float32Array(N), w = new Float32Array(N);
+for (let i = 0; i < N; i++) { x[i] = fr(Atlas.gauss(r) * 1.3); w[i] = fr(1 + 0.15 * Atlas.gauss(r)); }
+[17, 1403, 2600].forEach((i, k) => { x[i] = fr([38, -52, 44][k]); });
+
+// the kernel in float32, in its own order
+const part = [[], [], []]; // part[p][t] = running sum of squares after pass p
+const ss = new Float32Array(NT);
+for (let p = 0; p < 3; p++) for (let t = 0; t < NT; t++) {
+  const i = t + p * NT; if (i < N) ss[t] = fr(x[i] * x[i] + ss[t]); part[p][t] = ss[t];
+}
+const tables = []; // butterfly per warp
+for (let wv = 0; wv < 32; wv++) tables.push(Atlas.bflyTable(Array.from(ss.slice(wv * 32, wv * 32 + 32)), (a, b) => fr(a + b)));
+const red = tables.map(t => t[5][0]);
+let total = 0; for (const v of red) total = fr(total + v);
+const mean = fr(total / N), var_ = fr(mean + EPS), rt = fr(Math.sqrt(var_)), scale = fr(1 / rt);
+const y = new Float32Array(N); for (let i = 0; i < N; i++) y[i] = fr(fr(x[i] * scale) * w[i]);
+let ref = 0; for (let i = 0; i < N; i++) ref += x[i] * x[i]; const refScale = 1 / Math.sqrt(ref / N + EPS);
+
+// steps
+const S = { tid: 37 };
+const steps = [];
+for (let p = 0; p < 3; p++) steps.push({ tag: 'S', kind: 'sq', p, short: `x² pass ${p}`, title: `sum of squares, pass ${p}`,
+  text: p < 2 ? `All 1024 threads load one element each (indices ${p * NT}–${p * NT + 1023}) and add its square to a private register with one FMA. Consecutive threads read consecutive floats, so each warp's load is one 128-byte transaction.`
+              : `The last pass covers indices 2048–2879. Threads 832–1023 fail the <code>i &lt; n</code> test and skip it. Each thread now holds the sum of 2 or 3 squares.` });
+for (let s = 1; s <= 5; s++) steps.push({ tag: 'B', kind: 'bfly', s, short: `butterfly xor ${32 >> s}`, title: `warp butterfly, round ${s}: offset ${32 >> s}`, delay: 1100,
+  text: `Each lane reads the register of lane <code>lane ^ ${32 >> s}</code> and adds it to its own. All 32 warps do this at the same time. ${s < 5 ? `After this round, groups of ${2 ** s} lanes share a sum.` : 'After five rounds every lane holds its warp\'s total.'}` });
+steps.push({ tag: 'R', kind: 'red', short: 'warp totals → shared', title: 'lane 0 of each warp → red[warp], then bar.sync',
+  text: 'Lane 0 of every warp stores its warp total into shared memory. <code>bar.sync 0</code> waits until all 32 totals are there, the kernel\'s only barrier.' });
+steps.push({ tag: 'C', kind: 'scale', short: 'scale', title: 'every thread computes the same scale',
+  text: `Each thread adds the 32 shared partials in order (broadcast reads), divides by n = ${N}, adds ε, then takes <code>sqrt.rn</code> and <code>rcp.rn</code>. Result: scale = ${Atlas.fmt(scale, 6)} for this row.` });
+for (let p = 0; p < 3; p++) steps.push({ tag: 'O', kind: 'out', p, short: `write pass ${p}`, title: `y = x · scale · w, pass ${p}`,
+  text: `The same strided loop again: reload x[i] (from L1/L2 this time), multiply by the scale and by w[i], store y[i].${p === 2 ? ' Done: one launch normalizes as many tokens as it has blocks.' : ''}` });
+
+// views
+const grids = [0, 1, 2].map(p => Atlas.grid($('p' + p), 32, 32));
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `A|extern "C" __global__ void rmsnorm(const float *x, const float *w, float *y, unsigned n, float eps)
+A|{
+A|    __shared__ float red[32];                                   // one partial per warp
+A|    x += blockIdx.x * n;  y += blockIdx.x * n;                  // one block per row (token)
+A|    unsigned lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+S|    float ss = 0;
+S|    for (unsigned i = threadIdx.x; i < n; i += blockDim.x)      // strided: 3 passes for n = 2880
+S|        ss = fmaf(x[i], x[i], ss);
+B|    for (int off = 16; off >= 1; off >>= 1)                     // butterfly: all lanes get the warp sum
+B|        ss += __shfl_xor_sync(0xffffffff, ss, off);
+R|    if (lane == 0) red[warp] = ss;
+R|    __syncthreads();
+C|    float total = 0;
+C|    for (unsigned k = 0; k < blockDim.x / 32; k++)              // every thread adds the 32 partials
+C|        total += red[k];
+C|    float scale = 1.0f / sqrtf(total / n + eps);
+O|    for (unsigned i = threadIdx.x; i < n; i += blockDim.x)
+O|        y[i] = x[i] * scale * w[i];
+A|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `S|SUMSQ:
+S|    setp.ge.u32         %p1, %r4, %r1;          // i >= n ?
+S|    @%p1 bra            SUMSQ_DONE;
+S|    ld.global.f32       %f3, [%rd5];
+S|    fma.rn.f32          %f2, %f3, %f3, %f2;     // ss += x*x
+S|    add.u32             %r4, %r4, %r3;          // i += blockDim
+S|    bra.uni             SUMSQ;
+B|SUMSQ_DONE:
+B|    shfl.sync.bfly.b32  %f3, %f2, 16, 31, -1;
+B|    add.f32             %f2, %f2, %f3;
+B|    shfl.sync.bfly.b32  %f3, %f2, 8, 31, -1;
+B|    add.f32             %f2, %f2, %f3;
+B|    ...                                         // offsets 4, 2, 1
+R|    @!%p2 st.shared.f32 [%r8], %f2;             // lane 0: red[warp] = ss
+R|    bar.sync            0;
+C|WSUM:
+C|    ld.shared.f32       %f5, [%r11];
+C|    add.f32             %f4, %f4, %f5;          // total += red[k]
+C|    ...
+C|    div.rn.f32          %f7, %f4, %f6;          // mean(x^2)
+C|    add.f32             %f7, %f7, %f1;          // + eps
+C|    sqrt.rn.f32         %f8, %f7;
+C|    rcp.rn.f32          %f9, %f8;               // scale
+O|SCALE:
+O|    ld.global.f32       %f10, [%rd5];           // x[i]
+O|    ld.global.f32       %f11, [%rd6];           // w[i]
+O|    mul.f32             %f12, %f10, %f9;
+O|    mul.f32             %f12, %f12, %f11;
+O|    st.global.f32       [%rd7], %f12;` },
+});
+
+let hover = null;
+function draw() {
+  const st = stepper.step, warp = S.tid >> 5, lane = S.tid & 31;
+  for (let p = 0; p < 3; p++) {
+    const g = grids[p].prep();
+    for (let wv = 0; wv < 32; wv++) for (let l = 0; l < 32; l++) {
+      const t = wv * 32 + l, i = p * NT + t;
+      if (i >= N) { g.hatch(wv, l); continue; }
+      let col = C.x, a = 0.15 + 0.75 * Math.min(1, Math.abs(x[i]) / 3);
+      const done = (st.kind === 'sq' && p <= st.p) || st.kind !== 'sq';
+      if (st.kind === 'out') { if (p <= st.p) { col = C.y; a = 0.15 + 0.75 * Math.min(1, Math.abs(y[i]) / 3); } else a *= 0.35; }
+      else if (st.kind === 'sq') { if (p > st.p) a *= 0.25; else if (p < st.p) a *= 0.5; }
+      else a *= 0.4;
+      g.cell(wv, l, col, done ? a : a * 0.5);
+    }
+    if (st.kind === 'bfly' || st.kind === 'red') g.box(warp, 0, 1, 32, C.sync, 2);
+    g.box(warp, lane, 1, 1, C.fg, 2);
+    if (hover && hover.p === p) g.box(hover.r, hover.c, 1, 1, C.sync, 1.5);
+  }
+  // butterfly of the selected warp
+  const stage = st.kind === 'sq' ? 0 : st.kind === 'bfly' ? st.s : 5;
+  Atlas.butterfly($('bfly'), tables[warp], st.kind === 'sq' && st.p < 2 ? -1 : stage, { sel: lane, fmt: v => v >= 1000 ? v.toFixed(0) : v.toFixed(1) });
+  $('bflabel').textContent = `warp ${warp}: partial sums of squares`;
+  // shared red[]
+  const redOn = st.kind === 'red' || st.kind === 'scale' || st.kind === 'out';
+  $('red').innerHTML = red.map((v, k) => `<div class="${redOn ? 'on' : ''} ${k === warp ? 'sel' : ''}" title="red[${k}] = ${v.toFixed(3)}">${redOn ? v.toFixed(0) : k}</div>`).join('');
+  // scale table
+  const sOn = st.kind === 'scale' || st.kind === 'out';
+  $('scale').innerHTML = `<caption>Scale (identical in all 1024 threads)</caption>` + [
+    ['Σ red[k]', total.toFixed(3)], ['÷ n', mean.toFixed(6)], ['+ ε', var_.toFixed(6)], ['sqrt.rn', rt.toFixed(6)], ['rcp.rn → scale', scale.toFixed(7)], ['float64 reference', refScale.toFixed(7)],
+  ].map(([a, b]) => `<tr${sOn ? '' : ' style="opacity:.35"'}><th>${a}</th><td>${sOn ? b : '–'}</td></tr>`).join('');
+  // thread card
+  const els = [0, 1, 2].map(p => S.tid + p * NT).filter(i => i < N);
+  $('thlabel').textContent = `thread ${S.tid} · warp ${warp}, lane ${lane}`;
+  const pp = st.kind === 'sq' ? st.p : 2;
+  $('tcard').innerHTML = [
+    ['elements', els.join(', ')],
+    ['x values', els.map(i => x[i].toFixed(3)).join(', ')],
+    ['ss after pass ' + pp, part[pp][S.tid].toFixed(4)],
+    ['warp total', tables[warp][5][lane].toFixed(3)],
+    ['y values', st.kind === 'out' ? els.filter((i, k) => k <= st.p).map(i => y[i].toFixed(4)).join(', ') || '–' : '–'],
+  ].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  Atlas.legend($('legend'), st.kind === 'out' ? [['--y', 'written y (darker = larger |y|)'], ['--x', 'x still to normalize'], ['--zero', 'hatched: past n, no element']]
+    : [['--x', 'x (darker = larger |x|); bright = this pass'], ['--sync', 'outlined row: the warp in the butterfly'], ['--zero', 'hatched: past n = 2880, thread idle']]);
+}
+grids.forEach((g, p) => g.hook(pos => {
+  hover = { p, ...pos }; const t = pos.r * 32 + pos.c, i = p * NT + t;
+  $('status').textContent = i < N ? `x[${i}] = ${x[i].toFixed(4)} · thread ${t} (warp ${pos.r}, lane ${pos.c}), pass ${p}` : `thread ${t} has no element in pass ${p}: ${i} ≥ n`;
+  draw();
+}, pos => { S.tid = pos.r * 32 + pos.c; draw(); }, () => { hover = null; draw(); }));
+const stepper = Atlas.stepper({ steps, code, render: draw });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

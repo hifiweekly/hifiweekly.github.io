@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>qk_norm_rope Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.heads { display: grid; grid-template-columns: repeat(32, minmax(0, 1fr)); gap: 2px; }
+.heads button { padding: 6px 0; font-family: var(--font-mono); font-size: 10px; border-radius: 3px; border: 1px solid transparent; color: var(--panel); min-width: 0; }
+.heads button.q { background: var(--x); } .heads button.k { background: var(--w); } .heads button.v { background: var(--y); }
+.heads button[aria-pressed="true"] { outline: 2px solid var(--fg); outline-offset: 1px; }
+.headkey { display: grid; grid-template-columns: 16fr 8fr 8fr; gap: 2px; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.headkey span { border-top: 2px solid var(--line); padding-top: 2px; }
+.pairfig svg { display: block; width: 100%; max-width: 270px; height: auto; margin: 0 auto; }
+@media (max-width: 620px) { .heads button { font-size: 0; padding: 8px 0; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Gemma 3 · gemma3.ptx · one warp per head</div>
+    <h1>Inside <code>qk_norm_rope</code></h1>
+    <p>Right after the Q/K/V projection, Gemma 3 normalizes every query and key head on its own (RMSNorm over 256 dimensions), rotates them by their token's position (rotary embedding, NeoX layout), and writes keys and values into the KV cache as f16. One 32-thread block handles one head of one token, so the whole head lives in a single warp's registers and never touches shared memory.</p>
+    <div class="formula"><span class="y">x'</span> = RoPE<sub>pos</sub>( <span class="x">x</span> / √(Σ x² / 256 + ε) · <span class="w">w</span> ) &nbsp;&nbsp;<span class="muted">// pair (i, i+128): [x<sub>i</sub>, x<sub>i+128</sub>] rotated by pos · θ<sub>i</sub></span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-grid">
+    <div class="sechead">
+      <h2 id="s-grid">The grid: 32 heads per token</h2>
+      <p>Each token's projection output holds 16 query heads, 8 key heads and 8 value heads, 256 floats each. The launch has one block per head per token: grid = (16 + 2·8, tokens). Query and key heads get the norm and the rotation; value heads are only converted to f16 and copied into the cache. Select a head.</p>
+    </div>
+    <div class="panel">
+      <div class="heads" id="heads" role="group" aria-label="Heads of one token"></div>
+      <div class="headkey"><span>q heads 0–15 (norm weights qw)</span><span>k heads 16–23 (kw, + K cache)</span><span>v heads 24–31 (V cache)</span></div>
+      <div class="controls">
+        <label for="pos">position <input id="pos" type="range" min="0" max="8191" value="1500"> <span id="posv" class="mono"></span></label>
+        <label for="layer">layer <select id="layer"><option value="local">local (sliding window, 5 of every 6)</option><option value="global">global (every 6th)</option></select></label>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">Inside one head</h2>
+      <p>The 256 values are drawn as two rows: dims 0–127 on top and 128–255 below, so each rotation pair (i, i+128) is one column. Lane <code>l</code> owns columns 4l to 4l+3, in both rows: 8 values in 8 registers. Click a column to follow its lane.</p>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b id="vlabel"></b><span id="vrange"></span></div>
+        <canvas id="vec"></canvas>
+        <div class="cvlabel"><b class="s">rotation of every pair at this position</b><span>column = lane, row = its 4 pairs</span></div>
+        <canvas id="dials"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over the head or a dial to see its dimension and lane.</div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="tcard"></dl>
+        <div class="cvlabel"><b class="y" id="pairlabel"></b></div>
+        <div class="pairfig"><svg id="pair" role="img" aria-label="Rotation of the selected pair"></svg></div>
+        <dl class="kv" id="paircard"></dl>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="y">warp butterfly: sum of squares</b><span>each lane starts with the sum of its 8 squares</span></div>
+      <div class="figure"><svg id="bfly" style="min-width: 760px"></svg></div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Why lanes own columns 4l and 128 + 4l</h3>
+        <p>RoPE in the NeoX layout rotates dimension i together with dimension i + 128. If a lane owned 8 consecutive dims, the partner of each value would live in another lane, and every rotation would need a shuffle. Giving lane l the four dims 4l–4l+3 <em>and</em> their partners 128+4l–128+4l+3 keeps every pair inside one thread. Both halves are still loaded as one float4 each, and a warp reads 512 contiguous bytes per half.</p>
+      </div>
+      <div class="panel">
+        <h3>Fusing three jobs into one launch</h3>
+        <p>Norm, rotation and the cache write all touch the same 1 KB per head. Doing them in one kernel reads each head once and writes it once (plus the f16 cache copy), instead of three round trips through memory. Value heads skip straight to the copy, so the launch also replaces a separate "append to cache" kernel.</p>
+        <p>Local layers keep a ring of 1024 + 128 = 1152 cache slots (the window plus one prompt chunk); global layers keep all 8192. The slot is <code>pos % slots</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gemma3/gemma3.ptx</code>, kernel <code>qk_norm_rope</code>; the cos/sin tables come from <code>rope_table()</code> in <code>gemma3.c</code> (local layers: base 10000; global: base 1,000,000 with linear scaling ÷8). Values on this page are generated, computed in float32 in the kernel's order.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('qk_norm_rope');
+const NH = 16, NKV = 8, D = 256, EPS = 1e-6, CTX = 8192, LOCAL_SLOTS = 1024 + 128;
+Atlas.facts($('facts'), [['(32, tokens)', 'grid = (nh + 2·nkv, tokens)'], ['32', 'threads = 1 warp'], ['0 B', 'shared memory'], ['8', 'values per lane'], ['f16', 'KV cache format']]);
+
+const S = { h: 3, lane: 5, j: 1, pos: 1500, layer: 'local' };
+const r = Atlas.rng(11), heads = [];
+for (let h = 0; h < NH + 2 * NKV; h++) { const v = new Float32Array(D); for (let i = 0; i < D; i++) v[i] = fr(Atlas.gauss(r) * (h < NH ? 2.5 : h < NH + NKV ? 4 : 1.5)); heads.push(v); }
+const qw = new Float32Array(D), kw = new Float32Array(D);
+for (let i = 0; i < D; i++) { qw[i] = fr(1 + 0.4 * Atlas.gauss(r)); kw[i] = fr(1 + 0.4 * Atlas.gauss(r)); }
+const kind = h => h < NH ? 'q' : h < NH + NKV ? 'k' : 'v';
+
+function theta(i) { return S.layer === 'local' ? Math.pow(10000, -2 * i / D) : Math.pow(1e6, -2 * i / D) / 8; }
+function cs(i) { const a = S.pos * theta(i); return [fr(Math.cos(a)), fr(Math.sin(a))]; }
+
+// the kernel, in float32 and its order
+function run() {
+  const x = heads[S.h], k = kind(S.h), out = { x };
+  if (k === 'v') return out;
+  const sq = new Float32Array(32);
+  for (let l = 0; l < 32; l++) {
+    let s = 0; const idx = [0, 1, 2, 3].map(i => 4 * l + i).concat([0, 1, 2, 3].map(i => 128 + 4 * l + i));
+    idx.forEach((d, n) => { s = n === 0 ? fr(x[d] * x[d]) : fr(x[d] * x[d] + s); }); sq[l] = s;
+  }
+  out.table = Atlas.bflyTable(Array.from(sq), (a, b) => fr(a + b));
+  const tot = out.table[5][0];
+  out.scale = fr(1 / fr(Math.sqrt(fr(fr(tot * (1 / 256)) + EPS))));
+  const nw = k === 'q' ? qw : kw;
+  out.n = new Float32Array(D); for (let d = 0; d < D; d++) out.n[d] = fr(fr(x[d] * out.scale) * nw[d]);
+  out.o = new Float32Array(D);
+  for (let i = 0; i < 128; i++) {
+    const [c, s] = cs(i), a = out.n[i], b = out.n[i + 128];
+    out.o[i] = fr(a * c + -fr(b * s)); out.o[i + 128] = fr(a * s + fr(b * c));
+  }
+  out.slots = S.layer === 'local' ? LOCAL_SLOTS : CTX;
+  return out;
+}
+
+function buildSteps() {
+  const k = kind(S.h), slots = S.layer === 'local' ? LOCAL_SLOTS : CTX;
+  if (k === 'v') return [
+    { tag: 'V', kind: 'v', short: 'load', title: 'value head: load 8 floats per lane', text: `Value heads need no norm and no rotation. Lane l loads dims 8l–8l+7 (two float4 loads), so the warp reads the head's 1 KB in one go.` },
+    { tag: 'V', kind: 'v2', short: 'f16 → V cache', title: `convert to f16, store to V cache slot ${S.pos % slots}`, text: `Each lane converts its 8 floats with <code>cvt.rn.f16.f32</code>, packs them into four 32-bit words and stores 16 bytes to V[slot][${S.h - NH - NKV}][8l]. The slot is pos % ${slots} = ${S.pos % slots}.` },
+  ];
+  const st = [
+    { tag: 'L', kind: 'load', short: 'load', title: 'load: 2 float4 per lane', text: `Lane l loads x[4l … 4l+3] and x[128+4l … 128+4l+3]. Both loads are fully coalesced: the 32 lanes read 512 contiguous bytes for each half.` },
+    { tag: 'Q', kind: 'sq', short: 'x² in registers', title: 'sum of the 8 squares in each lane', text: 'One multiply and seven FMAs give each lane the sum of its own 8 squares.' },
+  ];
+  for (let s = 1; s <= 5; s++) st.push({ tag: 'B', kind: 'bfly', s, short: `butterfly xor ${32 >> s}`, title: `warp butterfly, round ${s}: offset ${32 >> s}`, delay: 1000,
+    text: `Lane l adds the value of lane l ^ ${32 >> s}. ${s === 5 ? 'Every lane now holds the full sum of squares of the head. No shared memory, no barrier.' : ''}` });
+  st.push({ tag: 'N', kind: 'norm', short: 'norm × w', title: `scale = 1/√(Σ/256 + ε), then × ${k === 'q' ? 'qw' : 'kw'}`, text: `Each lane computes the same scale and multiplies its 8 values by it and by the per-dimension norm weight (${k === 'q' ? 'qw for query heads' : 'kw for key heads'}). Scale for this head: <span class="mono" id="scl"></span>.` });
+  st.push({ tag: 'R', kind: 'rope', short: 'RoPE', title: `rotate the 4 pairs of each lane by pos · θᵢ (pos = ${S.pos})`, text: `Lane l loads cs[pos][4l … 4l+3] (cos and sin, two float4) and rotates each of its 4 pairs: x<sub>i</sub>' = x<sub>i</sub> cos − x<sub>i+128</sub> sin, x<sub>i+128</sub>' = x<sub>i</sub> sin + x<sub>i+128</sub> cos. Low pairs spin fast with position, high pairs barely move: the dials show every pair's angle.` });
+  st.push({ tag: 'W', kind: 'store', short: 'store', title: 'write the head back in place', text: 'Two float4 stores per lane overwrite the head in the qkv buffer, which the attention kernel reads next.' + (k === 'q' ? ' This is a query head, so the block is done.' : '') });
+  if (k === 'k') st.push({ tag: 'K', kind: 'cache', short: 'f16 → K cache', title: `key head: f16 copy into K cache slot ${S.pos % slots}`, text: `Key heads are also converted to f16 and stored to K[${S.pos % slots}][${S.h - NH}] (slot = pos % ${slots}${S.layer === 'local' ? ', a ring: the window of 1024 plus one prompt chunk' : ''}). Attention for later tokens reads them from there.` });
+  return st;
+}
+
+// views
+const vg = Atlas.grid($('vec'), 2, 128); $('vec').style.aspectRatio = '128 / 12';
+const dg = Atlas.grid($('dials'), 4, 32); $('dials').style.aspectRatio = '32 / 4.2';
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `A|extern "C" __global__ void qk_norm_rope(float *qkv, const float *qw, const float *kw, const float2 *cs,
+A|        __half *kc, __half *vc, unsigned pos0, unsigned slots, unsigned nh, unsigned nkv, float eps)
+A|{
+A|    unsigned h = blockIdx.x, t = blockIdx.y, l = threadIdx.x;      // 32 threads = 1 warp
+A|    unsigned pos = pos0 + t, slot = pos % slots;
+A|    float *x = qkv + (t * (nh + 2 * nkv) + h) * 256;
+V|    if (h >= nh + nkv) {                                            // value head: copy to the cache
+V|        __half *dst = vc + (slot * nkv + h - nh - nkv) * 256;
+V|        for (int i = 0; i < 8; i++) dst[8 * l + i] = __float2half(x[8 * l + i]);
+V|        return;
+V|    }
+L|    float a[4], b[4];                                               // dims 4l.. and 128+4l..
+L|    for (int i = 0; i < 4; i++) { a[i] = x[4 * l + i]; b[i] = x[128 + 4 * l + i]; }
+Q|    float ss = 0;
+Q|    for (int i = 0; i < 4; i++) ss += a[i] * a[i];
+Q|    for (int i = 0; i < 4; i++) ss += b[i] * b[i];
+B|    for (int off = 16; off >= 1; off >>= 1) ss += __shfl_xor_sync(0xffffffff, ss, off);
+N|    float s = 1.0f / sqrtf(ss / 256 + eps);
+N|    const float *nw = h < nh ? qw : kw;
+N|    for (int i = 0; i < 4; i++) { a[i] = a[i] * s * nw[4 * l + i]; b[i] = b[i] * s * nw[128 + 4 * l + i]; }
+R|    for (int i = 0; i < 4; i++) {                                   // NeoX RoPE on pairs (i, i+128)
+R|        float2 r = cs[pos * 128 + 4 * l + i];                       // {cos, sin}
+R|        float a2 = a[i] * r.x - b[i] * r.y, b2 = a[i] * r.y + b[i] * r.x;
+R|        a[i] = a2; b[i] = b2;
+R|    }
+W|    for (int i = 0; i < 4; i++) { x[4 * l + i] = a[i]; x[128 + 4 * l + i] = b[i]; }
+K|    if (h >= nh) {                                                  // key head: also into the cache
+K|        __half *dst = kc + (slot * nkv + h - nh) * 256;
+K|        for (int i = 0; i < 4; i++) { dst[4 * l + i] = __float2half(a[i]); dst[128 + 4 * l + i] = __float2half(b[i]); }
+K|    }
+A|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `A|    rem.u32             %r9, %r8, %r2;          // slot = pos % slots
+V|    @%p1 bra            V_COPY;                 // h >= nh + nkv
+L|    ld.global.v4.f32    {%f2, %f3, %f4, %f5}, [%rd9];
+L|    ld.global.v4.f32    {%f6, %f7, %f8, %f9}, [%rd9+512];   // x[128+4l..]
+Q|    mul.f32             %f10, %f2, %f2;
+Q|    fma.rn.f32          %f10, %f3, %f3, %f10;
+Q|    ...                                         // 6 more fma
+B|    shfl.sync.bfly.b32  %f11, %f10, 16, 31, -1;
+B|    add.f32             %f10, %f10, %f11;
+B|    ...                                         // offsets 8, 4, 2, 1
+N|    mul.f32             %f10, %f10, 0f3B800000; // / 256
+N|    add.f32             %f10, %f10, %f1;        // + eps
+N|    sqrt.rn.f32         %f10, %f10;
+N|    rcp.rn.f32          %f10, %f10;             // scale
+N|    selp.b64            %rd10, %rd2, %rd3, %p2; // qw or kw
+N|    mul.f32             %f2, %f2, %f10;         // x * scale (x8)
+N|    mul.f32             %f2, %f2, %f12;         // * w      (x8)
+R|    ld.global.nc.v4.f32 {%f20, %f21, %f22, %f23}, [%rd11];      // c0 s0 c1 s1
+R|    ld.global.nc.v4.f32 {%f24, %f25, %f26, %f27}, [%rd11+16];   // c2 s2 c3 s3
+R|    mul.f32             %f28, %f6, %f21;        // pair 0: b * sin
+R|    neg.f32             %f28, %f28;
+R|    fma.rn.f32          %f30, %f2, %f20, %f28;  // a cos - b sin
+R|    mul.f32             %f29, %f6, %f20;
+R|    fma.rn.f32          %f31, %f2, %f21, %f29;  // a sin + b cos
+R|    ...                                         // pairs 1-3
+W|    st.global.v4.f32    [%rd9], {%f30, %f32, %f34, %f36};
+W|    st.global.v4.f32    [%rd9+512], {%f31, %f33, %f35, %f37};
+K|    cvt.rn.f16.f32      %h0, %f30;              // ... x8
+K|    st.global.v2.b32    [%rd13], {%r15, %r16};
+K|    st.global.v2.b32    [%rd13+256], {%r15, %r16};
+V|V_COPY:
+V|    ld.global.v4.f32    {%f2, %f3, %f4, %f5}, [%rd9];
+V|    ld.global.v4.f32    {%f6, %f7, %f8, %f9}, [%rd9+16];
+V|    cvt.rn.f16.f32      %h0, %f2;               // ... x8
+V|    st.global.v4.b32    [%rd13], {%r15, %r16, %r17, %r18};` },
+});
+
+let R = run(), hover = null;
+function headButtons() {
+  $('heads').innerHTML = Array.from({ length: NH + 2 * NKV }, (_, h) => `<button class="${kind(h)}" data-h="${h}" aria-pressed="${h === S.h}" aria-label="head ${h} (${kind(h)})">${h}</button>`).join('');
+}
+$('heads').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.h = +b.dataset.h; R = run(); headButtons(); stepper.setSteps(buildSteps()); });
+$('pos').addEventListener('input', () => { S.pos = +$('pos').value; R = run(); stepper.setSteps(buildSteps(), true); });
+$('layer').addEventListener('change', () => { S.layer = $('layer').value; R = run(); stepper.setSteps(buildSteps(), true); });
+
+function cur(st, d) { // value of dim d at this step
+  if (!R.n) return R.x[d];
+  if (['load', 'sq', 'bfly'].includes(st.kind)) return R.x[d];
+  if (st.kind === 'norm') return R.n[d];
+  return R.o[d];
+}
+function draw() {
+  const st = stepper.step, k = kind(S.h), isV = k === 'v';
+  $('posv').textContent = S.pos;
+  $('vlabel').textContent = `head ${S.h} (${k}) · ${isV ? 'lane l owns dims 8l … 8l+7' : 'top: dims 0–127 · bottom: 128–255'}`;
+  $('vlabel').className = k === 'q' ? 'x' : k === 'k' ? 'w' : 'y';
+  const g = vg.prep();
+  const col = st.kind === 'rope' || st.kind === 'store' || st.kind === 'cache' ? C.y : st.kind === 'norm' ? C.w : C.x;
+  for (let row = 0; row < 2; row++) for (let c = 0; c < 128; c++) {
+    const d = row * 128 + c, v = isV ? R.x[d] : cur(st, d);
+    g.cell(row, c, isV ? C.y : col, 0.15 + 0.8 * Math.min(1, Math.abs(v) / (st.kind === 'load' || st.kind === 'sq' || st.kind === 'bfly' || isV ? 6 : 3)), 0.08);
+  }
+  for (let l = 1; l < 32; l++) g.vline(4 * l, C.bg, 1);
+  if (isV) { const r0 = S.lane >> 4, c0 = (S.lane & 15) * 8; g.box(r0, c0, 1, 8, C.fg, 2); }
+  else { g.box(0, 4 * S.lane, 2, 4, C.fg, 2); g.box(0, 4 * S.lane + S.j, 2, 1, C.sync, 1.5); }
+  if (hover && hover.cv === 'vec') g.box(hover.r, hover.c, 1, 1, C.sync, 1.5);
+  $('vrange').textContent = isV ? '' : `lane ${S.lane}: columns ${4 * S.lane}–${4 * S.lane + 3}`;
+
+  // dials: column = lane, row = j; pair i = 4*lane + j
+  const dgp = dg.prep(), ctx = dgp.ctx;
+  for (let l = 0; l < 32; l++) for (let j = 0; j < 4; j++) {
+    const i = 4 * l + j, cx = (l + 0.5) * dgp.cw, cy = (j + 0.5) * dgp.ch, rr = Math.min(dgp.cw, dgp.ch) * 0.4, a = S.pos * theta(i);
+    const on = st.kind === 'rope' || st.kind === 'store' || st.kind === 'cache';
+    ctx.globalAlpha = isV ? 0.25 : (l === S.lane ? 1 : 0.55);
+    ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, rr, 0, 2 * Math.PI); ctx.stroke();
+    ctx.strokeStyle = on ? C.y : C.muted; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + rr * Math.cos(-a), cy + rr * Math.sin(-a)); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  if (!isV) dgp.box(S.j, S.lane, 1, 1, C.fg, 1.5);
+
+  // butterfly
+  if (!isV) Atlas.butterfly($('bfly'), R.table, st.kind === 'load' ? -1 : st.kind === 'sq' ? 0 : st.kind === 'bfly' ? st.s : 5, { sel: S.lane, fmt: v => v.toFixed(0) });
+  else $('bfly').innerHTML = `<text x="10" y="24" font-size="12" fill="${C.muted}">Value heads skip the norm: no reduction.</text>`, $('bfly').setAttribute('viewBox', '0 0 1040 40');
+  const sc = document.getElementById('scl'); if (sc && R.scale) sc.textContent = R.scale.toFixed(6);
+
+  // thread card
+  $('thlabel').textContent = `lane ${S.lane} of head ${S.h}`;
+  const dims = isV ? [8 * S.lane, 8 * S.lane + 7] : null;
+  $('tcard').innerHTML = (isV ? [
+    ['dims', `${dims[0]}–${dims[1]}`], ['values', Array.from(R.x.slice(dims[0], dims[1] + 1)).map(v => v.toFixed(2)).join(' ')],
+    ['V cache', `slot ${S.pos % (S.layer === 'local' ? LOCAL_SLOTS : CTX)}, bytes ${16 * S.lane}–${16 * S.lane + 15} of the head`],
+  ] : [
+    ['dims', `${4 * S.lane}–${4 * S.lane + 3} and ${128 + 4 * S.lane}–${131 + 4 * S.lane}`],
+    ['own Σx²', R.table[0][S.lane].toFixed(3)],
+    ['head Σx²', R.table[5][S.lane].toFixed(3)],
+    ['scale', R.scale.toFixed(6)],
+    [k === 'k' ? 'K cache' : 'output', k === 'k' ? `slot ${S.pos % R.slots} (pos ${S.pos} % ${R.slots})` : 'back into qkv only'],
+  ]).map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+
+  // pair figure
+  const i = 4 * S.lane + S.j, th = theta(i), ang = S.pos * th;
+  $('pairlabel').textContent = isV ? 'no rotation for value heads' : `pair (${i}, ${i + 128}) · lane ${S.lane}`;
+  const svg = $('pair');
+  if (isV) { svg.innerHTML = ''; svg.setAttribute('viewBox', '0 0 10 1'); $('paircard').innerHTML = ''; }
+  else {
+    const a = R.n[i], b = R.n[i + 128], a2 = R.o[i], b2 = R.o[i + 128], m = Math.max(Math.hypot(a, b), 0.5) * 1.15, Wd = 260, c0 = Wd / 2, sc2 = (Wd / 2 - 16) / m;
+    const rot = st.kind === 'rope' || st.kind === 'store' || st.kind === 'cache';
+    const P = (u, v) => `${c0 + u * sc2} ${c0 - v * sc2}`;
+    let s = `<rect width="${Wd}" height="${Wd}" fill="${C.bg}" rx="6"/>`;
+    s += `<line x1="8" y1="${c0}" x2="${Wd - 8}" y2="${c0}" stroke="${C.line}"/><line x1="${c0}" y1="8" x2="${c0}" y2="${Wd - 8}" stroke="${C.line}"/>`;
+    s += `<circle cx="${c0}" cy="${c0}" r="${Math.hypot(a, b) * sc2}" fill="none" stroke="${C.line}" stroke-dasharray="3 3"/>`;
+    s += `<text x="${Wd - 10}" y="${c0 - 6}" font-size="10" text-anchor="end" fill="${C.muted}">x${i}</text><text x="${c0 + 6}" y="16" font-size="10" fill="${C.muted}">x${i + 128}</text>`;
+    s += `<line x1="${c0}" y1="${c0}" x2="${P(a, b).split(' ')[0]}" y2="${P(a, b).split(' ')[1]}" stroke="${C.w}" stroke-width="2.5"/>`;
+    if (rot) s += `<line x1="${c0}" y1="${c0}" x2="${P(a2, b2).split(' ')[0]}" y2="${P(a2, b2).split(' ')[1]}" stroke="${C.y}" stroke-width="2.5"/>`;
+    svg.setAttribute('viewBox', `0 0 ${Wd} ${Wd}`); svg.innerHTML = s;
+    const turns = ang / (2 * Math.PI);
+    $('paircard').innerHTML = [
+      ['θᵢ', th.toExponential(3) + ' rad / position'],
+      ['angle', `${A_deg(ang)}° (${turns.toFixed(2)} turns)`],
+      ['wavelength', (2 * Math.PI / th).toFixed(1) + ' positions'],
+      ['before', `(${a.toFixed(3)}, ${b.toFixed(3)})`],
+      ['after', rot ? `(${a2.toFixed(3)}, ${b2.toFixed(3)})` : '–'],
+    ].map(([p, q]) => `<dt>${p}</dt><dd>${q}</dd>`).join('');
+  }
+  Atlas.legend($('legend'), isV ? [['--y', 'value head (darker = larger |v|)'], ['--fg', 'outlined: the selected lane\'s 8 dims']]
+    : [[st.kind === 'norm' ? '--w' : ['rope', 'store', 'cache'].includes(st.kind) ? '--y' : '--x', st.kind === 'norm' ? 'normalized × weight' : ['rope', 'store', 'cache'].includes(st.kind) ? 'rotated' : 'raw projection output'], ['--fg', 'outlined: the selected lane\'s 4 columns (8 values)'], ['--sync', 'selected pair']]);
+}
+function A_deg(a) { return ((a * 180 / Math.PI) % 360).toFixed(1); }
+vg.hook(p => {
+  hover = { cv: 'vec', ...p }; const d = p.r * 128 + p.c, isV = kind(S.h) === 'v';
+  $('status').textContent = isV ? `dim ${d} · lane ${d >> 3}` : `dim ${d} · lane ${p.c >> 2} · pair (${p.c}, ${p.c + 128})`; draw();
+}, p => { const isV = kind(S.h) === 'v'; if (isV) S.lane = (p.r * 128 + p.c) >> 3; else { S.lane = p.c >> 2; S.j = p.c & 3; } draw(); }, () => { hover = null; draw(); });
+dg.hook(p => { const i = 4 * p.c + p.r; $('status').textContent = `pair (${i}, ${i + 128}) · lane ${p.c} · angle ${A_deg(S.pos * theta(i))}° at pos ${S.pos}`; },
+  p => { S.lane = p.c; S.j = p.r; draw(); });
+
+headButtons();
+const stepper = Atlas.stepper({ steps: buildSteps(), code, render: draw });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>mv_q8 Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">gpt-oss + Gemma 3 · identical in gptoss.ptx and gemma3.ptx · decode: one token at a time</div>
+    <h1>Inside <code>mv_q8</code></h1>
+    <p>While generating, the model handles one token at a time, so every weight matrix is multiplied by a single vector. That work is limited by how fast the weights stream from memory, not by arithmetic: each weight byte is used exactly once. <code>mv_q8</code> gives each output row to one warp and arranges the loads so a warp always reads one contiguous kilobyte of weights at a time.</p>
+    <div class="formula"><span class="y">y</span>[r] = Σ<sub>b</sub> d[r][b] · Σ<sub>j&lt;32</sub> <span class="w">q</span>[r][32b+j] · <span class="x">x</span>[32b+j] + bias[r] + resid[r] &nbsp;&nbsp;<span class="muted">// Q8_0: int8 q, one f16 scale d per 32 values; x stays f32</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">One block: 8 warps, 8 rows</h2>
+      <p>The example is the query projection: 4096 rows × 2880 columns, so each row has 90 Q8 blocks of 32 values. The canvas shows the 8 rows of one thread block (one per warp) and their 90 blocks. Lane <code>l</code> of a warp takes blocks l, l + 32 and l + 64; the last round covers only blocks 64–89, so lanes 26–31 sit it out. Click a cell to follow that lane.</p>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="w">W rows 8·blockIdx … +7 · 90 Q8 blocks each</b><span>2 × 16-byte loads per block</span></div>
+        <canvas id="mat"></canvas>
+        <div class="cvlabel"><b id="detlabel"></b><span id="detsub"></span></div>
+        <canvas id="det"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over a block to see which lane reads it.</div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="tcard"></dl>
+        <div class="tablewrap"><table class="nums" id="iters"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="y" id="bflabel"></b><span>after the loop each lane holds a partial dot product</span></div>
+      <div class="figure"><svg id="bfly" style="min-width: 760px"></svg></div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Contiguous kilobytes</h3>
+        <p>In each round, lane l reads the 32 bytes of block l + 32·round. Together the 32 lanes read 1024 consecutive bytes of the row, the best case for the memory system. Their activations are 32 × 128 consecutive bytes of x. All loads use <code>ld.global.nc</code> (read-only path), and since all 8 warps of a block, and all 512 blocks, read the same x, it is served from cache after the first read.</p>
+      </div>
+      <div class="panel">
+        <h3>Keeping x in float32</h3>
+        <p>The MXFP4 expert kernels quantize the activation to int8 and use integer dot products. This kernel does not: attention projections and the output head see the residual stream, whose outlier dimensions lose too much in 8-bit blocks. So each int8 weight is converted to float and multiplied by the f32 activation (<code>dot4_s8</code>: 4 × <code>bfe.s32</code>, <code>cvt</code>, FMA), and the block scale is applied once per 32 products.</p>
+        <p>Per row that is 2880 weight bytes plus 180 bytes of scales: 3 KB in, 4 bytes out.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernels <code>mv_q8</code> and its helper <code>dot4_s8</code>; launched from <code>gptoss.c</code> with 256 threads and ⌈rows / 8⌉ blocks. Values on this page are generated (int8 weights, f16 scales) and computed in float32 in the kernel's order.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('mv_q8');
+const ROWS = 4096, COLS = 2880, NB = COLS / 32, BLK = 21; // example block index
+Atlas.facts($('facts'), [['⌈rows / 8⌉', 'grid (512 for Wq)'], ['256', 'threads = 8 warps'], ['1 row', 'per warp'], ['0 B', 'shared memory'], ['3 rounds', 'of 32 Q8 blocks per row']]);
+
+// data
+const r = Atlas.rng(5), x = new Float32Array(COLS);
+for (let i = 0; i < COLS; i++) x[i] = fr(Atlas.gauss(r) * 1.2);
+const W = [], D = [], bias = [], resid = [];
+for (let w = 0; w < 8; w++) {
+  const q = new Int8Array(COLS), d = new Float32Array(NB);
+  for (let i = 0; i < COLS; i++) q[i] = Math.max(-127, Math.min(127, Math.round(Atlas.gauss(r) * 45)));
+  for (let b = 0; b < NB; b++) d[b] = Atlas.f16(0.0006 + 0.0004 * r());
+  W.push(q); D.push(d); bias.push(fr(Atlas.gauss(r) * 0.1)); resid.push(fr(Atlas.gauss(r) * 2));
+}
+// kernel emulation: acc[warp][lane] after each round
+function blockPartial(w, b) { let p = 0; for (let j = 0; j < 32; j++) p = fr(W[w][32 * b + j] * x[32 * b + j] + p); return p; }
+const acc = [], parts = [];
+for (let w = 0; w < 8; w++) {
+  acc.push([]); parts.push([]);
+  for (let l = 0; l < 32; l++) {
+    let a = 0; const ar = [0], pr = [];
+    for (let it = 0; it < 3; it++) { const b = l + 32 * it; if (b < NB) { const p = blockPartial(w, b); pr.push(p); a = fr(p * D[w][b] + a); } else pr.push(null); ar.push(a); }
+    acc[w].push(ar); parts[w].push(pr);
+  }
+}
+const tables = acc.map(aw => Atlas.bflyTable(aw.map(ar => ar[3]), (a, b) => fr(a + b)));
+const yout = tables.map((t, w) => fr(fr(t[5][0] + bias[w]) + resid[w]));
+const yref = W.map((q, w) => { let s = 0; for (let i = 0; i < COLS; i++) s += q[i] * D[w][i >> 5] * x[i]; return s + bias[w] + resid[w]; });
+
+const S = { warp: 2, lane: 9 };
+const steps = [{ tag: 'A', kind: 'setup', short: 'setup', title: 'row = blockIdx.x · 8 + warp', text: `Each warp finds its row; block ${BLK} owns rows ${BLK * 8}–${BLK * 8 + 7}. Every lane starts with acc = 0 and block index b = lane.` }];
+for (let it = 0; it < 3; it++) {
+  steps.push({ tag: 'L', kind: 'load', it, short: `round ${it}: load`, title: `round ${it}: load blocks ${32 * it}–${Math.min(NB, 32 * it + 32) - 1}`,
+    text: `Each lane loads its block's 32 int8 weights (two 16-byte loads) and the 32 matching floats of x (eight 16-byte loads). The warp reads bytes ${1024 * it}–${Math.min(COLS, 1024 * it + 1024) - 1} of its row in one sweep.${it === 2 ? ' Only 26 blocks remain, so lanes 26–31 have failed <code>b &lt; nb</code> and wait at the reduction.' : ''}` });
+  steps.push({ tag: 'D', kind: 'dot', it, short: `round ${it}: dot`, title: `round ${it}: 32 products, then × scale`,
+    text: 'Eight <code>dot4_s8</code> calls each unpack 4 signed bytes (<code>bfe.s32</code>), convert them to float and chain 4 FMAs: 32 FMAs per block. Then the block\'s f16 scale is loaded and one more FMA adds partial × scale to acc.' });
+}
+for (let s = 1; s <= 5; s++) steps.push({ tag: 'B', kind: 'bfly', s, short: `butterfly xor ${32 >> s}`, title: `warp butterfly, round ${s}: offset ${32 >> s}`, delay: 1000,
+  text: `All 8 warps reduce their 32 partial sums in parallel. ${s === 5 ? 'Every lane now holds the full dot product of its warp\'s row.' : ''}` });
+steps.push({ tag: 'E', kind: 'store', short: 'store', title: 'lane 0: + bias + resid → y[row]', text: 'Lane 0 adds the bias and (when given) the residual, then writes one float. Passing the residual buffer as y makes the attention output projection add itself to the residual stream in place.' });
+
+const mg = Atlas.grid($('mat'), 8, NB), dg = Atlas.grid($('det'), 3, 32);
+$('det').style.aspectRatio = '32 / 4.5';
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `A|extern "C" __global__ void mv_q8(const int8_t *W, const __half *D, const float *x, const float *bias,
+A|                                 const float *resid, float *y, unsigned rows, unsigned cols)
+A|{
+A|    unsigned lane = threadIdx.x & 31, row = blockIdx.x * (blockDim.x / 32) + (threadIdx.x >> 5);
+A|    if (row >= rows) return;
+A|    unsigned nb = cols / 32;                                  // Q8 blocks per row
+A|    float acc = 0;
+L|    for (unsigned b = lane; b < nb; b += 32) {                // blocks lane, lane+32, lane+64
+L|        uint4 q0 = __ldg((const uint4 *)(W + row * cols + 32 * b));
+L|        uint4 q1 = __ldg((const uint4 *)(W + row * cols + 32 * b + 16));
+L|        const float4 *xb = (const float4 *)(x + 32 * b);      // 8 x float4 = 32 floats
+D|        float p = 0;
+D|        p = dot4_s8(q0.x, __ldg(xb + 0), p);  p = dot4_s8(q0.y, __ldg(xb + 1), p);
+D|        p = dot4_s8(q0.z, __ldg(xb + 2), p);  p = dot4_s8(q0.w, __ldg(xb + 3), p);
+D|        p = dot4_s8(q1.x, __ldg(xb + 4), p);  p = dot4_s8(q1.y, __ldg(xb + 5), p);
+D|        p = dot4_s8(q1.z, __ldg(xb + 6), p);  p = dot4_s8(q1.w, __ldg(xb + 7), p);
+D|        acc = fmaf(p, __half2float(D[row * nb + b]), acc);    // block scale
+L|    }
+B|    for (int off = 16; off >= 1; off >>= 1) acc += __shfl_xor_sync(0xffffffff, acc, off);
+E|    if (lane == 0) {
+E|        if (bias) acc += bias[row];
+E|        if (resid) acc += resid[row];
+E|        y[row] = acc;
+E|    }
+A|}
+D|// dot4_s8(w, x4, acc): acc + sum_i (float)(int8)(w >> 8i) * x4[i], as 4 chained FMAs` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `A|    mad.lo.u32          %r8, %r7, %r6, %r5;     // row
+A|    mov.u32             %r10, %r4;              // b = lane
+L|LOOP:
+L|    setp.ge.u32         %p2, %r10, %r9;
+L|    @%p2 bra            REDUCE;
+L|    ld.global.nc.v4.u32 {%r11, %r12, %r13, %r14}, [%rd13];      // 16 int8
+L|    ld.global.nc.v4.u32 {%r15, %r16, %r17, %r18}, [%rd13+16];   // 16 int8
+L|    ld.global.nc.v4.f32 {%f8, %f9, %f10, %f11}, [%rd14];
+L|    ...                                         // 7 more float4 of x
+D|    mov.f32             %f5, 0f00000000;
+D|    call (%f5), dot4_s8, (%r11, %f8, %f9, %f10, %f11, %f5);
+D|    call (%f5), dot4_s8, (%r12, %f12, %f13, %f14, %f15, %f5);
+D|    ...                                         // 6 more
+D|    ld.global.nc.b16    %h1, [%rd16];
+D|    cvt.f32.f16         %f2, %h1;               // weight scale
+D|    fma.rn.f32          %f1, %f5, %f2, %f1;
+L|    add.u32             %r10, %r10, 32;
+L|    bra.uni             LOOP;
+B|REDUCE:
+B|    shfl.sync.bfly.b32  %f6, %f1, 16, 31, -1;
+B|    add.f32             %f1, %f1, %f6;
+B|    ...                                         // offsets 8, 4, 2, 1
+E|    @%p3 bra            DONE;                   // lanes 1-31
+E|    ld.global.f32       %f7, [%rd20];           // bias
+E|    add.f32             %f1, %f1, %f7;
+E|    ld.global.f32       %f7, [%rd21];           // resid
+E|    add.f32             %f1, %f1, %f7;
+E|    st.global.f32       [%rd22], %f1;
+D|// dot4_s8:  bfe.s32 x4 -> cvt.rn.f32.s32 x4 -> fma.rn.f32 x4` },
+});
+
+let hover = null;
+function draw() {
+  const st = stepper.step, it = st.it ?? (st.kind === 'setup' ? -1 : 3);
+  const g = mg.prep();
+  for (let w = 0; w < 8; w++) for (let b = 0; b < NB; b++) {
+    const round = b >> 5, l = b & 31;
+    let a = 0.18;
+    if (st.kind === 'load' || st.kind === 'dot') a = round === it ? 0.9 : round < it ? 0.45 : 0.12;
+    else if (st.kind !== 'setup') a = 0.45;
+    g.cell(w, b, l === S.lane ? C.y : C.w, a, 0.18);
+  }
+  for (let k = 1; k < 3; k++) g.vline(32 * k, C.fg, 1.5);
+  g.box(S.warp, 0, 1, NB, C.sync, 1.5);
+  for (let k = 0; k < 3; k++) { const b = S.lane + 32 * k; if (b < NB) g.box(S.warp, b, 1, 1, C.fg, 2); }
+  if (hover) g.box(hover.r, hover.c, 1, 1, C.sync, 1.5);
+
+  // detail of the selected lane's block in this round (or its last block)
+  const kr = Math.min(Math.max(it, 0), 2), b = S.lane + 32 * kr, has = b < NB;
+  $('detlabel').textContent = has ? `warp ${S.warp}, lane ${S.lane}: block ${b} (columns ${32 * b}–${32 * b + 31})` : `lane ${S.lane} has no block in round ${kr}`;
+  $('detsub').textContent = 'rows: int8 q · x · product';
+  const dgp = dg.prep();
+  for (let j = 0; j < 32; j++) {
+    if (!has) { dgp.hatch(0, j, 3, 1); continue; }
+    const q = W[S.warp][32 * b + j], xv = x[32 * b + j], p = q * xv;
+    dgp.cell(0, j, C.w, 0.15 + 0.8 * Math.abs(q) / 127, 0.1);
+    dgp.cell(1, j, C.x, 0.15 + 0.8 * Math.min(1, Math.abs(xv) / 3), 0.1);
+    dgp.cell(2, j, C.y, 0.15 + 0.8 * Math.min(1, Math.abs(p) / 200), 0.1);
+    if (dgp.cw > 22) { dgp.text(0, j, String(q), C.fg, 9); dgp.text(1, j, xv.toFixed(1), C.fg, 9); }
+  }
+  for (let k = 1; k < 8; k++) dgp.vline(4 * k, C.panel, 2);
+
+  // butterfly
+  const stage = st.kind === 'bfly' ? st.s : st.kind === 'store' ? 5 : (st.kind === 'dot' && st.it === 2) ? 0 : -1;
+  Atlas.butterfly($('bfly'), tables[S.warp], stage, { sel: S.lane, fmt: v => v.toFixed(2) });
+  $('bflabel').textContent = `warp ${S.warp} (row ${BLK * 8 + S.warp}): acc per lane`;
+
+  // thread card + rounds table
+  const row = BLK * 8 + S.warp;
+  $('thlabel').textContent = `warp ${S.warp}, lane ${S.lane} · thread ${S.warp * 32 + S.lane}`;
+  $('tcard').innerHTML = [
+    ['row', row], ['blocks', [0, 1, 2].map(k => S.lane + 32 * k).filter(v => v < NB).join(', ')],
+    ['row result', st.kind === 'store' ? `${yout[S.warp].toFixed(5)} (float64: ${yref[S.warp].toFixed(5)})` : '–'],
+  ].map(([a, c]) => `<dt>${a}</dt><dd>${c}</dd>`).join('');
+  let h = `<caption>This lane's rounds</caption><tr><th>round</th><th>block</th><th>Σ q·x</th><th>scale d</th><th>acc after</th></tr>`;
+  for (let k = 0; k < 3; k++) {
+    const bb = S.lane + 32 * k, done = it > k || (it === k && st.kind === 'dot');
+    h += `<tr class="${it === k ? 'on' : ''}"><td>${k}</td><td>${bb < NB ? bb : '–'}</td><td>${bb < NB && done ? parts[S.warp][S.lane][k].toFixed(1) : '–'}</td><td>${bb < NB ? D[S.warp][bb].toPrecision(4) : '–'}</td><td>${done ? acc[S.warp][S.lane][k + 1].toFixed(4) : '–'}</td></tr>`;
+  }
+  $('iters').innerHTML = h;
+  Atlas.legend($('legend'), [['--w', 'Q8 block (bright = loaded this round)'], ['--y', 'blocks of the selected lane in every warp'], ['--fg', 'outlined: the selected lane\'s 3 blocks'], ['--x', 'activation x']]);
+}
+mg.hook(p => { hover = p; $('status').textContent = `row ${BLK * 8 + p.r}, block ${p.c} (columns ${32 * p.c}–${32 * p.c + 31}) · warp ${p.r}, lane ${p.c & 31}, round ${p.c >> 5}`; draw(); },
+  p => { S.warp = p.r; S.lane = p.c & 31; draw(); }, () => { hover = null; draw(); });
+const stepper = Atlas.stepper({ steps, code, render: draw });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>
