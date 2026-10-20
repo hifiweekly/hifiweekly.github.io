@@ -50,6 +50,7 @@
       <a class="card" href="gptoss.html"><div class="nm">gpt-oss-20b<span class="eng">gpt-oss</span></div><p>24 layers alternating local (window 128) and global attention, each with a 32-expert MoE feed-forward (top 4).</p><div class="shows">Shows: the GGUF graph with each step named by its kernel; decode vs prefill; launch order; every tensor and its engine format.</div><div class="launch">gptoss.ptx · 15 kernels</div></a>
       <a class="card" href="gemma3.html"><div class="nm">Gemma 3 12B<span class="eng">Gemma 3</span></div><p>48 layers, five local (window 1024) to one global, dense GELU feed-forward, tied output head.</p><div class="shows">Shows: the same views; add_rmsnorm fusing the residual add with the next norm.</div><div class="launch">gemma3.ptx · 13 kernels</div></a>
     </div>
+    <p class="muted" style="font-size:13.5px">Full highlighted source: <a href="gptoss_ptx.html"><code>gptoss.ptx</code></a> · <a href="gemma3_ptx.html"><code>gemma3.ptx</code></a></p>
   </section>
 
   <section aria-labelledby="h-where">
@@ -116,5 +117,5 @@
     </div>
   </section>
 
-  <footer><span>Sources: <code>gptoss/gptoss.ptx</code>, <code>gemma3/gemma3.ptx</code> and their host code. Model graphs: <code>model_htmls/gptoss_graph.html</code> and <code>gemma3_graph.html</code> (regenerated for the 12B). Kernels without a page yet (dashed in the graphs): gemm_q5, gemm_mxfp4, sample_logits, and the gpt-oss variant of attention.</span></footer>
+  <footer><span>Sources: <a href="gptoss_ptx.html"><code>gptoss/gptoss.ptx</code></a>, <a href="gemma3_ptx.html"><code>gemma3/gemma3.ptx</code></a> and their host code. Model graphs: <code>model_htmls/gptoss_graph.html</code> and <code>gemma3_graph.html</code> (regenerated for the 12B). Kernels without a page yet (dashed in the graphs): gemm_q5, gemm_mxfp4, sample_logits, and the gpt-oss variant of attention.</span></footer>
 </div>
