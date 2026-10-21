@@ -55,7 +55,8 @@ async function draw(host, g, hotKernel, onPick) {
 }
 
 A.model = function (M) {
-  const st = { pass: 'decode', kind: 'local', hot: null, sel: null };
+  const passes = M.passes || [['decode', 'decode · 1 token'], ['prefill', 'prefill · T tokens']];
+  const st = { pass: passes[0][0], kind: 'local', hot: null, sel: null };
   const hm = /k=([a-z0-9_]+)/.exec(location.hash);
   if (hm) st.hot = hm[1];
 
@@ -66,10 +67,10 @@ A.model = function (M) {
     el.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; st[key] = b.dataset.v; sync(); renderLayer(); renderLaunches(); });
     sync();
   };
-  seg($('passSeg'), 'pass', [['decode', 'decode · 1 token'], ['prefill', 'prefill · T tokens']]);
+  seg($('passSeg'), 'pass', passes);
   seg($('kindSeg'), 'kind', [['local', 'local layer'], ['global', 'global layer']]);
 
-  const usedKernels = () => [...new Set([...flat(M.overview()), ...flat(M.layer('decode', 'local')), ...flat(M.layer('prefill', 'global'))].map(n => n.kernel).filter(Boolean))];
+  const usedKernels = () => [...new Set([...flat(M.overview()), ...passes.flatMap(([p]) => ['local', 'global'].flatMap(k => flat(M.layer(p, k))))].map(n => n.kernel).filter(Boolean))];
   const hotSel = $('hotSel');
   hotSel.innerHTML = '<option value="">none</option>' + usedKernels().sort().map(k => `<option>${k}</option>`).join('');
   hotSel.value = st.hot || '';

@@ -29,9 +29,9 @@
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">ptx_test · gpt-oss-20b and Gemma 3 12B engines · hand-written PTX</div>
+    <div class="eyebrow">ptx_test · gpt-oss-20b, Gemma 3 12B and EmbeddingGemma 2 engines · hand-written PTX</div>
     <h1>Kernel Atlas</h1>
-    <p>Interactive walkthroughs of the GPU kernels behind the two inference engines in this project. Each page steps through one kernel the way the hardware runs it: which thread touches which bytes, where threads cooperate, and the matching lines of the hand-written PTX and of an equivalent CUDA C++ version. Every number on the pages is computed in your browser by re-running the kernel's float32 arithmetic on generated data.</p>
+    <p>Interactive walkthroughs of the GPU kernels behind the three inference engines in this project: two text generators and one text-embedding encoder. Each page steps through one kernel the way the hardware runs it: which thread touches which bytes, where threads cooperate, and the matching lines of the hand-written PTX and of an equivalent CUDA C++ version. Every number on the pages is computed in your browser by re-running the kernel's float32 arithmetic on generated data.</p>
   </header>
 
   <section aria-labelledby="h-how">
@@ -49,8 +49,8 @@
     <div class="cards">
       <a class="card" href="gptoss.html"><div class="nm">gpt-oss-20b<span class="eng">gpt-oss</span></div><p>24 layers alternating local (window 128) and global attention, each with a 32-expert MoE feed-forward (top 4).</p><div class="shows">Shows: the GGUF graph with each step named by its kernel; decode vs prefill; launch order; every tensor and its engine format.</div><div class="launch">gptoss.ptx · 15 kernels</div></a>
       <a class="card" href="gemma3.html"><div class="nm">Gemma 3 12B<span class="eng">Gemma 3</span></div><p>48 layers, five local (window 1024) to one global, dense GELU feed-forward, tied output head.</p><div class="shows">Shows: the same views; add_rmsnorm fusing the residual add with the next norm.</div><div class="launch">gemma3.ptx · 13 kernels</div></a>
+      <a class="card" href="gemma_emb2.html"><div class="nm">EmbeddingGemma 2<span class="eng">EmbeddingGemma 2</span></div><p>271M encoder: 24 bidirectional layers (five ±512 local to one whole-text global), per-layer inputs, one 768-dim vector per text.</p><div class="shows">Shows: packed texts in one batch, 256- and 512-dim heads, the per-layer-input branch, mean pooling on the host.</div><div class="launch">emb2.ptx · 9 kernels, 4 shared with gemma3.ptx</div></a>
     </div>
-    <p class="muted" style="font-size:13.5px">Full highlighted source: <a href="gptoss_ptx.html"><code>gptoss.ptx</code></a> · <a href="gemma3_ptx.html"><code>gemma3.ptx</code></a></p>
   </section>
 
   <section aria-labelledby="h-where">
@@ -60,7 +60,9 @@
         <a href="rmsnorm.html">rmsnorm</a><i>→</i><a href="mv_q8.html">mv_q8</a><span class="k">×3 q, k, v</span><i>→</i><a href="rope_kv.html">rope_kv</a><i>→</i><a href="attention.html">attention</a><i>→</i><a href="mv_q8.html">mv_q8</a><span class="k">+ residual</span><i>→</i><a href="rmsnorm.html">rmsnorm</a><i>→</i><a href="mv_f32.html">mv_f32</a><i>→</i><a href="router_topk.html">router_topk</a><i>→</i><a href="quant_q8.html">quant_q8</a><i>→</i><a href="mv_mxfp4.html">mv_mxfp4</a><span class="k">×2 gate, up</span><i>→</i><a href="swiglu_oai.html">swiglu_oai</a><i>→</i><a href="quant_q8.html">quant_q8</a><i>→</i><a href="mv_mxfp4.html">mv_mxfp4</a><span class="k">down</span><i>→</i><a href="moe_combine.html">moe_combine</a></div>
       <div class="flow"><span class="lbl"><a href="gemma3.html" style="border:0;padding:0">Gemma 3 12B</a>, decode (prefill: gemm_q8 and gemm_q5; rmsnorm runs once before layer 0)</span>
         <a href="mv_q8.html">mv_q8</a><span class="k">×3 q, k, v</span><i>→</i><a href="qk_norm_rope.html">qk_norm_rope</a><i>→</i><a href="attention.html">attention</a><i>→</i><a href="mv_q8.html">mv_q8</a><i>→</i><a href="add_rmsnorm.html">add_rmsnorm</a><i>→</i><a href="quant_q8.html">quant_q8</a><i>→</i><a href="mv_q5.html">mv_q5</a><span class="k">gate ‖ up</span><i>→</i><a href="geglu.html">geglu</a><i>→</i><a href="quant_q8.html">quant_q8</a><i>→</i><a href="mv_q5.html">mv_q5</a><i>→</i><a href="add_rmsnorm.html">add_rmsnorm</a></div>
-      <div class="flow"><span class="lbl">After the last layer, both engines</span>
+      <div class="flow"><span class="lbl"><a href="gemma_emb2.html" style="border:0;padding:0">EmbeddingGemma 2</a>, all T tokens of a batch at once (every product is gemm_q8)</span>
+        <a href="gemm_q8.html">gemm_q8</a><span class="k">×3 q, k, v</span><i>→</i><a href="head_norm_rope.html">head_norm_rope</a><i>→</i><a href="attention_enc.html">attention_enc</a><i>→</i><a href="gemm_q8.html">gemm_q8</a><i>→</i><a href="add_rmsnorm.html">add_rmsnorm</a><i>→</i><a href="gemm_q8.html">gemm_q8</a><span class="k">gate ‖ up</span><i>→</i><a href="geglu.html">geglu</a><i>→</i><a href="gemm_q8.html">gemm_q8</a><i>→</i><a href="norm_add.html">norm_add</a><i>→</i><a href="gemm_q8.html">gemm_q8</a><span class="k">inp_gate</span><i>→</i><a href="gelu_mul.html">gelu_mul</a><i>→</i><a href="gemm_q8.html">gemm_q8</a><span class="k">proj</span><i>→</i><a href="norm_add.html">norm_add</a><span class="k">× layer scale</span><i>→</i><a href="rmsnorm.html">rmsnorm</a></div>
+      <div class="flow"><span class="lbl">After the last layer, the two generators (EmbeddingGemma 2 instead: gemm_q8 to 768 values per token, then mean pooling on the CPU)</span>
         <a href="mv_q8.html">mv_q8</a><span class="k">output head</span><i>→</i><a href="argmax.html">argmax</a><i>→</i><span class="k">sample_logits</span><i>→</i><a href="compact_logits.html">compact_logits</a><span class="k">top-k / top-p only</span></div>
     </div>
   </section>
@@ -69,7 +71,7 @@
     <h2 id="h-names" style="font-size:20px">Names used on every page</h2>
     <div class="panel how">
       <div><b>Kernels</b><span>The PTX <code>.entry</code> name, e.g. <code>swiglu_oai</code>; its page is <code>swiglu_oai.html</code>.</span></div>
-      <div><b>Engines</b><span><i>gpt-oss</i>, <i>Gemma 3</i>, or <i>gpt-oss + Gemma 3</i> when the PTX is identical in both files.</span></div>
+      <div><b>Engines</b><span><i>gpt-oss</i>, <i>Gemma 3</i>, <i>EmbeddingGemma 2</i>, or <i>gpt-oss + Gemma 3</i> when the PTX is identical in both files. emb2.ptx copies rmsnorm, add_rmsnorm, geglu and gemm_q8 from gemma3.ptx unchanged; their pages list it under "runs in".</span></div>
       <div><b>Tensors</b><span>GGUF names without <code>blk.N.</code>; shapes are rows × cols (output × input); types F32, F16, BF16, Q8_0, Q5_0, MXFP4.</span></div>
       <div><b>Layers and buffers</b><span><i>local</i> = sliding-window layer, <i>global</i> = full context. Buffers use the engine's names: x, xn, qkv, att, y, gu, h, logits.</span></div>
     </div>
@@ -80,9 +82,12 @@
     <div class="cards">
       <a class="card" href="rmsnorm.html"><div class="nm">rmsnorm<span class="eng">gpt-oss + Gemma 3</span></div><p>Scales a hidden vector to unit RMS and applies per-dimension weights.</p><div class="shows">Shows: strided loop, warp butterfly, shared-memory partials, one barrier.</div><div class="launch">grid (tokens) · 1024 threads</div></a>
       <a class="card" href="add_rmsnorm.html"><div class="nm">add_rmsnorm<span class="eng">Gemma 3</span></div><p>Post-norm, residual add and the next pre-norm of a row in one launch, twice per layer.</p><div class="shows">Shows: three passes, two reductions, both call sites, the memory saved by fusing.</div><div class="launch">grid (tokens) · 1024 threads</div></a>
+      <a class="card" href="norm_add.html"><div class="nm">norm_add<span class="eng">EmbeddingGemma 2</span></div><p>Post-norm and residual add with each layer's learned output scale folded in, twice per layer.</p><div class="shows">Shows: one reduction, two passes, the 24 real layer scales, why add_rmsnorm's third pass is dropped.</div><div class="launch">grid (tokens) · 256 threads</div></a>
       <a class="card" href="qk_norm_rope.html"><div class="nm">qk_norm_rope<span class="eng">Gemma 3</span></div><p>Per-head RMSNorm and rotary embedding for queries and keys, plus the f16 KV-cache write.</p><div class="shows">Shows: why lanes own dims 4l and 128 + 4l, every pair's rotation angle, the ring slot.</div><div class="launch">grid (32 heads, tokens) · 32 threads</div></a>
+      <a class="card" href="head_norm_rope.html"><div class="nm">head_norm_rope<span class="eng">EmbeddingGemma 2</span></div><p>Per-head RMSNorm and RoPE for 256- and 512-dim heads, value heads normalized without weight, positions per token.</p><div class="shows">Shows: pair ownership with a 128-stride, a 4-warp reduction, packed positions, the k_norm constants that replace 1/√d.</div><div class="launch">grid (8 or 6 heads, tokens) · 128 threads</div></a>
       <a class="card" href="swiglu_oai.html"><div class="nm">swiglu_oai<span class="eng">gpt-oss</span></div><p>OpenAI's clamped SwiGLU, combining gate and up projections of each expert.</p><div class="shows">Shows: every register for one element; grid-stride laps in decode vs prefill.</div><div class="launch">≤ 448 blocks · 256 threads · grid-stride</div></a>
       <a class="card" href="geglu.html"><div class="nm">geglu<span class="eng">Gemma 3</span></div><p>Tanh-approximated GELU on the gate half times the up half.</p><div class="shows">Shows: tanh from one ex2, the tanh vs erf GELU curves, flat-index arithmetic.</div><div class="launch">≤ 448 blocks · 256 threads · grid-stride</div></a>
+      <a class="card" href="gelu_mul.html"><div class="nm">gelu_mul<span class="eng">EmbeddingGemma 2</span></div><p>GELU of the per-layer gate times that layer's slice of the per-layer inputs, in place.</p><div class="shows">Shows: a strided view into the [T][24][512] buffer, every register of one element.</div><div class="launch">≤ 448 blocks · 256 threads · grid-stride</div></a>
     </div>
   </section>
 
@@ -102,6 +107,7 @@
     <div class="cards">
       <a class="card" href="rope_kv.html"><div class="nm">rope_kv<span class="eng">gpt-oss</span></div><p>Rotary embedding for 64 query and 8 key heads, plus the f16 KV-cache write.</p><div class="shows">Shows: one warp per head, NeoX pairs, the YaRN angle blend, the ring-buffer slot.</div><div class="launch">grid (11, tokens) · 256 threads</div></a>
       <a class="card" href="attention.html"><div class="nm">attention<span class="eng">Gemma 3</span></div><p>Grouped-query attention over the f16 cache with a sliding window, one pass, no stored scores.</p><div class="shows">Shows: 8 warps × 2 keys per step, online softmax per warp, the final merge.</div><div class="launch">grid (16 q heads, tokens) · 256 threads</div></a>
+      <a class="card" href="attention_enc.html"><div class="nm">attention_enc<span class="eng">EmbeddingGemma 2</span></div><p>Bidirectional attention within each packed text, ±512 on local layers, with an exact two-pass softmax in shared memory.</p><div class="shows">Shows: the batch's attention pattern, the key range from seg and window, scores → max → exp → sum, two accumulators.</div><div class="launch">grid (4 q heads, tokens) · 256 threads · 4·keys B</div></a>
     </div>
   </section>
 
@@ -117,5 +123,5 @@
     </div>
   </section>
 
-  <footer><span>Sources: <a href="gptoss_ptx.html"><code>gptoss/gptoss.ptx</code></a>, <a href="gemma3_ptx.html"><code>gemma3/gemma3.ptx</code></a> and their host code. Model graphs: <code>model_htmls/gptoss_graph.html</code> and <code>gemma3_graph.html</code> (regenerated for the 12B). Kernels without a page yet (dashed in the graphs): gemm_q5, gemm_mxfp4, sample_logits, and the gpt-oss variant of attention.</span></footer>
+  <footer><span>Sources: <code>gptoss/gptoss.ptx</code>, <code>gemma3/gemma3.ptx</code>, <code>gemma_emb2/emb2.ptx</code> and their host code. Model graphs: <code>model_htmls/gptoss_graph.html</code> and <code>gemma3_graph.html</code> (regenerated for the 12B). Kernels without a page yet (dashed in the graphs): gemm_q5, gemm_mxfp4, sample_logits, the gpt-oss variant of attention, and EmbeddingGemma 2's one-line scale.</span></footer>
 </div>

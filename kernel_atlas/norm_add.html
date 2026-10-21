@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>norm_add Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.elt td:first-child, .elt th:first-child { text-align: left; }
+.scales svg { display: block; width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">EmbeddingGemma 2 · emb2.ptx · one block per token, two passes</div>
+    <h1>Inside <code>norm_add</code></h1>
+    <p>Gemma's sandwich norm puts an RMSNorm on every sub-block's output before it joins the residual stream. EmbeddingGemma 2 does that twice per layer after attention's <code>add_rmsnorm</code>: once for the feed-forward output and once for the per-layer-input branch, and the second time the whole stream is then multiplied by a learned scalar of that layer. <code>norm_add</code> is the post-norm and residual add with that scale, and without <code>add_rmsnorm</code>'s third pass: the next consumer of x here is a matrix product on the raw stream (inp_gate) or a separate rmsnorm.</p>
+    <div class="formula"><span class="x">x</span> = ( <span class="x">x</span> + <span class="y">y</span> · s<sub>y</sub> · <span class="w">w</span> ) · <span class="w">scale</span> &nbsp;&nbsp;<span class="muted">// s<sub>y</sub> = 1 / √(Σ y² / 512 + ε), ε = 1e-6</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">One row: 256 threads, 512 values, one reduction</h2>
+      <p>Thread t owns elements t and t + 256. Pass 1 sums y², a warp butterfly and 8 partials in shared memory give the row's sum, and pass 2 updates x in place. Pick the call site; for the second one, pick the layer to use its real output scale.</p>
+    </div>
+    <div class="controls">
+      <span class="seg" id="siteSeg" role="group" aria-label="Call site"></span>
+      <label for="ls">layer <input id="ls" type="range" min="0" max="23" step="1" value="1"> <span id="lv" class="mono"></span></label>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="w">layer_output_scale of the 24 layers</b><span>from the GGUF; global layers 5, 11, 17, 23 marked g</span></div>
+      <div class="scales"><svg id="scales" role="img" aria-label="Per-layer output scales"></svg></div>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b>the row's vectors, 512 values each</b><span>dotted line: the two laps of 256</span></div>
+        <div class="figure"><svg id="plots" role="img" aria-label="The vectors y, w, x before and x after"></svg></div>
+        <div class="legend" id="legend"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <div class="tablewrap"><table class="nums elt" id="elts"></table></div>
+        <div class="cvlabel"><b class="s">block-wide scalars</b><span>same in all 256 threads</span></div>
+        <dl class="kv" id="scalars"></dl>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="y" id="bflabel"></b><span>lane 0 of each warp then writes its total to na_red[warp]; after bar.sync every thread adds the 8</span></div>
+      <div class="figure"><svg id="bfly" style="min-width: 760px"></svg></div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Folding the layer scale into the add</h3>
+        <p>llama.cpp writes the per-layer branch as three graph nodes: the post-norm, the residual add, and a multiply of the whole stream by <code>layer_output_scale</code>. The scale is one float per layer, so the engine reads it once at load time and passes it as a kernel argument; multiplying in the same pass that writes x costs one instruction and saves a full read and write of the stream. The feed-forward call site passes 1.0 and pays one multiply.</p>
+      </div>
+      <div class="panel">
+        <h3>Why not reuse add_rmsnorm</h3>
+        <p><code>add_rmsnorm</code> always finishes with the pre-norm of the next sub-block (a second reduction and a third pass). Here the next step either reads the raw stream (the <code>inp_gate</code> product after the feed-forward) or comes after the scale (the next layer's <code>rmsnorm</code>), so that work would be thrown away. A kernel with one reduction and two passes is simpler than a flag.</p>
+        <p>With 512 values a row is two laps of 256 threads, so the block uses 8 warps and 8 of the 32 shared slots.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gemma_emb2/emb2.ptx</code>, kernel <code>norm_add</code>; launched by <code>norm_add()</code> in <code>emb2.c</code> with one block of 256 threads per token, twice per layer. The output scales are read from <code>blk.N.layer_output_scale.weight</code>; y, x and the norm weights are generated (weights near the model's means: 0.70 for post_ffw_norm, 0.55 for post_norm in layer 3), computed in float32 in the kernel's order.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('norm_add');
+const N = 512, T = 256, EPS = 1e-6;
+const SCALES = [0.390625, 0.1689453125, 0.9375, 0.87109375, 0.69140625, 0.45703125, 0.2255859375, 0.9140625, 0.8671875, 0.80859375, 0.5546875, 0.380859375, 0.7734375, 0.8046875, 0.5, 0.73828125, 0.359375, 0.94921875, 0.703125, 0.96875, 0.9609375, 0.953125, 0.87109375, 0.11474609375];
+const SITES = {
+  ffn: { label: 'after the feed-forward', y: 'y = ffn_down · h', w: 'post_ffw_norm', wm: 0.70, next: 'gemm_q8 inp_gate on the raw x', seed: 5 },
+  ple: { label: 'per-layer input', y: 'y = proj · gelu_mul(…)', w: 'post_norm', wm: 0.55, next: 'rmsnorm: next attn_norm (output_norm after layer 23)', seed: 9 },
+};
+const S = { site: 'ple', l: 1, t: 37 };
+const scaleOf = () => S.site === 'ffn' ? 1 : SCALES[S.l];
+
+function gen() {
+  const r = Atlas.rng(SITES[S.site].seed + 31 * S.l), y = [], x = [], w = [];
+  for (let i = 0; i < N; i++) {
+    y.push(fr(3 * Atlas.gauss(r) * (Atlas.h32(i * 5 + 1) % 97 === 0 ? 5 : 1)));
+    x.push(fr(6 * Atlas.gauss(r) + (Atlas.h32(i + 41) % 151 === 0 ? 120 * (r() < 0.5 ? -1 : 1) : 0)));
+    w.push(fr(Math.max(0, SITES[S.site].wm + 0.08 * Atlas.gauss(r))));
+  }
+  return { y, x, w };
+}
+function run() {
+  const D = gen(), s = fr(scaleOf()), own = t => [t, t + T];
+  const ss = []; for (let t = 0; t < T; t++) { let a = 0; for (const i of own(t)) a = fr(D.y[i] * D.y[i] + a); ss.push(a); }
+  const tabs = [], part = [];
+  for (let w = 0; w < 8; w++) { const tb = Atlas.bflyTable(ss.slice(32 * w, 32 * w + 32), (a, b) => fr(a + b)); tabs.push(tb); part.push(tb[5][0]); }
+  let tot = 0; for (let w = 0; w < 8; w++) tot = fr(tot + part[w]);
+  const sy = fr(1 / fr(Math.sqrt(fr(fr(tot / N) + EPS))));
+  const x2 = D.x.map((v, i) => fr(fr(fr(D.y[i] * sy) * D.w[i] + v) * s));
+  return { D, s, own, ss, tabs, part, tot, sy, x2 };
+}
+let R = run();
+
+const steps = [
+  { tag: 'R', short: 'row', title: 'block = one token\'s row', text: 'blockIdx.x picks the row; y and x move to it. The scale arrives as a plain f32 kernel argument, read from the GGUF once at load.' },
+  { tag: 'P1', short: 'Σ y²', title: 'pass 1: each thread sums y² over its 2 elements', text: 'Elements t and t + 256: two FMAs per thread, neighbouring threads on neighbouring floats.' },
+  { tag: 'B', short: 'reduce', title: 'warp butterfly, then 8 partials through shared memory', text: 'Five shuffle-add rounds give every lane its warp\'s sum; lane 0 writes it to <code>na_red[warp]</code>; <code>bar.sync</code>; every thread adds the 8 in order.' },
+  { tag: 'S', short: 'scale y', title: 's_y = 1 / √(Σ y² / 512 + ε)', text: 'Computed by every thread with IEEE <code>div</code>, <code>sqrt</code> and <code>rcp</code>, so all agree bit for bit.' },
+  { tag: 'P2', short: 'x = (x + …)·s', title: 'pass 2: x = (x + y · s_y · w) · scale, in place', text: 'Each element: one multiply by s_y, one FMA with the norm weight onto x, one multiply by the layer scale, one store. No barrier is needed: every thread writes only its own elements.' },
+];
+const order = ['R', 'P1', 'B', 'S', 'P2'], at = (st, t) => order.indexOf(st.tag) >= order.indexOf(t);
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `R|extern "C" __global__ void norm_add(const float *y, const float *w, float *x, unsigned n, float eps, float s)
+R|{
+B|    __shared__ float red[32];
+R|    y += blockIdx.x * n;  x += blockIdx.x * n;
+R|    unsigned lane = threadIdx.x & 31, warp = threadIdx.x >> 5, nw = blockDim.x >> 5;
+P1|    float ss = 0;
+P1|    for (unsigned i = threadIdx.x; i < n; i += blockDim.x) ss = fmaf(y[i], y[i], ss);
+B|    for (int off = 16; off >= 1; off >>= 1) ss += __shfl_xor_sync(0xffffffff, ss, off);
+B|    if (lane == 0) red[warp] = ss;
+B|    __syncthreads();
+S|    float tot = 0;
+S|    for (unsigned k = 0; k < nw; k++) tot += red[k];
+S|    float sy = 1.0f / sqrtf(tot / n + eps);
+P2|    for (unsigned i = threadIdx.x; i < n; i += blockDim.x)
+P2|        x[i] = fmaf(y[i] * sy, w[i], x[i]) * s;      // post-norm, residual, layer scale
+R|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `R|    ld.param.f32        %f13, [p_s];            // layer_output_scale (1.0 after the FFN)
+R|    mov.u32             %r12, %ctaid.x;         // row
+P1|SUMSQ:
+P1|    ld.global.f32       %f3, [%rd5];
+P1|    fma.rn.f32          %f2, %f3, %f3, %f2;
+P1|    add.u32             %r4, %r4, %r3;          // i += blockDim
+B|SUMSQ_DONE:
+B|    shfl.sync.bfly.b32  %f3, %f2, 16, 31, -1;
+B|    add.f32             %f2, %f2, %f3;
+B|    ...                                         // offsets 8, 4, 2, 1
+B|    @!%p2 st.shared.f32 [%r8], %f2;             // lane 0: na_red[warp]
+B|    bar.sync            0;
+S|WSUM:
+S|    ld.shared.f32       %f5, [%r11];
+S|    add.f32             %f4, %f4, %f5;
+S|    div.rn.f32          %f7, %f4, %f6;          // mean(y^2)
+S|    add.f32             %f7, %f7, %f1;
+S|    sqrt.rn.f32         %f8, %f7;
+S|    rcp.rn.f32          %f9, %f8;               // s_y
+P2|APPLY:
+P2|    ld.global.f32       %f10, [%rd5];           // y
+P2|    ld.global.f32       %f11, [%rd6];           // w
+P2|    ld.global.f32       %f12, [%rd7];           // x
+P2|    mul.f32             %f10, %f10, %f9;
+P2|    fma.rn.f32          %f12, %f10, %f11, %f12; // x + rmsnorm(y) * w
+P2|    mul.f32             %f12, %f12, %f13;       // * scale
+P2|    st.global.f32       [%rd7], %f12;` },
+});
+
+$('siteSeg').innerHTML = Object.entries(SITES).map(([k, s]) => `<button type="button" data-v="${k}">${s.label}</button>`).join('');
+const syncSeg = () => $('siteSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === S.site));
+$('siteSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.site = b.dataset.v; R = run(); syncSeg(); facts(); draw(); });
+$('ls').addEventListener('input', () => { S.l = +$('ls').value; R = run(); facts(); draw(); });
+function facts() {
+  const s = SITES[S.site];
+  Atlas.facts($('facts'), [['(tokens, 1, 1)', 'grid'], ['256', 'threads per block'], ['8 × 4 B', 'shared memory used'], ['1', 'barrier'], ['2', 'passes over the row'], [s.w, 'w'], [scaleOf().toFixed(4), 'scale' + (S.site === 'ple' ? ` (layer ${S.l})` : '')]]);
+}
+function drawScales() {
+  const W = 760, H = 110, ml = 30, bw = (W - ml - 6) / 24, Y = v => 12 + (1 - v) * (H - 34);
+  let s = '';
+  for (const v of [0, 0.5, 1]) s += `<line x1="${ml}" x2="${W}" y1="${Y(v)}" y2="${Y(v)}" stroke="${C.line}" stroke-width="0.6"/><text x="${ml - 5}" y="${Y(v) + 3}" font-size="9.5" text-anchor="end" fill="${C.muted}">${v}</text>`;
+  SCALES.forEach((v, l) => {
+    const on = S.site === 'ple' && l === S.l;
+    s += `<rect x="${ml + l * bw + 2}" y="${Y(v)}" width="${bw - 4}" height="${Y(0) - Y(v)}" fill="${C.w}" opacity="${on ? 0.95 : 0.4}" stroke="${on ? C.fg : 'none'}"/>`;
+    s += `<text x="${ml + l * bw + bw / 2}" y="${H - 6}" font-size="9.5" text-anchor="middle" fill="${on ? C.fg : C.muted}">${l % 6 === 5 ? l + 'g' : l}</text>`;
+  });
+  $('scales').setAttribute('viewBox', `0 0 ${W} ${H}`); $('scales').innerHTML = s;
+  $('lv').textContent = `${S.l} (${SCALES[S.l].toFixed(4)})`;
+}
+function draw() {
+  const st = stepper.step, s = SITES[S.site], D = R.D, el = R.own(S.t);
+  drawScales();
+  const rowsDef = [
+    { k: 'y', v: D.y, lab: s.y, col: C.y, read: ['P1', 'P2'] },
+    { k: 'w', v: D.w, lab: 'w = ' + s.w + '.weight', col: C.w, read: ['P2'] },
+    { k: 'x0', v: D.x, lab: 'x before (residual stream)', col: C.x, read: ['P2'] },
+    { k: 'x1', v: R.x2, lab: `x after: (x + …) · ${R.s.toFixed(4)}`, col: C.x, write: 'P2' },
+  ];
+  const W = 760, rh = 66, ml = 8, mr = 8, H = rowsDef.length * rh + 6, X = i => ml + i / (N - 1) * (W - ml - mr);
+  const xlim = Math.max(...D.x.map(Math.abs), ...R.x2.map(Math.abs));
+  let g = '';
+  rowsDef.forEach((row, ri) => {
+    const y0 = ri * rh + 18, h = rh - 24, vis = !row.write || at(st, row.write), act = (row.read || []).includes(st.tag) || row.write === st.tag;
+    const lim = row.k[0] === 'x' ? xlim : Math.max(...row.v.map(Math.abs)) || 1, pos = row.k === 'w';
+    const Y = v => pos ? y0 + h - v / lim * h : y0 + h / 2 - v / lim * h / 2;
+    g += `<text x="${ml}" y="${y0 - 5}" font-size="10.5" fill="${act ? C.fg : C.muted}" font-weight="${act ? 600 : 400}">${Atlas.esc(row.lab)}${act ? (row.write === st.tag ? '  ← written' : '  ← read') : ''}</text>`;
+    g += `<text x="${W - mr}" y="${y0 - 5}" font-size="9.5" text-anchor="end" fill="${C.muted}">|max| ${lim.toFixed(2)}${row.k[0] === 'x' ? ' (same axis for both x)' : ''}</text>`;
+    g += `<rect x="${ml}" y="${y0}" width="${W - ml - mr}" height="${h}" fill="${act ? C.hl : 'none'}" opacity="${act ? 0.55 : 0}"/>`;
+    if (!pos) g += `<line x1="${ml}" x2="${W - mr}" y1="${y0 + h / 2}" y2="${y0 + h / 2}" stroke="${C.line}"/>`;
+    if (vis) {
+      let d = ''; for (let i = 0; i < N; i++) d += `M${X(i).toFixed(1)} ${Y(0).toFixed(1)}V${Y(row.v[i]).toFixed(1)}`;
+      g += `<path d="${d}" stroke="${row.col}" stroke-width="0.9" opacity="0.8" fill="none"/>`;
+      for (const i of el) g += `<circle cx="${X(i)}" cy="${Y(row.v[i])}" r="3.6" fill="${C.fg}" stroke="${C.panel}" stroke-width="1"/>`;
+    } else g += `<text x="${W / 2}" y="${y0 + h / 2 + 4}" font-size="10.5" text-anchor="middle" fill="${C.muted}">not computed yet</text>`;
+  });
+  g += `<line x1="${X(T)}" x2="${X(T)}" y1="14" y2="${H}" stroke="${C.sync}" stroke-dasharray="2 4" opacity="0.6"/>`;
+  g += `<rect x="0" y="0" width="${W}" height="${H}" fill="transparent" id="hit" style="cursor:crosshair"/>`;
+  $('plots').setAttribute('viewBox', `0 0 ${W} ${H}`); $('plots').innerHTML = g;
+  $('hit').addEventListener('click', e => { const b = $('plots').getBoundingClientRect(), i = Math.round(((e.clientX - b.left) / b.width * W - ml) / (W - ml - mr) * (N - 1)); S.t = Math.max(0, Math.min(N - 1, i)) % T; draw(); });
+  Atlas.legend($('legend'), [['--y', 'y (sub-block output)'], ['--w', 'norm weight'], ['--x', 'residual stream x'], ['--fg', `elements of thread ${S.t}`]]);
+  const lane = S.t & 31, warp = S.t >> 5;
+  $('thlabel').textContent = `thread ${S.t} · warp ${warp}, lane ${lane} · elements ${S.t} and ${S.t + T}`;
+  const cell = (ok, v) => ok ? v.toFixed(3) : '–';
+  $('elts').innerHTML = `<tr><th>i</th><th>y</th><th>w</th><th>x</th><th>x new</th></tr>` + el.map(i =>
+    `<tr${['P1', 'P2'].includes(st.tag) ? ' class="on"' : ''}><td>${i}</td><td>${cell(true, D.y[i])}</td><td>${cell(true, D.w[i])}</td><td>${cell(true, D.x[i])}</td><td>${cell(at(st, 'P2'), R.x2[i])}</td></tr>`).join('') +
+    `<tr><td>Σ</td><td colspan="4" style="text-align:left">own Σ y² = ${at(st, 'P1') ? R.ss[S.t].toFixed(3) : '–'}</td></tr>`;
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`;
+  $('scalars').innerHTML = row(`warp ${warp} Σ y²`, at(st, 'B') ? R.part[warp].toFixed(3) : '–') + row('row Σ y²', at(st, 'S') ? R.tot.toFixed(3) : '–') + row('s_y', at(st, 'S') ? R.sy.toPrecision(6) : '–') + row('scale', R.s.toFixed(6)) + row('next', `<code>${s.next}</code>`);
+  $('bflabel').textContent = `warp ${warp}: butterfly sum of y² partials`;
+  Atlas.butterfly($('bfly'), R.tabs[warp], at(st, 'B') ? 5 : at(st, 'P1') ? 0 : -1, { fmt: v => v.toFixed(0), sel: lane });
+}
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1400 });
+syncSeg(); facts();
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

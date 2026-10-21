@@ -7,23 +7,30 @@ window.Atlas = A;
 
 // Names follow one convention everywhere: a kernel is its PTX .entry name and its page is
 // <name>.html; engine 'shared' means the PTX is identical in gptoss.ptx and gemma3.ptx.
+// emb2.ptx (EmbeddingGemma 2) copies rmsnorm, add_rmsnorm, geglu and gemm_q8 from gemma3.ptx
+// unchanged, so those kernels list 'gemma_emb2' among their models.
 A.MODELS = [
   { id: 'gptoss', name: 'gpt-oss-20b', engine: 'gpt-oss' },
   { id: 'gemma3', name: 'Gemma 3 12B', engine: 'Gemma 3' },
+  { id: 'gemma_emb2', name: 'EmbeddingGemma 2', engine: 'EmbeddingGemma 2' },
 ];
 A.KERNELS = [
-  { id: 'rmsnorm', name: 'rmsnorm', engine: 'shared', models: ['gptoss', 'gemma3'], family: 'Norms & activations' },
-  { id: 'add_rmsnorm', name: 'add_rmsnorm', engine: 'Gemma 3', models: ['gemma3'], family: 'Norms & activations' },
+  { id: 'rmsnorm', name: 'rmsnorm', engine: 'shared', models: ['gptoss', 'gemma3', 'gemma_emb2'], family: 'Norms & activations' },
+  { id: 'add_rmsnorm', name: 'add_rmsnorm', engine: 'Gemma 3', models: ['gemma3', 'gemma_emb2'], family: 'Norms & activations' },
+  { id: 'norm_add', name: 'norm_add', engine: 'EmbeddingGemma 2', models: ['gemma_emb2'], family: 'Norms & activations' },
   { id: 'qk_norm_rope', name: 'qk_norm_rope', engine: 'Gemma 3', models: ['gemma3'], family: 'Norms & activations' },
+  { id: 'head_norm_rope', name: 'head_norm_rope', engine: 'EmbeddingGemma 2', models: ['gemma_emb2'], family: 'Norms & activations' },
   { id: 'swiglu_oai', name: 'swiglu_oai', engine: 'gpt-oss', models: ['gptoss'], family: 'Norms & activations' },
-  { id: 'geglu', name: 'geglu', engine: 'Gemma 3', models: ['gemma3'], family: 'Norms & activations' },
+  { id: 'geglu', name: 'geglu', engine: 'Gemma 3', models: ['gemma3', 'gemma_emb2'], family: 'Norms & activations' },
+  { id: 'gelu_mul', name: 'gelu_mul', engine: 'EmbeddingGemma 2', models: ['gemma_emb2'], family: 'Norms & activations' },
   { id: 'quant_q8', name: 'quant_q8', engine: 'shared', models: ['gptoss', 'gemma3'], family: 'Matrix products' },
   { id: 'mv_q8', name: 'mv_q8', engine: 'shared', models: ['gptoss', 'gemma3'], family: 'Matrix products' },
   { id: 'mv_q5', name: 'mv_q5', engine: 'Gemma 3', models: ['gemma3'], family: 'Matrix products' },
   { id: 'mv_mxfp4', name: 'mv_mxfp4', engine: 'gpt-oss', models: ['gptoss'], family: 'Matrix products' },
-  { id: 'gemm_q8', name: 'gemm_q8', engine: 'shared', models: ['gptoss', 'gemma3'], family: 'Matrix products' },
+  { id: 'gemm_q8', name: 'gemm_q8', engine: 'shared', models: ['gptoss', 'gemma3', 'gemma_emb2'], family: 'Matrix products' },
   { id: 'rope_kv', name: 'rope_kv', engine: 'gpt-oss', models: ['gptoss'], family: 'Attention' },
   { id: 'attention', name: 'attention', engine: 'Gemma 3', models: ['gemma3', 'gptoss'], family: 'Attention' },
+  { id: 'attention_enc', name: 'attention_enc', engine: 'EmbeddingGemma 2', models: ['gemma_emb2'], family: 'Attention' },
   { id: 'mv_f32', name: 'mv_f32', engine: 'gpt-oss', models: ['gptoss'], family: 'Routing & sampling' },
   { id: 'router_topk', name: 'router_topk', engine: 'gpt-oss', models: ['gptoss'], family: 'Routing & sampling' },
   { id: 'moe_sort', name: 'moe_sort', engine: 'gpt-oss', models: ['gptoss'], family: 'Routing & sampling' },
@@ -167,7 +174,7 @@ A.butterfly = function (svg, table, stage, opts = {}) {
 // Source lines are "TAGS|text"; TAGS is a comma list matched against the step's tag.
 const KW = {
   cpp: /\b(extern|__global__|__launch_bounds__|__shared__|__device__|const|unsigned|float|float2|float4|uint4|uint2|int|int8_t|uint32_t|__half|void|for|if|else|return|while|__syncthreads|__ldg|__half2float|__float2half|__shfl_xor_sync|atomicAdd|fmaf|fminf|fmaxf|exp2f|sqrtf|rsqrtf|copysignf|break|bool)\b/g,
-  ptx: /\b(ld\.[\w.]+|st\.[\w.]+|fma\.rn\.f32|mul\.[\w.]+|bar\.sync|bra(\.uni)?|call(\.uni)?|setp\.[\w.]+|selp\.[\w.]+|add\.[\w.]+|sub\.[\w.]+|and\.[\w.]+|or\.pred|shr\.u32|shl\.b32|mov\.[\w.]+|cvt\.[\w.]+|shfl\.sync\.bfly\.b32|atom\.[\w.]+|ex2\.approx\.f32|div\.[\w.]+|rem\.u32|sqrt\.rn\.f32|rcp\.rn\.f32|max\.f32|min\.f32|abs\.f32|neg\.f32|copysign\.f32|mad\.lo\.u32|bfe\.s32|ret)\b/g,
+  ptx: /\b(ld\.[\w.]+|st\.[\w.]+|fma\.rn\.f32|mul\.[\w.]+|bar\.sync|bra(\.uni)?|call(\.uni)?|setp\.[\w.]+|selp\.[\w.]+|add\.[\w.]+|sub\.[\w.]+|and\.[\w.]+|or\.pred|shr\.u32|shl\.b32|mov\.[\w.]+|cvt\.[\w.]+|shfl\.sync\.bfly\.b32|atom\.[\w.]+|ex2\.approx\.f32|div\.[\w.]+|rem\.u32|sqrt\.rn\.f32|rcp\.rn\.f32|max\.f32|min\.[\w.]+|abs\.f32|neg\.f32|copysign\.f32|mad\.lo\.u32|bfe\.s32|div\.u32|ret)\b/g,
 };
 function hl(src, lang) {
   let code = A.esc(src), comment = '';

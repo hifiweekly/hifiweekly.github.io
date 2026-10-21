@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>attention_enc Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.mask svg, .chart svg, .smem svg { display: block; width: 100%; height: auto; }
+.mask { max-width: 520px; }
+.maskrow { display: grid; grid-template-columns: minmax(0, 520px) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 860px) { .maskrow { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">EmbeddingGemma 2 · emb2.ptx · one block per query head per token</div>
+    <h1>Inside <code>attention_enc</code></h1>
+    <p>The encoder's attention: every token looks at the keys of its own text in both directions, within ±512 positions on local layers and over the whole text on global layers. Several texts share one batch, so the kernel first turns the token's text bounds and the window into one contiguous key range. With every key already computed (no cache, no decoding), it can afford an exact two-pass softmax: the scores of the range go to shared memory, then the maximum, the exponentials and their sum, then the weighted sum of the values.</p>
+    <div class="formula"><span class="y">out</span><sub>t,h</sub> = Σ<sub>j∈[lo,hi)</sub> softmax<sub>j</sub>(<span class="x">q</span><sub>t,h</sub> · <span class="w">k</span><sub>j</sub>) · <span class="w">v</span><sub>j</sub> &nbsp;&nbsp;<span class="muted">// [lo, hi) = t's text ∩ [t − 512, t + 512] on local layers; scale 1, no 1/√d</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-mask">
+    <div class="sechead">
+      <h2 id="s-mask">Which keys a token sees</h2>
+      <p>The square is the attention pattern of one batch: row = query token, column = key token. Three texts are packed back to back; each token carries <code>seg[t] = [start, end)</code> of its text, so the other texts are simply outside its range. On local layers the range is cut further to the band |j − t| ≤ 512. Drag the query to move along the batch.</p>
+    </div>
+    <div class="panel">
+      <div class="controls">
+        <label for="layer">layer <select id="layer"><option value="local">local (±512, D = 256, 2 kv heads)</option><option value="global">global (whole text, D = 512, 1 kv head)</option></select></label>
+        <label for="tok">query token t <input id="tok" type="range" min="0" max="2299" value="1100"> <span id="tokv" class="mono"></span></label>
+        <label for="hd">q head <select id="hd"></select></label>
+      </div>
+      <div class="maskrow">
+        <div class="mask"><svg id="mask" role="img" aria-label="Attention pattern of the packed batch"></svg></div>
+        <dl class="kv" id="rcard"></dl>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">One block: 8 warps, one query, n keys</h2>
+      <p>Warp w scores keys lo + w, lo + w + 8, … : each column of the grid is one round of 8 keys, each row one warp. Inside a warp the 32 lanes split the D dimensions (lane l takes l, l + 32, …) and a butterfly adds them up. Click a key to inspect it, or an output dimension to follow its thread.</p>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="w" id="keylabel"></b><span id="keysub"></span></div>
+        <canvas id="keys"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over a key to see its position, score and weight.</div>
+        <div class="caption" id="caption"></div>
+        <div class="cvlabel"><b class="s" id="chartlabel"></b><span id="chartsub"></span></div>
+        <div class="chart"><svg id="chart" role="img" aria-label="Scores or softmax weights over the key range"></svg></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b>shared memory of the block</b><span>boxes not to scale</span></div>
+        <div class="smem"><svg id="smem" role="img" aria-label="Shared memory layout"></svg></div>
+        <dl class="kv" id="kcard"></dl>
+        <div class="cvlabel"><b class="y" id="outlabel"></b><span id="outsub"></span></div>
+        <canvas id="out"></canvas>
+        <dl class="kv" id="tcard"></dl>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Two passes instead of an online softmax</h3>
+        <p>Gemma 3's decoder <code>attention</code> streams keys out of a cache and keeps a running maximum, rescaling its accumulator whenever the maximum grows. An encoder has a different budget: the key range is at most 1025 keys on local layers and the text length on global ones, so its scores fit in shared memory (4 bytes each; 32 KB for the 8192-token limit). Storing them makes the softmax exact and simple: one maximum, one exponential per key, one sum, no rescaling, and each score is computed once.</p>
+        <p>The query moves to shared memory once (up to 512 floats) because every warp reads all of it for every key. A key row is read with lane l taking dims l, l + 32, …, so each warp load is 128 contiguous bytes.</p>
+      </div>
+      <div class="panel">
+        <h3>Packing texts without padding or masks</h3>
+        <p>A batch is the texts laid end to end, no padding. Because a token's visible keys are always one interval, the "mask" is just two numbers: lo = max(start, t − 512) and hi = min(end, t + 513) on local layers, or the text bounds on global ones. No mask matrix is built and no masked key is ever scored; work per query is proportional to the keys it really sees.</p>
+        <p>The host sizes the dynamic shared memory for the longest range in the batch: min(1025, longest text) keys on local layers. Four query heads share the key and value rows of their kv head (2 on local layers, 1 on global), and neighbouring queries overlap almost all their keys, so most K and V reads hit in L2.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gemma_emb2/emb2.ptx</code>, kernel <code>attention_enc</code>; launched from <code>forward()</code> in <code>emb2.c</code> with grid (4 q heads, tokens), 256 threads and 4 · keys bytes of dynamic shared memory. q, k and v are generated as RMS-normalized heads with the model's norm weights (q × 1.02, k × 0.122 local / 0.063 global, v without weight), and a few keys made to resemble the query; RoPE is left out. The kernel's float32 arithmetic is replayed in its order and compared with a float64 softmax.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('attention_enc');
+const TEXTS = [300, 1400, 600], T = TEXTS.reduce((a, b) => a + b, 0), HW = 512, NH = 4, LOG2E = fr(1.4426950408889634);
+const S = { layer: 'local', t: 1100, h: 0, key: null, d: 5 };
+const cfg = () => S.layer === 'local' ? { D: 256, NKV: 2, qw: 1.0234375, kw: 0.12207031 } : { D: 512, NKV: 1, qw: 0.99609375, kw: 0.06298828 };
+function seg(t) { let s = 0; for (let i = 0; i < TEXTS.length; i++) { if (t < s + TEXTS[i]) return { text: i, start: s, end: s + TEXTS[i] }; s += TEXTS[i]; } }
+function range(t) { const g = seg(t); let lo = g.start, hi = g.end; if (S.layer === 'local') { lo = t >= lo + HW ? t - HW : lo; hi = Math.min(hi, t + HW + 1); } return { ...g, lo, hi, n: hi - lo }; }
+function facts() {
+  const c = cfg();
+  Atlas.facts($('facts'), [['(4, tokens)', 'grid = (q heads, tokens)'], ['256', 'threads = 8 warps'], [`2 KB + 64 B`, 'static shared: q, max, sum'], ['4 · n B', 'dynamic shared: scores'], [`${c.D}`, 'head dim'], ['1.0', 'score scale'], [S.layer === 'local' ? '≤ 1025' : '≤ text', 'keys per query']]);
+}
+$('hd').innerHTML = [0, 1, 2, 3].map(h => `<option value="${h}">${h}</option>`).join('');
+
+// generated heads (RMS-normalized with the model's weights)
+function rmsW(raw, w) { let s = 0; for (const v of raw) s += v * v; const k = 1 / Math.sqrt(s / raw.length + 1e-6); return raw.map(v => fr(v * k * w)); }
+function gvec(seed, D, extra, a) { const r = Atlas.rng(seed), v = new Array(D); for (let i = 0; i < D; i++) v[i] = Atlas.gauss(r) + (extra ? a * extra[i] : 0); return v; }
+let M;
+function build() {
+  const c = cfg(), D = c.D, rg = range(S.t), kvh = Math.floor(S.h / (NH / c.NKV)), L = S.layer === 'local' ? 1 : 2;
+  const qraw = gvec(9001 + 31 * S.t + 7 * S.h + L, D);
+  const q = rmsW(qraw, c.qw);
+  const K = [], V = [], hot = [];
+  for (let j = rg.lo; j < rg.hi; j++) {
+    const isHot = Atlas.h32(j * 13 + kvh + L) % 41 === 0 || Math.abs(j - S.t) <= 1;
+    hot.push(isHot);
+    K.push(rmsW(gvec(77 * j + 1000 * kvh + L, D, isHot ? qraw : null, j === S.t ? 1.2 : 0.7), c.kw));
+    V.push(rmsW(gvec(31337 * j + 500 * kvh + L, D), 1));
+  }
+  const n = rg.n;
+  // scores: lane l sums dims l, l+32, ... with fma, then butterfly; lane 0's value is stored
+  const s = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const part = []; for (let l = 0; l < 32; l++) { let a = 0; for (let d = l; d < D; d += 32) a = fr(K[i][d] * q[d] + a); part.push(a); }
+    s[i] = fr(Atlas.bflyTable(part, (a, b) => fr(a + b))[5][0] * 1);
+  }
+  const wmax = [0, 1, 2, 3, 4, 5, 6, 7].map(w => { let m = -Infinity; for (let i = w; i < n; i += 8) m = Math.max(m, s[i]); return m; });
+  let m = wmax[0]; for (let w = 1; w < 8; w++) m = Math.max(m, wmax[w]);
+  const nm = fr(m * fr(-LOG2E)), p = new Float32Array(n), tsum = new Float32Array(256);
+  for (let tid = 0; tid < 256; tid++) { let a = 0; for (let i = tid; i < n; i += 256) { p[i] = fr(2 ** fr(s[i] * LOG2E + nm)); a = fr(a + p[i]); } tsum[tid] = a; }
+  const wsum = [0, 1, 2, 3, 4, 5, 6, 7].map(w => Atlas.bflyTable(Array.from(tsum.slice(32 * w, 32 * w + 32)), (a, b) => fr(a + b))[5][0]);
+  let sum = 0; for (let w = 0; w < 8; w++) sum = fr(sum + wsum[w]);
+  const inv = fr(1 / sum), out = new Float32Array(D), acc0 = new Float32Array(D), acc1 = new Float32Array(D);
+  for (let d = 0; d < D; d++) {
+    let a = 0, b = 0, j = 0;
+    for (; j + 1 < n; j += 2) { a = fr(p[j] * V[j][d] + a); b = fr(p[j + 1] * V[j + 1][d] + b); }
+    if (j < n) a = fr(p[j] * V[j][d] + a);
+    acc0[d] = a; acc1[d] = b; out[d] = fr(fr(a + b) * inv);
+  }
+  // float64 reference
+  const s64 = K.map(k => k.reduce((acc, v, d) => acc + v * q[d], 0)), m64 = Math.max(...s64), e64 = s64.map(v => Math.exp(v - m64)), Z = e64.reduce((a, b) => a + b, 0);
+  let err = 0; for (let d = 0; d < D; d++) { let r = 0; for (let i = 0; i < n; i++) r += e64[i] / Z * V[i][d]; err = Math.max(err, Math.abs(r - out[d])); }
+  M = { ...rg, D, kvh, q, K, V, hot, s, wmax, m, p, tsum, wsum, sum, inv, out, acc0, acc1, err, rounds: Math.ceil(n / 8), prob: Array.from(p, v => v / sum) };
+}
+
+function buildSteps() {
+  const md = M, loc = S.layer === 'local';
+  return [
+    { tag: 'R', kind: 'range', short: 'key range', title: `key range [${md.lo}, ${md.hi}): ${md.n} keys`, text: `seg[t] = [${md.start}, ${md.end}) is token ${S.t}'s text (text ${md.text}). ${loc ? `On a local layer the range is cut to t ± 512: lo = ${md.lo === md.start ? 'start' : 't − 512'} = ${md.lo}, hi = ${md.hi === md.end ? 'end' : 't + 513'} = ${md.hi}.` : 'On a global layer the whole text is visible.'} q head ${S.h} reads kv head ${md.kvh} (4 q heads per ${cfg().NKV === 2 ? '2' : '1'} kv head${cfg().NKV === 2 ? 's' : ''}).` },
+    { tag: 'Q', kind: 'q', short: 'q → shared', title: `copy the ${md.D}-float query into att_q`, text: `Thread i copies q[i]${md.D > 256 ? ' and q[i + 256]' : ''}. One barrier, and every warp can read the whole query from shared memory for every key it scores.` },
+    { tag: 'K', kind: 'k0', short: 'round 0', title: `round 0: warp w scores key lo + w`, delay: 1200, text: `Each warp reads one key row (lane l: dims l, l + 32, … , ${md.D / 32} values), multiplies by att_q with FMAs, and a 5-round butterfly adds the 32 partial dots. Lane 0 writes the score to att_scores[j − lo]. The scale is 1: this model's k_norm weight (${cfg().kw.toFixed(3)}) already shrinks k.` },
+    { tag: 'K', kind: 'kall', short: `rounds 1–${md.rounds - 1}`, title: `${md.rounds} rounds: all ${md.n} scores in shared memory`, delay: 1200, text: `Warp w handles keys lo + w + 8r for r = 0 … ${md.rounds - 1}, keeping the largest score it has seen in a register. No exponential yet.` },
+    { tag: 'M', kind: 'max', short: 'block max', title: `block maximum m = ${md.m.toFixed(4)}`, text: 'Lane 0 of each warp writes its running maximum to att_max[warp]; after bar.sync every thread reads the 8 and takes their maximum, so all threads hold the same m.' },
+    { tag: 'E', kind: 'exp', short: 'exp', title: 'p_j = 2^(s_j · log₂e − m · log₂e), overwriting the scores', text: `Thread i takes entries i, i + 256, … of att_scores: one FMA and one <code>ex2.approx</code> each, and adds them to its own partial sum. Every p_j ≤ 1, and the largest is exactly 1.` },
+    { tag: 'S', kind: 'sum', short: 'block sum', title: `Σ p = ${md.sum.toPrecision(6)}, 1 / Σ = ${md.inv.toPrecision(6)}`, text: 'A warp butterfly, the 8 warp sums into att_sum, one barrier, and every thread adds the 8 in the same order. The same barrier makes every p visible to every thread for the next step.' },
+    { tag: 'O', kind: 'acc', short: 'Σ p·v', title: `thread i accumulates dim${md.D > 256 ? 's i and i + 256' : ' i'} over all ${md.n} keys`, delay: 1300, text: `The loop takes two keys per trip (one 8-byte <code>ld.shared.v2</code> of p, two value loads) into two independent accumulators, so consecutive FMAs do not wait on each other. Neighbouring threads read neighbouring dims of the same value row: every load is coalesced.` },
+    { tag: 'W', kind: 'out', short: 'write', title: 'out = (acc₀ + acc₁) / Σ p', text: `The two accumulators are added, multiplied by 1/Σ and stored to att[t][h·${md.D} + d]. Largest difference from a float64 softmax here: ${md.err.toExponential(2)}.` },
+  ];
+}
+
+const kg = Atlas.grid($('keys'), 8, 64), og = Atlas.grid($('out'), 2, 256);
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `R|extern "C" __global__ void attention_enc(const float *qkv, unsigned stride, const uint2 *seg, float *out,
+R|        unsigned nh, unsigned nkv, unsigned D, unsigned half_window, float scale)
+R|{
+Q|    __shared__ float q[512];  __shared__ float wmax[8], wsum[8];
+K|    extern __shared__ float p[];                                     // 4 * n bytes, set at launch
+R|    unsigned h = blockIdx.x, t = blockIdx.y, lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+R|    unsigned lo = seg[t].x, hi = seg[t].y;                            // the token's text
+R|    if (half_window) { if (t >= lo + half_window) lo = t - half_window; hi = min(hi, t + half_window + 1); }
+R|    unsigned n = hi - lo, kvh = h / (nh / nkv);
+R|    const float *K = qkv + nh * D + kvh * D, *V = K + nkv * D;      // row j at + j * stride
+Q|    for (unsigned i = threadIdx.x; i < D; i += 256) q[i] = qkv[(size_t)t * stride + h * D + i];
+Q|    __syncthreads();
+K|    float mx = -INFINITY;
+K|    for (unsigned j = lo + warp; j < hi; j += 8) {                   // warp w: keys lo+w, lo+w+8, ...
+K|        float s = 0;
+K|        for (unsigned i = lane; i < D; i += 32) s = fmaf(K[(size_t)j * stride + i], q[i], s);
+K|        for (int off = 16; off >= 1; off >>= 1) s += __shfl_xor_sync(0xffffffff, s, off);
+K|        s *= scale;  mx = fmaxf(mx, s);
+K|        if (lane == 0) p[j - lo] = s;
+K|    }
+M|    if (lane == 0) wmax[warp] = mx;
+M|    __syncthreads();
+M|    float m = wmax[0];
+M|    for (int w = 1; w < 8; w++) m = fmaxf(m, wmax[w]);
+E|    float sum = 0;
+E|    for (unsigned i = threadIdx.x; i < n; i += 256) {
+E|        p[i] = exp2f(fmaf(p[i], 1.442695f, -m * 1.442695f));
+E|        sum += p[i];
+E|    }
+S|    for (int off = 16; off >= 1; off >>= 1) sum += __shfl_xor_sync(0xffffffff, sum, off);
+S|    if (lane == 0) wsum[warp] = sum;
+S|    __syncthreads();                                                  // also publishes every p
+S|    float total = 0;
+S|    for (int w = 0; w < 8; w++) total += wsum[w];
+S|    float inv = 1.0f / total;
+O|    for (unsigned d = threadIdx.x; d < D; d += 256) {
+O|        float a0 = 0, a1 = 0;  unsigned j = 0;
+O|        for (; j + 1 < n; j += 2) {                                   // two keys, two accumulators
+O|            a0 = fmaf(p[j], V[(size_t)(lo + j) * stride + d], a0);
+O|            a1 = fmaf(p[j + 1], V[(size_t)(lo + j + 1) * stride + d], a1);
+O|        }
+O|        if (j < n) a0 = fmaf(p[j], V[(size_t)(lo + j) * stride + d], a0);
+W|        out[((size_t)t * nh + h) * D + d] = (a0 + a1) * inv;
+O|    }
+R|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `R|    ld.global.v2.u32    {%r11, %r12}, [%rd4];   // seg start, end
+R|    @%p1 bra            RANGE_DONE;             // half_window == 0
+R|    add.u32             %r13, %r11, %r5;        // start + hw
+R|    sub.u32             %r14, %r7, %r5;         // t - hw
+R|    setp.ge.u32         %p2, %r7, %r13;
+R|    selp.b32            %r11, %r14, %r11, %p2;  // lo
+R|    min.u32             %r12, %r12, %r14;       // hi = min(end, t + hw + 1)
+R|    div.u32             %r16, %r6, %r16;        // kv head
+Q|QLOAD:
+Q|    ld.global.f32       %f2, [%rd8];
+Q|    st.shared.f32       [%r22], %f2;            // att_q[i]
+Q|    add.u32             %r21, %r21, 256;
+Q|    bar.sync            0;
+K|KEYS:
+K|    setp.ge.u32         %p1, %r24, %r12;        // j >= hi ?
+K|DOT:
+K|    ld.global.f32       %f5, [%rd11];           // k[j][i]
+K|    ld.shared.f32       %f6, [%r26];            // q[i]
+K|    fma.rn.f32          %f4, %f5, %f6, %f4;
+K|    add.u32             %r25, %r25, 32;         // i += 32
+K|DOT_DONE:
+K|    shfl.sync.bfly.b32  %f5, %f4, 16, 31, -1;
+K|    add.f32             %f4, %f4, %f5;          // ... 8, 4, 2, 1
+K|    mul.f32             %f4, %f4, %f1;          // scale
+K|    max.f32             %f3, %f3, %f4;          // running max
+K|    @%p3 st.shared.f32  [%r27], %f4;            // lane 0: att_scores[j - lo]
+K|    add.u32             %r24, %r24, 8;          // next round
+M|KEYS_DONE:
+M|    @%p3 st.shared.f32  [%r30], %f3;            // att_max[warp]
+M|    bar.sync            0;
+M|BMAX:
+M|    ld.shared.f32       %f7, [%r32];
+M|    max.f32             %f3, %f3, %f7;
+E|    mul.f32             %f8, %f3, 0fBFB8AA3B;   // -max * log2(e)
+E|EXP:
+E|    ld.shared.f32       %f10, [%r22];
+E|    fma.rn.f32          %f10, %f10, 0f3FB8AA3B, %f8;
+E|    ex2.approx.f32      %f10, %f10;
+E|    st.shared.f32       [%r22], %f10;           // p overwrites s
+E|    add.f32             %f9, %f9, %f10;
+S|    shfl.sync.bfly.b32  %f10, %f9, 16, 31, -1;  // ... 8, 4, 2, 1
+S|    @%p3 st.shared.f32  [%r30], %f9;            // att_sum[warp]
+S|    bar.sync            0;                      // also publishes every p
+S|BSUM:
+S|    add.f32             %f9, %f9, %f7;
+S|    rcp.rn.f32          %f11, %f9;
+O|ACC2:   // two keys per step, two accumulators
+O|    ld.shared.v2.f32    {%f14, %f15}, [%r35];   // p[j], p[j+1]
+O|    ld.global.f32       %f16, [%rd18];          // v[lo+j][d]
+O|    ld.global.f32       %f17, [%rd19];          // v[lo+j+1][d]
+O|    fma.rn.f32          %f12, %f14, %f16, %f12;
+O|    fma.rn.f32          %f13, %f15, %f17, %f13;
+O|ACC1:
+O|    fma.rn.f32          %f12, %f14, %f16, %f12; // odd key left over
+W|ACC_DONE:
+W|    add.f32             %f12, %f12, %f13;
+W|    mul.f32             %f12, %f12, %f11;       // / sum
+W|    st.global.f32       [%rd20], %f12;` },
+});
+
+let steps, hover = null;
+function rebuild(keep) { build(); facts(); steps = buildSteps(); stepper.setSteps(steps, keep); }
+$('layer').addEventListener('change', () => { S.layer = $('layer').value; S.key = null; S.d = Math.min(S.d, cfg().D - 1); rebuild(false); });
+$('tok').addEventListener('input', () => { S.t = +$('tok').value; S.key = null; rebuild(true); });
+$('hd').addEventListener('change', () => { S.h = +$('hd').value; rebuild(true); });
+
+function drawMask() {
+  const W = 480, X = v => v / T * W, md = M;
+  let s = `<rect width="${W}" height="${W}" fill="${C.bg}"/><defs>`;
+  let st0 = 0;
+  TEXTS.forEach((n, i) => { s += `<clipPath id="cb${i}"><rect x="${X(st0)}" y="${X(st0)}" width="${X(n)}" height="${X(n)}"/></clipPath>`; st0 += n; });
+  s += '</defs>';
+  st0 = 0;
+  const band = `${X(0)},${X(0)} ${X(HW)},${X(0)} ${X(T)},${X(T - HW)} ${X(T)},${X(T)} ${X(T - HW)},${X(T)} ${X(0)},${X(HW)}`;
+  TEXTS.forEach((n, i) => {
+    s += `<rect x="${X(st0)}" y="${X(st0)}" width="${X(n)}" height="${X(n)}" fill="${C.w}" opacity="${S.layer === 'local' ? 0.12 : 0.35}" stroke="${C.line}"/>`;
+    if (S.layer === 'local') s += `<polygon points="${band}" fill="${C.w}" opacity="0.4" clip-path="url(#cb${i})"/>`;
+    s += `<text x="${X(st0) + 4}" y="${X(st0) + 14}" font-size="10.5" fill="${C.fg}">text ${i} · ${n}</text>`;
+    st0 += n;
+  });
+  s += `<line x1="0" y1="${X(S.t)}" x2="${W}" y2="${X(S.t)}" stroke="${C.muted}" stroke-width="0.8" stroke-dasharray="3 3"/>`;
+  s += `<line x1="${X(md.lo)}" y1="${X(S.t)}" x2="${X(md.hi)}" y2="${X(S.t)}" stroke="${C.y}" stroke-width="4"/>`;
+  s += `<circle cx="${X(S.t)}" cy="${X(S.t)}" r="4" fill="${C.fg}"/>`;
+  s += `<text x="${W - 4}" y="${W - 6}" font-size="10" text-anchor="end" fill="${C.muted}">rows: queries · columns: keys · ${T} tokens</text>`;
+  $('mask').setAttribute('viewBox', `0 0 ${W} ${W}`); $('mask').innerHTML = s;
+  $('tokv').textContent = S.t;
+  $('rcard').innerHTML = [['text', `${md.text}: tokens ${md.start} … ${md.end - 1}`], ['seg[t]', `[${md.start}, ${md.end})`], ['window', S.layer === 'local' ? `[t − 512, t + 513) = [${S.t - HW}, ${S.t + HW + 1})` : 'none'],
+    ['keys', `[${md.lo}, ${md.hi}) → n = ${md.n}`], ['dynamic smem', `${Atlas.int(4 * md.n)} B of scores`], ['kv head', `${md.kvh} (q head ${S.h})`]].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+}
+
+const order = ['range', 'q', 'k0', 'kall', 'max', 'exp', 'sum', 'acc', 'out'], at = (st, k) => order.indexOf(st.kind) >= order.indexOf(k);
+function draw() {
+  const st = stepper.step, md = M;
+  drawMask();
+  // key grid
+  if (kg.cols !== md.rounds) kg.resize(8, md.rounds);
+  $('keys').style.aspectRatio = `${Math.max(md.rounds, 48)} / 10`;
+  const g = kg.prep(), scored = r => st.kind === 'k0' ? r === 0 : at(st, 'kall'), expd = at(st, 'exp');
+  const smin = Math.min(...md.s), smax = md.m, pmax = Math.max(...md.p);
+  for (let w = 0; w < 8; w++) for (let r = 0; r < md.rounds; r++) {
+    const i = w + 8 * r;
+    if (i >= md.n) { g.hatch(w, r); continue; }
+    if (!scored(r)) { g.cell(w, r, C.zero, 0.35, 0.12); continue; }
+    if (expd) g.cell(w, r, C.y, 0.1 + 0.88 * Math.sqrt(md.p[i] / pmax), 0.12);
+    else g.cell(w, r, C.w, 0.12 + 0.85 * (md.s[i] - smin) / Math.max(1e-9, smax - smin), 0.12);
+  }
+  if (st.kind === 'k0') g.box(0, 0, 8, 1, C.sync, 2);
+  if (S.key !== null && S.key < md.n) g.box(S.key % 8, Math.floor(S.key / 8), 1, 1, C.fg, 2.5);
+  if (hover) g.box(hover.r, hover.c, 1, 1, C.sync, 1.5);
+  $('keylabel').textContent = `keys ${md.lo}–${md.hi - 1} (${md.n}) · rows = warps, columns = rounds of 8`;
+  $('keysub').textContent = `${md.rounds} rounds`;
+  Atlas.legend($('legend'), expd ? [['--y', 'p = exp(s − m): darker = larger weight'], ['--zero', 'hatched: no key']] : [['--w', 'score s = q·k: darker = higher'], ['--zero', 'not scored yet / hatched: no key'], ['--sync', 'current round']]);
+
+  // chart: scores (then p) over the key range
+  const Wd = 640, H = 200, ml = 40, mr = 10, mt = 12, mb = 26, n = md.n;
+  const Xc = i => ml + (n > 1 ? i / (n - 1) : 0.5) * (Wd - ml - mr);
+  let sv = '';
+  if (!at(st, 'k0')) sv = `<text x="${Wd / 2}" y="${H / 2}" font-size="12" text-anchor="middle" fill="${C.muted}">no scores yet</text>`;
+  else {
+    const showP = expd, vals = showP ? md.prob : md.s, lim = st.kind === 'k0' ? 8 : n;
+    const y0 = showP ? 0 : Math.min(...md.s) - 0.3, y1 = showP ? Math.max(...md.prob) * 1.08 : md.m + 0.3;
+    const Yc = v => mt + (y1 - v) / (y1 - y0) * (H - mt - mb);
+    for (let k = 0; k <= 4; k++) { const v = y0 + (y1 - y0) * k / 4; sv += `<line x1="${ml}" y1="${Yc(v)}" x2="${Wd - mr}" y2="${Yc(v)}" stroke="${C.line}" stroke-width="0.6"/><text x="${ml - 5}" y="${Yc(v) + 3}" font-size="10" text-anchor="end" fill="${C.muted}">${showP ? v.toFixed(3) : v.toFixed(1)}</text>`; }
+    let d = ''; for (let i = 0; i < lim; i++) d += `M${Xc(i).toFixed(1)} ${Yc(showP ? 0 : y0).toFixed(1)}V${Yc(vals[i]).toFixed(1)}`;
+    sv += `<path d="${d}" stroke="${showP ? C.y : C.w}" stroke-width="${n > 600 ? 0.7 : 1.2}" fill="none"/>`;
+    if (!showP && at(st, 'max')) sv += `<line x1="${ml}" y1="${Yc(md.m)}" x2="${Wd - mr}" y2="${Yc(md.m)}" stroke="${C.sync}" stroke-dasharray="4 3"/><text x="${Wd - mr}" y="${Yc(md.m) - 4}" font-size="10" text-anchor="end" fill="${C.sync}">m = ${md.m.toFixed(3)}</text>`;
+    const ti = S.t - md.lo; sv += `<line x1="${Xc(ti)}" y1="${mt}" x2="${Xc(ti)}" y2="${H - mb}" stroke="${C.fg}" stroke-dasharray="2 3" opacity="0.6"/><text x="${Xc(ti) + 3}" y="${mt + 9}" font-size="10" fill="${C.fg}">j = t</text>`;
+    if (S.key !== null && S.key < n) sv += `<circle cx="${Xc(S.key)}" cy="${Yc(vals[S.key])}" r="4" fill="${C.fg}"/>`;
+  }
+  sv += `<text x="${ml}" y="${H - 6}" font-size="10" fill="${C.muted}">j = ${md.lo}</text><text x="${Wd - mr}" y="${H - 6}" font-size="10" text-anchor="end" fill="${C.muted}">j = ${md.hi - 1}</text>`;
+  $('chart').setAttribute('viewBox', `0 0 ${Wd} ${H}`); $('chart').innerHTML = sv;
+  $('chartlabel').textContent = expd ? 'softmax weights p_j / Σp' : 'scores s_j = q·k_j';
+  $('chartsub').textContent = expd ? `${md.prob.filter(v => v > 0.01).length} keys above 1%` : 'dashed: the block maximum';
+
+  // shared memory diagram
+  const sw = 420, sh = 92, cells = [['att_q', 2048, 'q: ' + md.D + ' floats', C.x, at(st, 'q')], ['att_max', 32, '8', C.sync, at(st, 'max')], ['att_sum', 32, '8', C.sync, at(st, 'sum')], ['att_scores', 4 * md.n, `${expd ? 'p' : 's'}: ${md.n} floats`, expd ? C.y : C.w, at(st, 'k0')]];
+  const share = [0.3, 0.13, 0.13, 0.44]; // not to scale: att_max / att_sum are 32 B each
+  let x = 0, ss = '';
+  cells.forEach(([nm, b, lab, col, on], ci) => { const w = share[ci] * sw; ss += `<rect x="${x}" y="22" width="${w - 3}" height="34" rx="3" fill="${col}" opacity="${on ? 0.5 : 0.12}"/><text x="${x + 4}" y="16" font-size="10.5" fill="${C.fg}">${nm}</text><text x="${x + 4}" y="43" font-size="10" fill="${C.fg}">${lab}</text><text x="${x + 4}" y="72" font-size="9.5" fill="${C.muted}">${Atlas.int(b)} B${nm === 'att_scores' ? ' (dynamic)' : ''}</text>`; x += w; });
+  $('smem').setAttribute('viewBox', `0 0 ${sw} ${sh - 12}`); $('smem').innerHTML = ss;
+
+  // key card
+  if (S.key !== null && S.key < md.n) {
+    const i = S.key;
+    $('kcard').innerHTML = [['key', `token ${md.lo + i} (position ${md.lo + i - md.start} in text ${md.text})`], ['owner', `warp ${i % 8}, round ${Math.floor(i / 8)}`], ['score', at(st, 'kall') || (st.kind === 'k0' && i < 8) ? md.s[i].toFixed(4) : '–'], ['weight', expd ? (md.prob[i] * 100).toFixed(3) + ' %' : '–'], ['generated', md.hot[i] ? 'made to resemble q' : 'random']].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  } else $('kcard').innerHTML = '<dt>key</dt><dd>click one in the grid</dd>';
+
+  // output dims: column = thread, row = trip (d = tid + 256·row)
+  const rows = md.D / 256;
+  if (og.rows !== rows) og.resize(rows, 256);
+  $('out').style.aspectRatio = `256 / ${rows * 10}`;
+  const go = og.prep(), done = st.kind === 'out', acc = st.kind === 'acc', lim = Math.max(...md.out.map(Math.abs));
+  for (let r = 0; r < rows; r++) for (let c = 0; c < 256; c++) {
+    const d = 256 * r + c;
+    go.cell(r, c, done ? C.y : acc ? C.x : C.zero, done ? 0.15 + 0.8 * Math.abs(md.out[d]) / lim : acc ? 0.35 : 0.3, 0.06);
+  }
+  go.box(Math.floor(S.d / 256), S.d % 256, 1, 1, C.fg, 2);
+  $('outlabel').textContent = `out: ${md.D} dims · thread i owns dim${rows > 1 ? 's i and i + 256' : ' i'}`;
+  $('outsub').textContent = done ? `max |error| vs float64: ${md.err.toExponential(2)}` : '';
+  const d = S.d;
+  $('tcard').innerHTML = [['thread', `${d % 256} (warp ${(d % 256) >> 5}), dim ${d}`], ['acc₀ (even keys)', at(st, 'acc') ? md.acc0[d].toPrecision(6) : '–'], ['acc₁ (odd keys)', at(st, 'acc') ? md.acc1[d].toPrecision(6) : '–'], ['out[d]', done ? md.out[d].toPrecision(6) : '–']].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+}
+kg.hook(p => {
+  hover = p; const i = p.r + 8 * p.c, md = M;
+  $('status').textContent = i < md.n ? `key token ${md.lo + i} · warp ${p.r}, round ${p.c} · score ${md.s[i].toFixed(3)} · weight ${(md.prob[i] * 100).toFixed(3)} %${md.hot[i] ? ' · made to resemble q' : ''}` : 'no key: past the end of the range';
+  draw();
+}, p => { const i = p.r + 8 * p.c; S.key = i < M.n ? i : null; draw(); }, () => { hover = null; draw(); });
+og.hook(null, p => { S.d = 256 * p.r + p.c; draw(); });
+
+build(); facts(); steps = buildSteps();
+const stepper = Atlas.stepper({ steps, code, render: draw });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EmbeddingGemma 2 Graph</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script src="atlas.js"></script>
+<script src="model.js"></script>
+
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Model graph · gemma_emb2/Q8_0/embeddinggemma-2-Q8_0.gguf · engine emb2.ptx</div>
+    <h1>EmbeddingGemma 2</h1>
+    <p>A 271M-parameter text encoder: a Gemma 4 style layer stack that reads the whole text in both directions and ends in one 768-dimensional vector per text. There is no decoding and no KV cache; every text is a single forward pass, and several texts share one batch. Each step of the GGUF dataflow is drawn with the kernel the engine launches for it. Click any box for details.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="h-ov">
+    <div class="sechead"><h2 id="h-ov">Whole model</h2><p class="muted">24 layers in 4 groups of five local layers (each token sees ±512 positions of its own text) and one global layer (the whole text). Before the layers, every token gets 24 extra 512-value inputs, one per layer. Click a layer box to show it below.</p></div>
+    <div class="mgrid">
+      <div class="panel graph" id="ovGraph" aria-label="Whole-model graph"></div>
+      <div class="panel side" aria-live="polite"><div id="detail"><h3>Details</h3><p class="muted">Click a box in either graph.</p></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-ly">
+    <div class="sechead"><h2 id="h-ly">One layer</h2><p class="muted" id="lyTitle"></p></div>
+    <div class="controls">
+      <span class="seg" id="passSeg" role="group" aria-label="Pass"></span>
+      <span class="seg" id="kindSeg" role="group" aria-label="Layer kind"></span>
+      <label>Highlight kernel <select id="hotSel"></select></label>
+    </div>
+    <div class="key">
+      <span><i style="border-color:var(--sync)"></i>kernel with a walkthrough</span>
+      <span><i style="border-color:var(--muted);border-style:dashed"></i>kernel, no page yet</span>
+      <span><i style="border-color:var(--w)"></i>GGUF tensor</span>
+      <span><i style="border-color:var(--x);border-radius:8px"></i>activations</span>
+      <span><i style="border-color:var(--line)"></i>host (CPU) step</span>
+    </div>
+    <div class="panel graph" id="lyGraph" aria-label="Layer graph"></div>
+  </section>
+
+  <section aria-labelledby="h-ln">
+    <div class="sechead"><h2 id="h-ln">Launch order</h2><p class="muted" id="launchCount"></p></div>
+    <div class="panel tablewrap"><table class="list" id="launches"></table></div>
+  </section>
+
+  <section aria-labelledby="h-t">
+    <div class="sechead"><h2 id="h-t">Tensors of one layer, plus the shared ones</h2><p class="muted">Shapes are rows × cols, that is output × input, the way the kernels index them; the GGUF header lists them the other way round (512 × 1024 for attn_q.weight of a local layer). The engine loads the BF16 or the Q8_0 file and keeps every matrix as Q8_0 on the GPU (the Q8_0 file stores per_layer_model_proj in BF16; it is quantized at load).</p></div>
+    <div class="panel tablewrap"><table class="list" id="tensors"></table></div>
+  </section>
+
+  <footer>Sources: <code>gemma_emb2/emb2.c</code> (<code>forward()</code>, <code>embed_texts()</code>) and <code>gemma_emb2/emb2.ptx</code>; the graph follows llama.cpp's <code>src/models/gemma-embedding2.cpp</code>. rmsnorm, add_rmsnorm, geglu and gemm_q8 are copied unchanged from <code>gemma3.ptx</code>; their pages show the Gemma 3 sizes. <code>scale</code> (x ·= s, grid-stride) has no page. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.</footer>
+</div>
+
+<script>
+const GS = '≤ 448 blocks · 256 · grid-stride';
+const mm = rows => ({ any: `grid (${rows / 64}, ⌈T/32⌉) · 256` });
+const ROW = { any: 'T blocks · 256' };
+const M = {
+  id: 'gemma_emb2', engine: 'EmbeddingGemma 2', nLayers: 24,
+  passes: [['encode', 'encode · T tokens of packed texts']],
+  facts: [['24', 'layers (20 local + 4 global)'], ['512', 'n_embd'], ['4', 'q heads'], ['2 / 1', 'kv heads local / global'], ['256 / 512', 'head dim local / global'], ['2048', 'n_ff'], ['±512', 'local window, both sides'], ['24 × 512', 'per-layer inputs per token'], ['10k / 1M', 'RoPE base local / global'], ['1', 'attention scale'], ['768', 'embedding size'], ['262,144', 'vocabulary']],
+  layerTitle: (p, k) => k === 'local'
+    ? 'Local layers (all but 5, 11, 17, 23): 256-dim heads, 2 kv heads, each token attends to positions within ±512 of it in its own text. All T tokens of the batch at once, so every matrix product is a tiled GEMM.'
+    : 'Global layers 5, 11, 17, 23: 512-dim heads, 1 kv head, each token attends to its whole text. All T tokens of the batch at once.',
+  overview() {
+    const loc = i => ({ id: 'b' + i, kind: 'blk', label: 'local layer', sub: '±512, 256-dim heads', layerKind: 'local' });
+    return {
+      nodes: [
+        { id: 'tok', kind: 'io', label: 'texts', sub: '&lt;bos&gt; text &lt;eos&gt;, packed into one batch' },
+        { id: 'emb', kind: 'w', label: 'token_embd.weight', sub: '262,144 × 512 · BF16 / Q8_0 · host memory' },
+        { id: 'look', kind: 'op', label: 'embedding lookup', sub: 'CPU: row → f32, × √512 → x<br/>pos, seg per token', io: 'tokens → x, pos, seg' },
+        { id: 'plw', kind: 'w', label: 'per_layer_model_proj.weight', sub: '12,288 × 512 · BF16 → Q8_0' },
+        { id: 'plg', kind: 'op', kernel: 'gemm_q8', sub: 'ple = W·x, 24 × 512 per token', launch: mm(12288), io: 'x → ple' },
+        { id: 'pls', kind: 'op', kernel: 'scale', sub: 'ple ·= 1/√512', launch: { any: GS }, io: 'ple → ple' },
+        { id: 'plnw', kind: 'w', label: 'per_layer_proj_norm.weight', sub: '512 · F32' },
+        { id: 'pln', kind: 'op', kernel: 'rmsnorm', sub: 'each 512-slice: ple[t][l] = rmsnorm · w', launch: { any: '24·T blocks · 256' }, io: 'ple → ple' },
+        { id: 'an0', kind: 'w', label: 'attn_norm.weight', sub: 'of layer 0' },
+        { id: 'n0', kind: 'op', kernel: 'rmsnorm', sub: 'attn_norm of layer 0', launch: ROW, io: 'x → xn' },
+        { group: 'rep', label: '× 4', nodes: [loc(0), loc(1), loc(2), loc(3), loc(4),
+          { id: 'b5', kind: 'blk', label: 'global layer', sub: 'whole text, 512-dim heads', layerKind: 'global' }] },
+        { id: 'onw', kind: 'w', label: 'output_norm.weight', sub: '512 · F32' },
+        { id: 'on', kind: 'op', kernel: 'rmsnorm', sub: 'last launch of layer 23:<br/>xn = output_norm(x)', launch: ROW, io: 'x → xn' },
+        { id: 'ow', kind: 'w', label: 'output.weight', sub: '768 × 512 · Q8_0' },
+        { id: 'head', kind: 'op', kernel: 'gemm_q8', sub: '768 values per token', launch: mm(768), io: 'xn → out' },
+        { id: 'pool', kind: 'op', label: 'pooling', sub: 'CPU: mean over each text’s tokens<br/>(&lt;bos&gt; and &lt;eos&gt; included), L2-normalize' },
+        { id: 'vec', kind: 'io', label: 'embeddings', sub: '768 floats per text' },
+      ],
+      edges: [['tok', 'look'], ['emb', 'look'], ['look', 'plg', 'x'], ['plw', 'plg'], ['plg', 'pls', 'ple'], ['pls', 'pln'], ['plnw', 'pln'],
+        ['look', 'n0', 'x'], ['an0', 'n0'], ['n0', 'b0', 'x, xn'], ['pln', 'b0', 'ple'], ['b0', 'b1'], ['b1', 'b2'], ['b2', 'b3'], ['b3', 'b4'], ['b4', 'b5'],
+        ['b5', 'on', 'x'], ['onw', 'on'], ['on', 'head', 'xn'], ['ow', 'head'], ['head', 'pool', 'out'], ['pool', 'vec']],
+    };
+  },
+  layer(pass, kind) {
+    const loc = kind === 'local', D = loc ? 256 : 512, nkv = loc ? 2 : 1, Q = 4 * D;
+    const nodes = [
+      { id: 'x', kind: 'io', label: 'x, xn', sub: 'residual stream and its attn_norm' },
+      { id: 'wq', kind: 'w', label: 'attn_q.weight', sub: `${Q} × 512 · Q8_0` },
+      { id: 'wk', kind: 'w', label: 'attn_k.weight', sub: '512 × 512 · Q8_0' },
+      { id: 'wv', kind: 'w', label: 'attn_v.weight', sub: '512 × 512 · Q8_0' },
+      { id: 'q', kind: 'op', kernel: 'gemm_q8', sub: 'q = W·xn', launch: mm(Q), io: 'xn → qkv[q]' },
+      { id: 'k', kind: 'op', kernel: 'gemm_q8', sub: 'k = W·xn', launch: mm(512), io: 'xn → qkv[k]' },
+      { id: 'v', kind: 'op', kernel: 'gemm_q8', sub: 'v = W·xn', launch: mm(512), io: 'xn → qkv[v]' },
+      { id: 'qnw', kind: 'w', label: 'attn_q_norm.weight', sub: `${D} · F32` },
+      { id: 'knw', kind: 'w', label: 'attn_k_norm.weight', sub: `${D} · F32` },
+      { id: 'ps', kind: 'io', label: 'pos, seg', sub: 'per token: position in its text,<br/>[start, end) of its text' },
+      { id: 'hnr', kind: 'op', kernel: 'head_norm_rope', sub: `RMSNorm of every ${D}-dim head<br/>q, k: × weight, RoPE base ${loc ? '10,000' : '1,000,000'}<br/>v: no weight, no RoPE`, launch: { any: `grid (${4 + 2 * nkv}, T) · 128` }, io: 'qkv → qkv' },
+      { id: 'att', kind: 'op', kernel: 'attention_enc', sub: `softmax(q·kᵀ)·v, no 1/√d<br/>4 q / ${nkv} kv heads<br/>${loc ? 'keys within ±512, same text' : 'every key of the same text'}`, launch: { any: 'grid (4, T) · 256 + 4·keys B' }, io: 'qkv, seg → att' },
+      { id: 'wo', kind: 'w', label: 'attn_output.weight', sub: `512 × ${Q} · Q8_0` },
+      { id: 'o', kind: 'op', kernel: 'gemm_q8', sub: 'y = W·att', launch: mm(512), io: 'att → y' },
+      { id: 'pan', kind: 'w', label: 'post_attention_norm.weight', sub: '512 · F32' },
+      { id: 'fnw', kind: 'w', label: 'ffn_norm.weight', sub: '512 · F32' },
+      { id: 'ar1', kind: 'op', kernel: 'add_rmsnorm', sub: 'x += post_attention_norm(y)<br/>xn = ffn_norm(x)', launch: ROW, io: 'y, x → x, xn' },
+      { id: 'wgu', kind: 'w', label: 'ffn_gate.weight ‖ ffn_up.weight', t: 'ffn_gate.weight', sub: 'stacked: 4096 × 512 · Q8_0' },
+      { id: 'gu', kind: 'op', kernel: 'gemm_q8', sub: 'gate and up in one product', launch: mm(4096), io: 'xn → gu' },
+      { id: 'act', kind: 'op', kernel: 'geglu', sub: 'h = GELU_tanh(gate) · up', launch: { any: GS }, io: 'gu → h' },
+      { id: 'wd', kind: 'w', label: 'ffn_down.weight', sub: '512 × 2048 · Q8_0' },
+      { id: 'dn', kind: 'op', kernel: 'gemm_q8', sub: 'y = W·h', launch: mm(512), io: 'h → y' },
+      { id: 'pfw', kind: 'w', label: 'post_ffw_norm.weight', sub: '512 · F32' },
+      { id: 'na1', kind: 'op', kernel: 'norm_add', sub: 'x += post_ffw_norm(y)<br/>(scale 1)', launch: ROW, io: 'y, x → x' },
+      { id: 'wig', kind: 'w', label: 'inp_gate.weight', sub: '512 × 512 · Q8_0' },
+      { id: 'ig', kind: 'op', kernel: 'gemm_q8', sub: 'g = W·x (the raw stream, not xn)', launch: mm(512), io: 'x → g' },
+      { id: 'ple', kind: 'io', label: 'ple[t][l]', sub: 'this layer’s 512 per-layer inputs' },
+      { id: 'gm', kind: 'op', kernel: 'gelu_mul', sub: 'g = GELU_tanh(g) · ple[t][l]', launch: { any: GS }, io: 'g, ple → g' },
+      { id: 'wp', kind: 'w', label: 'proj.weight', sub: '512 × 512 · Q8_0' },
+      { id: 'pj', kind: 'op', kernel: 'gemm_q8', sub: 'y = W·g', launch: mm(512), io: 'g → y' },
+      { id: 'pnw', kind: 'w', label: 'post_norm.weight', sub: '512 · F32' },
+      { id: 'los', kind: 'w', label: 'layer_output_scale.weight', sub: '1 · F32 → kernel argument' },
+      { id: 'na2', kind: 'op', kernel: 'norm_add', sub: 'x = (x + post_norm(y)) · scale', launch: ROW, io: 'y, x → x' },
+      { id: 'nnw', kind: 'w', label: 'next attn_norm.weight', t: 'attn_norm.weight', sub: 'output_norm after layer 23' },
+      { id: 'rn', kind: 'op', kernel: 'rmsnorm', sub: 'xn = next layer’s attn_norm(x)', launch: ROW, io: 'x → xn' },
+      { id: 'y', kind: 'io', label: 'x, xn', sub: 'to the next layer' },
+    ];
+    const edges = [['x', 'q', 'xn'], ['x', 'k', 'xn'], ['x', 'v', 'xn'], ['wq', 'q'], ['wk', 'k'], ['wv', 'v'],
+      ['q', 'hnr'], ['k', 'hnr'], ['v', 'hnr'], ['qnw', 'hnr'], ['knw', 'hnr'], ['ps', 'hnr', 'pos'], ['hnr', 'att', 'q, k, v'], ['ps', 'att', 'seg'],
+      ['att', 'o', 'att'], ['wo', 'o'], ['o', 'ar1', 'y'], ['x', 'ar1', 'x'], ['pan', 'ar1'], ['fnw', 'ar1'],
+      ['ar1', 'gu', 'xn'], ['wgu', 'gu'], ['gu', 'act', 'gu'], ['act', 'dn', 'h'], ['wd', 'dn'],
+      ['dn', 'na1', 'y'], ['ar1', 'na1', 'x'], ['pfw', 'na1'],
+      ['na1', 'ig', 'x'], ['wig', 'ig'], ['ig', 'gm', 'g'], ['ple', 'gm'], ['gm', 'pj', 'g'], ['wp', 'pj'],
+      ['pj', 'na2', 'y'], ['na1', 'na2', 'x'], ['pnw', 'na2'], ['los', 'na2'], ['na2', 'rn', 'x'], ['nnw', 'rn'], ['rn', 'y']];
+    return { nodes, edges };
+  },
+  tensors: [
+    { name: 'token_embd.weight', file: '262,144 × 512 · BF16 / Q8_0', engine: 'stays in host memory (BF16 rows used exactly, Q8_0 rows dequantized)', by: 'embedding lookup on the CPU' },
+    { name: 'per_layer_model_proj.weight', file: '12,288 × 512 · BF16 (both files)', engine: 'Q8_0', by: 'gemm_q8, once per batch' },
+    { name: 'per_layer_proj_norm.weight', file: '512 · F32', engine: 'F32', by: 'rmsnorm over 24·T slices' },
+    { name: 'attn_norm.weight', file: '512 · F32', engine: 'F32', by: 'rmsnorm' },
+    { name: 'attn_q.weight', file: '1024 × 512 local, 2048 × 512 global · BF16 / Q8_0', engine: 'Q8_0: int8 + f16 scale per 32', by: 'gemm_q8' },
+    { name: 'attn_k.weight', file: '512 × 512 · BF16 / Q8_0', engine: 'Q8_0 (2 × 256 local, 1 × 512 global)', by: 'gemm_q8' },
+    { name: 'attn_v.weight', file: '512 × 512 · BF16 / Q8_0', engine: 'Q8_0', by: 'gemm_q8' },
+    { name: 'attn_q_norm.weight', file: '256 local, 512 global · F32', engine: 'F32 (every value ≈ 1.0)', by: 'head_norm_rope' },
+    { name: 'attn_k_norm.weight', file: '256 local, 512 global · F32', engine: 'F32 (constant, 0.122 in layer 0, 0.063 in layer 5)', by: 'head_norm_rope' },
+    { name: 'attn_output.weight', file: '512 × 1024 local, 512 × 2048 global · BF16 / Q8_0', engine: 'Q8_0', by: 'gemm_q8' },
+    { name: 'post_attention_norm.weight', file: '512 · F32', engine: 'F32', by: 'add_rmsnorm' },
+    { name: 'ffn_norm.weight', file: '512 · F32', engine: 'F32', by: 'add_rmsnorm' },
+    { name: 'ffn_gate.weight', file: '2048 × 512 · BF16 / Q8_0', engine: 'Q8_0, rows 0 … 2047 of the stacked gate_up matrix', by: 'gemm_q8' },
+    { name: 'ffn_up.weight', file: '2048 × 512 · BF16 / Q8_0', engine: 'Q8_0, rows 2048 … 4095 of gate_up', by: 'gemm_q8' },
+    { name: 'ffn_down.weight', file: '512 × 2048 · BF16 / Q8_0', engine: 'Q8_0', by: 'gemm_q8' },
+    { name: 'post_ffw_norm.weight', file: '512 · F32', engine: 'F32', by: 'norm_add' },
+    { name: 'inp_gate.weight', file: '512 × 512 · BF16 / Q8_0', engine: 'Q8_0', by: 'gemm_q8' },
+    { name: 'proj.weight', file: '512 × 512 · BF16 / Q8_0', engine: 'Q8_0', by: 'gemm_q8' },
+    { name: 'post_norm.weight', file: '512 · F32', engine: 'F32', by: 'norm_add' },
+    { name: 'layer_output_scale.weight', file: '1 · F32', engine: 'host float, passed as a kernel argument (0.11 … 0.97 across layers)', by: 'norm_add' },
+    { name: 'output_norm.weight', file: '512 · F32', engine: 'F32', by: 'rmsnorm (end of layer 23)' },
+    { name: 'output.weight', file: '768 × 512 · BF16 / Q8_0', engine: 'Q8_0', by: 'gemm_q8, then mean pooling on the CPU' },
+  ],
+};
+Atlas.model(M);
+</script>

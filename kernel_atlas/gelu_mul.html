@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>gelu_mul Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.regs td.ins { font-family: var(--font-mono); color: var(--muted); text-align: left; white-space: nowrap; }
+.layout svg { display: block; width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">EmbeddingGemma 2 · emb2.ptx · element-wise, grid-stride, in place</div>
+    <h1>Inside <code>gelu_mul</code></h1>
+    <p>EmbeddingGemma 2 gives every layer a second input besides the residual stream: 512 values per token, computed once from the token's embedding before the first layer (<code>ple</code>, 24 slices of 512 per token). After its feed-forward, each layer projects the stream to a 512-value gate, and <code>gelu_mul</code> multiplies GELU(gate) by the layer's slice of <code>ple</code>. The result is projected back and added to the stream by <code>norm_add</code>. The GELU arithmetic is <code>geglu</code>'s; what is new is where the second operand lives.</p>
+    <div class="formula"><span class="y">g</span>[t][i] = GELU(<span class="w">g</span>[t][i]) · <span class="x">ple</span>[t][l][i] &nbsp;&nbsp;<span class="muted">// ple row stride 24 · 512 = 12,288 floats; the kernel gets ple + l·512 and that stride</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-map">
+    <div class="sechead">
+      <h2 id="s-map">Reading one layer's slice of a [T][24][512] buffer</h2>
+      <p>The per-layer inputs of all 24 layers sit together, token by token: row t holds layer 0's 512 values, then layer 1's, and so on. The kernel is told where layer l's slice of token 0 starts (<code>ple + l·512</code>) and the row stride (12,288 floats), so the same code serves every layer without copying the slice out. The gate buffer g is a plain [T][512] array and is overwritten in place.</p>
+    </div>
+    <div class="panel">
+      <div class="controls">
+        <label for="ls">layer l <input id="ls" type="range" min="0" max="23" step="1" value="7"> <span id="lv" class="mono"></span></label>
+        <label for="is">element i (flat over T = 4 tokens) <input id="is" type="range" min="0" max="2047" step="1" value="1300"> <span id="iv" class="mono"></span></label>
+      </div>
+      <div class="layout"><svg id="layout" role="img" aria-label="Memory layout of ple and g"></svg></div>
+      <div class="status" id="mapstatus"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-one">
+    <div class="sechead">
+      <h2 id="s-one">One element, instruction by instruction</h2>
+      <p>Pick the gate g and the per-layer input p and step through the thread. GELU uses the tanh form, with tanh built from one base-2 exponential: tanh|y| = 1 − 2 / (2<sup>2|y|·log₂e</sup> + 1), sign restored with <code>copysign</code>.</p>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="controls">
+          <label for="gs">g <input id="gs" type="range" min="-5" max="5" step="0.02" value="0.84"> <span id="gv" class="mono"></span></label>
+          <label for="ps">p <input id="ps" type="range" min="-4" max="4" step="0.02" value="-1.3"> <span id="pv" class="mono"></span></label>
+        </div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b>registers of one thread</b><span>float32</span></div>
+        <div class="tablewrap"><table class="nums regs" id="regs"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>A strided view instead of a copy</h3>
+        <p>The 24 per-layer inputs are computed by one big product (12,288 × 512) before layer 0, so they come out interleaved by token. Re-packing each layer's slice into its own buffer would cost a copy per layer; passing a base pointer and a row stride costs one <code>mad</code> per element. Within a token the 512 values of a slice are contiguous, so a warp still reads 128 contiguous bytes.</p>
+      </div>
+      <div class="panel">
+        <h3>In place, one launch</h3>
+        <p>The gate g is consumed by exactly one product (<code>proj</code>), so the result can overwrite it: no extra buffer. GELU and the multiply in one element-wise launch read two floats and write one; as two launches they would read three and write two. For 512 values per token this kernel moves about 6 KB per token per layer, a small fraction of the layer's time.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gemma_emb2/emb2.ptx</code>, kernel <code>gelu_mul</code>; launched by <code>gelu_mul()</code> in <code>emb2.c</code> over 512 × tokens elements (256 threads, at most 8 blocks per SM). The ple buffer is filled once per batch by <code>gemm_q8</code> (per_layer_model_proj), <code>scale</code> (× 1/√512) and <code>rmsnorm</code> (per_layer_proj_norm, over every 512-slice).</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('gelu_mul');
+const N = 512, L = 24, PS = L * N, TOK = 4;
+Atlas.facts($('facts'), [['≤ 448', 'blocks (8 per SM)'], ['256', 'threads per block'], ['0 B', 'shared memory'], ['12,288', 'ple row stride (floats)'], ['in place', 'g is overwritten']]);
+const S = { g: 0.84, p: -1.3, i: 1300, l: 7 };
+
+function regs() {
+  const g = fr(S.g), p = fr(S.p);
+  const x2 = fr(g * g), a = fr(x2 * fr(0.044715) + 1), b = fr(g * fr(0.7978845834732056)), y = fr(b * a);
+  const t = fr(Math.abs(y) * fr(2.885390043258667)), e = fr(2 ** t), e1 = fr(e + 1), q = fr(2 / e1), th = fr(1 - q), ths = y < 0 ? -th : th;
+  const th1 = fr(ths + 1), h = fr(g * 0.5), gl = fr(h * th1), out = fr(gl * p);
+  return [
+    ['I', 'div.u32 / mul / sub / mad', 't = i / n; j = i − t·n; src = t·stride + j', null],
+    ['L', 'ld.global.f32 ×2', 'g = g[i], p = ple_l[src]', `${g.toFixed(4)}, ${p.toFixed(4)}`],
+    ['P', 'mul / fma / mul ×2', 'y = √(2/π) g (1 + 0.044715 g²)', y.toFixed(5)],
+    ['T', 'abs / mul / ex2 / add / div / sub', 'tanh|y| = 1 − 2/(2^(2|y| log₂e) + 1)', th.toFixed(6)],
+    ['G', 'copysign / add / mul ×2', 'GELU(g) = ½ g (1 + tanh y)', gl.toFixed(6)],
+    ['S', 'mul / st.global', 'g[i] = GELU(g) · p', out.toFixed(6)],
+  ];
+}
+const steps = [
+  { tag: 'I', short: 'index', title: 'token, column and source offset', text: 'One integer division finds the token t = i / 512 and the column j = i − 512·t. The gate is at g[i] (a dense [T][512] array); the per-layer input is at ple_l[t·12288 + j], where ple_l = ple + l·512 was set by the host.' },
+  { tag: 'L', short: 'load', title: 'load g and p', text: 'Two independent loads. Neighbouring threads read neighbouring floats of both arrays: within a token the slice is contiguous.' },
+  { tag: 'P', short: 'polynomial', title: 'the tanh argument', text: 'One FMA builds 1 + 0.044715·g², then two multiplies by √(2/π) and the polynomial (constants 0f3D372713, 0f3F4C422A).' },
+  { tag: 'T', short: 'tanh', title: 'tanh(|y|) from one ex2', text: 'Using |y| keeps 2^(2|y|·log₂e) ≥ 1: for large |y| it becomes ∞ and 2/∞ = 0 gives tanh = 1 exactly, never NaN.' },
+  { tag: 'G', short: 'GELU', title: 'sign back, then ½ g (1 + tanh y)', text: '<code>copysign.f32</code> restores the sign of y; an add and two multiplies finish GELU.' },
+  { tag: 'S', short: 'store', title: 'multiply by p, store over g[i]', text: 'The product replaces the gate value in place; then i += stride (grid-stride loop).' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `A|extern "C" __global__ void gelu_mul(float *g, const float *p, unsigned n, unsigned pstride, unsigned tokens)
+A|{
+I|    for (unsigned i = blockIdx.x * blockDim.x + threadIdx.x; i < n * tokens;
+I|         i += gridDim.x * blockDim.x) {
+I|        unsigned t = i / n, j = i - t * n;
+L|        float x = g[i], m = p[t * pstride + j];          // p = ple + l * 512, pstride = 24 * 512
+P|        float y = 0.7978845608f * x * fmaf(x * x, 0.044715f, 1.0f);
+T|        float th = 1.0f - 2.0f / (exp2f(fabsf(y) * 2.8853900818f) + 1.0f);
+G|        th = copysignf(th, y);
+G|        float gelu = 0.5f * x * (1.0f + th);
+S|        g[i] = gelu * m;                               // in place
+I|    }
+A|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|LOOP:
+I|    setp.ge.u32         %p1, %r7, %r2;
+I|    @%p1 bra            DONE;
+I|    div.u32             %r9, %r7, %r1;          // t
+I|    mul.lo.u32          %r10, %r9, %r1;
+I|    sub.u32             %r10, %r7, %r10;        // i - t*n = column
+I|    mad.lo.u32          %r10, %r9, %r11, %r10;  // t * pstride + column
+L|    ld.global.f32       %f1, [%rd3];            // g
+L|    ld.global.f32       %f2, [%rd4];            // p
+P|    mul.f32             %f3, %f1, %f1;
+P|    fma.rn.f32          %f3, %f3, 0f3D372713, 0f3F800000;   // 1 + 0.044715 x^2
+P|    mul.f32             %f4, %f1, 0f3F4C422A;               // sqrt(2/pi) x
+P|    mul.f32             %f4, %f4, %f3;          // y
+T|    abs.f32             %f5, %f4;
+T|    mul.f32             %f5, %f5, 0f4038AA3B;   // 2|y| log2(e)
+T|    ex2.approx.f32      %f5, %f5;
+T|    add.f32             %f5, %f5, 0f3F800000;
+T|    div.rn.f32          %f6, 0f40000000, %f5;
+T|    sub.f32             %f6, 0f3F800000, %f6;   // tanh(|y|)
+G|    copysign.f32        %f6, %f4, %f6;
+G|    add.f32             %f6, %f6, 0f3F800000;
+G|    mul.f32             %f7, %f1, 0f3F000000;
+G|    mul.f32             %f7, %f7, %f6;          // gelu(g)
+S|    mul.f32             %f7, %f7, %f2;
+S|    st.global.f32       [%rd3], %f7;            // over g` },
+});
+
+function drawRegs(st) {
+  const R = regs(), order = 'ILPTGS', upto = order.indexOf(st.tag);
+  $('regs').innerHTML = `<tr><th style="text-align:left">instructions</th><th style="text-align:left">computes</th><th>value</th></tr>` + R.map(([t, ins, what, v]) => {
+    const k = order.indexOf(t);
+    return `<tr class="${t === st.tag ? 'on' : ''}"${k > upto ? ' style="opacity:.35"' : ''}><td class="ins">${ins}</td><td style="text-align:left">${what}</td><td>${v === null ? '' : k <= upto ? v : '–'}</td></tr>`;
+  }).join('');
+}
+function drawLayout() {
+  const i = S.i, t = Math.floor(i / N), j = i - t * N, l = S.l, W = 900, ml = 64, rowW = W - ml - 10, rh = 22, gap = 8;
+  const X = (k, c) => ml + (k * N + c) / PS * rowW;
+  let s = `<text x="0" y="14" font-size="11" fill="${C.muted}">ple: one row of 24 × 512 = 12,288 floats per token (layer slices left to right)</text>`;
+  for (let k = 0; k < TOK; k++) {
+    const y = 22 + k * (rh + gap);
+    s += `<text x="${ml - 8}" y="${y + rh / 2 + 4}" font-size="11" text-anchor="end" fill="${k === t ? C.fg : C.muted}">token ${k}</text>`;
+    for (let q = 0; q < L; q++) s += `<rect x="${X(q, 0)}" y="${y}" width="${X(q, N) - X(q, 0) - 1}" height="${rh}" fill="${C.x}" opacity="${q === l ? (k === t ? 0.75 : 0.45) : 0.12}"/>`;
+    if (k === 0) s += `<text x="${X(l, N / 2)}" y="${y - 2}" font-size="10" text-anchor="middle" fill="${C.fg}">l = ${l}</text>`;
+    if (k === t) s += `<line x1="${X(l, j)}" y1="${y - 3}" x2="${X(l, j)}" y2="${y + rh + 3}" stroke="${C.fg}" stroke-width="2.5"/>`;
+  }
+  const gy = 22 + TOK * (rh + gap) + 26, gw = rowW * N / PS * 6;
+  s += `<text x="0" y="${gy - 8}" font-size="11" fill="${C.muted}">g: a dense [T][512] array (drawn 6× wider), overwritten in place</text>`;
+  for (let k = 0; k < TOK; k++) {
+    const y = gy + k * (rh * 0.8 + 6);
+    s += `<text x="${ml - 8}" y="${y + rh * 0.4 + 4}" font-size="11" text-anchor="end" fill="${k === t ? C.fg : C.muted}">token ${k}</text>`;
+    s += `<rect x="${ml}" y="${y}" width="${gw}" height="${rh * 0.8}" fill="${C.w}" opacity="${k === t ? 0.6 : 0.2}"/>`;
+    if (k === t) { const x = ml + j / N * gw; s += `<line x1="${x}" y1="${y - 3}" x2="${x}" y2="${y + rh * 0.8 + 3}" stroke="${C.fg}" stroke-width="2.5"/>`; }
+  }
+  const H = gy + TOK * (rh * 0.8 + 6) + 4;
+  $('layout').setAttribute('viewBox', `0 0 ${W} ${H}`); $('layout').innerHTML = s;
+  $('iv').textContent = Atlas.int(i); $('lv').textContent = l;
+  $('mapstatus').innerHTML = `i = ${Atlas.int(i)} → t = ${t}, column ${j} · gate g[${Atlas.int(i)}] · per-layer input ple[${t}·12288 + ${l}·512 + ${j}] = ple[${Atlas.int(t * PS + l * N + j)}] · result back to g[${Atlas.int(i)}]`;
+}
+function draw() { const st = stepper.step; $('gv').textContent = S.g.toFixed(2); $('pv').textContent = S.p.toFixed(2); drawRegs(st); drawLayout(); }
+$('gs').addEventListener('input', () => { S.g = +$('gs').value; draw(); });
+$('ps').addEventListener('input', () => { S.p = +$('ps').value; draw(); });
+$('is').addEventListener('input', () => { S.i = +$('is').value; drawLayout(); });
+$('ls').addEventListener('input', () => { S.l = +$('ls').value; drawLayout(); });
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1300 });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>
