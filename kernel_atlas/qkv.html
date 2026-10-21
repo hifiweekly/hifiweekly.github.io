@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>The q, k, v Step</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.fig svg { display: block; width: 100%; height: auto; }
+.toy td, .toy th { font-family: var(--font-mono); font-size: 12.5px; }
+.toy td.q { color: var(--x); } .toy td.k { color: var(--w); } .toy td.v { color: var(--y); }
+.cmp td, .cmp th { text-align: left; }
+.cmp td.n { text-align: right; font-family: var(--font-mono); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Kernel Atlas · the first step of every attention block · all three engines</div>
+    <h1>×3 q, k, v</h1>
+    <p>In every launch-order list, the attention half of a layer begins with "×3 q, k, v": the same matrix kernel runs three times, each time multiplying the token's normalized hidden state <code>xn</code> by a different weight matrix. The three results are the <b class="x">query</b> (what this token is looking for), the <b class="w">key</b> (what this token offers to be matched on) and the <b class="y">value</b> (what this token passes on when it is matched). They land side by side in one buffer row, <code>qkv[t] = [q | k | v]</code>, which the next kernels normalize, rotate and attend over.</p>
+    <div class="formula"><span class="x">q</span> = W<sub>q</sub>·<span class="muted">xn</span> &nbsp; <span class="w">k</span> = W<sub>k</sub>·<span class="muted">xn</span> &nbsp; <span class="y">v</span> = W<sub>v</sub>·<span class="muted">xn</span> &nbsp;&nbsp;<span class="muted">// same input, three slices of one qkv row</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-shape">
+    <div class="sechead">
+      <h2 id="s-shape">What the three launches produce</h2>
+      <p>Pick an engine. The drawing is to scale within an engine: the input row <code>xn</code> on top, the three weight matrices (rows = outputs), and the <code>qkv</code> row they fill, split into heads. Queries have more heads than keys and values (grouped-query attention): the coloured brackets show which query heads share one key/value head.</p>
+    </div>
+    <div class="panel">
+      <div class="controls">
+        <span class="seg" id="engSeg" role="group" aria-label="Engine"></span>
+        <span class="seg" id="kindSeg" role="group" aria-label="Layer kind"></span>
+        <span class="seg" id="passSeg" role="group" aria-label="Pass"></span>
+      </div>
+      <div class="fig"><svg id="shape" role="img" aria-label="Shapes of xn, the q/k/v weights and the qkv row"></svg></div>
+      <div class="tablewrap"><table class="list" id="launch"></table></div>
+      <div class="status" id="next"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-toy">
+    <div class="sechead">
+      <h2 id="s-toy">What q, k and v are for: a 4-token toy</h2>
+      <p>Real heads have 64 to 512 dimensions; here every vector has 4, one head, four tokens. Step through the three products for every token, then one token's attention: its query is compared with every key, the scores become weights, and the weights mix the values. Click a token to make it the query.</p>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="fig"><svg id="toyfig" role="img" aria-label="Toy attention over four tokens"></svg></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="tablewrap"><table class="nums toy" id="toytab"></table></div>
+        <dl class="kv" id="toycard"></dl>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-cmp">
+    <div class="sechead"><h2 id="s-cmp">The three engines side by side</h2><p>Per layer; Q8_0 bytes include the f16 scale per 32 weights.</p></div>
+    <div class="panel tablewrap"><table class="list cmp" id="cmp"></table></div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why three launches and not one</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>It works because the output can be a column slice</h3>
+        <p>The matrix kernels take a row stride <code>ldy</code> for their output. Each of the three launches gets the full qkv row width as <code>ldy</code> and a pointer offset to its slice (0 for q, the size of q for k, q + k for v), so the three results interleave per token without a copy. Every launch reads the same <code>xn</code>, which stays in L2 between them.</p>
+      </div>
+      <div class="panel">
+        <h3>…and it could be one</h3>
+        <p>Stacking W<sub>q</sub>, W<sub>k</sub> and W<sub>v</sub> into one matrix at load time, as the engines already do for the feed-forward's gate ‖ up, would make it a single launch over all rows, writing the same qkv row. It saves two launches per layer and reads <code>xn</code> once. For the big generators the saving is small next to the weight traffic; for EmbeddingGemma 2 on short texts, where launch overhead dominates, it would matter more. None of the engines does it yet.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>Sources: <code>forward()</code> in <code>gptoss/gptoss.c</code>, <code>gemma3/gemma3.c</code> and <code>gemma_emb2/emb2.c</code>; shapes from the GGUF headers. The toy numbers are generated and computed in float32 in your browser.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+// ---------- engines ----------
+const ENG = {
+  gptoss: { name: 'gpt-oss-20b', page: 'gptoss.html', E: 2880, bias: true, passes: ['decode', 'prefill'], kinds: { local: { nh: 64, nkv: 8, D: 64 }, global: { nh: 64, nkv: 8, D: 64 } }, layers: 24,
+    next: '<a href="rope_kv.html">rope_kv</a>: RoPE (YaRN) on q and k, then k and v copied to the f16 KV cache; <a href="attention.html">attention</a> reads q from qkv and k, v from the cache.' },
+  gemma3: { name: 'Gemma 3 12B', page: 'gemma3.html', E: 3840, bias: false, passes: ['decode', 'prefill'], kinds: { local: { nh: 16, nkv: 8, D: 256 }, global: { nh: 16, nkv: 8, D: 256 } }, layers: 48,
+    next: '<a href="qk_norm_rope.html">qk_norm_rope</a>: RMSNorm of every q and k head, RoPE, and k, v into the f16 KV cache; then <a href="attention.html">attention</a>.' },
+  gemma_emb2: { name: 'EmbeddingGemma 2', page: 'gemma_emb2.html', E: 512, bias: false, passes: ['encode'], kinds: { local: { nh: 4, nkv: 2, D: 256 }, global: { nh: 4, nkv: 1, D: 512 } }, layers: 24,
+    next: '<a href="head_norm_rope.html">head_norm_rope</a>: RMSNorm of every head (v without weight) and RoPE on q and k, in place, no cache; then <a href="attention_enc.html">attention_enc</a>.' },
+};
+const S = { eng: 'gemma3', kind: 'local', pass: 'decode', tq: 2 };
+const segs = (el, key, opts, onChange) => {
+  el.innerHTML = opts.map(([v, t]) => `<button type="button" data-v="${v}">${t}</button>`).join('');
+  const sync = () => el.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === S[key]));
+  el.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S[key] = b.dataset.v; onChange(); sync(); });
+  sync(); return sync;
+};
+const syncEng = segs($('engSeg'), 'eng', Object.entries(ENG).map(([k, e]) => [k, e.name]), () => {
+  const e = ENG[S.eng]; if (!e.passes.includes(S.pass)) S.pass = e.passes[0]; buildPass(); drawShape();
+});
+segs($('kindSeg'), 'kind', [['local', 'local layer'], ['global', 'global layer']], drawShape);
+let syncPass;
+function buildPass() { syncPass = segs($('passSeg'), 'pass', ENG[S.eng].passes.map(p => [p, p === 'decode' ? 'decode · 1 token' : p === 'prefill' ? 'prefill · T tokens' : 'encode · T tokens']), drawShape); }
+buildPass();
+$('crumbs').innerHTML = `<a href="index.html">Kernel Atlas</a><span class="muted">/</span><span class="muted">Models</span><span style="margin-left:auto"></span>` + Object.values(ENG).map(e => `<a href="${e.page}">${e.name} →</a>`).join('');
+Atlas.facts($('facts'), [['3', 'launches per layer'], ['1', 'input row xn, shared'], ['1', 'output row qkv = [q | k | v]'], ['mv_q8', 'decode (1 token)'], ['gemm_q8', 'prefill / encode (T tokens)']]);
+
+const q8 = (r, c) => r * c * 34 / 32;
+function dims() { const e = ENG[S.eng], k = e.kinds[S.kind]; return { e, ...k, Q: k.nh * k.D, KV: k.nkv * k.D }; }
+function drawShape() {
+  const { e, nh, nkv, D, Q, KV } = dims(), E = e.E, ROW = Q + 2 * KV, W = 1000, ml = 70, sc = (W - ml - 20) / Math.max(ROW, E);
+  let s = '', y = 10;
+  const bar = (x, yy, w, h, col, op, label, sub) => `<rect x="${x}" y="${yy}" width="${Math.max(w, 1)}" height="${h}" rx="2" fill="${col}" opacity="${op}"/>` + (label ? `<text x="${x + 4}" y="${yy + h / 2 + 4}" font-size="11" fill="${C.fg}">${label}</text>` : '') + (sub ? `<text x="${x + w - 4}" y="${yy + h / 2 + 4}" font-size="10" text-anchor="end" fill="${C.muted}">${sub}</text>` : '');
+  s += `<text x="0" y="${y + 13}" font-size="11" fill="${C.muted}">xn</text>` + bar(ml, y, E * sc, 18, C.muted, 0.35, `xn: ${Atlas.int(E)} floats (normalized hidden state)`, '');
+  y += 34;
+  const mats = [['q', Q, C.x, `W_q ${Atlas.int(Q)} × ${Atlas.int(E)}`], ['k', KV, C.w, `W_k ${Atlas.int(KV)} × ${Atlas.int(E)}`], ['v', KV, C.y, `W_v ${Atlas.int(KV)} × ${Atlas.int(E)}`]];
+  let ox = ml;
+  const mh = 70;
+  mats.forEach(([n, r, col, lab]) => {
+    const w = r * sc;
+    s += `<rect x="${ox}" y="${y}" width="${Math.max(w - 3, 1)}" height="${mh}" fill="${col}" opacity="0.18" stroke="${col}"/>`;
+    s += `<text x="${ox + 4}" y="${y + 14}" font-size="10.5" fill="${C.fg}">${w > 120 ? lab : n}</text>`;
+    s += `<text x="${ox + 4}" y="${y + mh - 6}" font-size="9.5" fill="${C.muted}">${w > 120 ? (q8(r, E) / 1048576).toFixed(2) + ' MiB Q8_0' : ''}</text>`;
+    s += `<line x1="${ox + w / 2}" y1="${y + mh}" x2="${ox + w / 2}" y2="${y + mh + 22}" stroke="${col}" stroke-width="1.5" marker-end="url(#ar)"/>`;
+    ox += w;
+  });
+  s += `<text x="0" y="${y + 38}" font-size="11" fill="${C.muted}">weights</text>`;
+  y += mh + 26;
+  // qkv row with heads
+  s += `<text x="0" y="${y + 15}" font-size="11" fill="${C.muted}">qkv[t]</text>`;
+  const hw = D * sc;
+  for (let h = 0; h < nh; h++) s += `<rect x="${ml + h * hw}" y="${y}" width="${Math.max(hw - (hw > 4 ? 1 : 0), 0.5)}" height="20" fill="${C.x}" opacity="${0.35 + 0.3 * ((Math.floor(h / (nh / nkv))) % 2)}"/>`;
+  for (let h = 0; h < nkv; h++) {
+    s += `<rect x="${ml + (Q + h * D) * sc}" y="${y}" width="${Math.max(hw - 1, 0.5)}" height="20" fill="${C.w}" opacity="${0.35 + 0.3 * (h % 2)}"/>`;
+    s += `<rect x="${ml + (Q + KV + h * D) * sc}" y="${y}" width="${Math.max(hw - 1, 0.5)}" height="20" fill="${C.y}" opacity="${0.35 + 0.3 * (h % 2)}"/>`;
+  }
+  s += `<text x="${ml + 4}" y="${y + 14}" font-size="10.5" fill="${C.fg}">q: ${nh} heads × ${D}</text>`;
+  if (KV * sc > 90) { s += `<text x="${ml + Q * sc + 4}" y="${y + 14}" font-size="10.5" fill="${C.fg}">k: ${nkv} × ${D}</text><text x="${ml + (Q + KV) * sc + 4}" y="${y + 14}" font-size="10.5" fill="${C.fg}">v: ${nkv} × ${D}</text>`; }
+  else s += `<text x="${ml + (Q + 2 * KV) * sc + 6}" y="${y + 14}" font-size="10.5" fill="${C.fg}">k, v: ${nkv} × ${D} each</text>`;
+  // GQA brackets
+  const g = nh / nkv; y += 26;
+  for (let h = 0; h < nkv; h++) {
+    const x0 = ml + h * g * hw, x1 = ml + (h + 1) * g * hw - 2, kx = ml + (Q + h * D + D / 2) * sc, col = h % 2 ? C.sync : C.w;
+    s += `<path d="M${x0} ${y} V${y + 6} H${x1} V${y}" fill="none" stroke="${col}" stroke-width="1.2"/>`;
+    s += `<path d="M${(x0 + x1) / 2} ${y + 6} Q ${((x0 + x1) / 2 + kx) / 2} ${y + 34} ${kx} ${y - 6}" fill="none" stroke="${col}" stroke-width="1" opacity="0.7"/>`;
+  }
+  s += `<text x="${ml}" y="${y + 46}" font-size="10.5" fill="${C.muted}">brackets: ${g} query head${g > 1 ? 's' : ''} share each key/value head (grouped-query attention) · row = ${Atlas.int(ROW)} floats = ${Atlas.int(ROW * 4)} bytes per token</text>`;
+  const H = y + 54;
+  $('shape').setAttribute('viewBox', `0 0 ${W} ${H}`);
+  $('shape').innerHTML = `<defs><marker id="ar" viewBox="0 0 8 8" refX="4" refY="7" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 0 L4 8z" fill="${C.muted}" transform="rotate(-90 4 4)"/></marker></defs>` + s;
+  $('kindSeg').style.display = S.eng === 'gemma_emb2' ? '' : 'none';   // q/k/v shapes differ by layer kind only there
+  // launch table
+  const dec = S.pass === 'decode', kn = dec ? 'mv_q8' : 'gemm_q8';
+  const grid = r => dec ? `${Atlas.int(r / 8)} blocks · 256 (one warp per row)` : `grid (${r / 64}, ⌈T/32⌉) · 256`;
+  const rows = [['q', Q, 0], ['k', KV, Q], ['v', KV, Q + KV]];
+  $('launch').innerHTML = `<thead><tr><th>#</th><th>kernel</th><th>weight</th><th>launch</th><th>writes</th><th>bias</th></tr></thead><tbody>` +
+    rows.map(([n, r, off], i) => `<tr><td>${i + 1}</td><td><a href="${kn}.html">${kn}</a></td><td>attn_${n}.weight · ${Atlas.int(r)} × ${Atlas.int(E)}</td><td>${grid(r)}</td><td>qkv + ${Atlas.int(off)} floats${dec ? '' : `, ldy = ${Atlas.int(Q + 2 * KV)}`}</td><td>${e.bias ? `attn_${n}.bias (added in the kernel)` : 'none'}</td></tr>`).join('') + '</tbody>';
+  $('next').innerHTML = `Next in ${e.name}: ${e.next}`;
+}
+
+// ---------- comparison table ----------
+(() => {
+  const head = `<thead><tr><th>engine · layer</th><th>n_embd</th><th>q heads × dim</th><th>kv heads</th><th>qkv row (floats)</th><th>W_q + W_k + W_v</th><th>kernel</th><th>launches / token (all layers)</th></tr></thead>`;
+  const rows = [];
+  for (const [id, e] of Object.entries(ENG)) for (const k of id === 'gptoss' || id === 'gemma3' ? ['local'] : ['local', 'global']) {
+    const d = e.kinds[k], Q = d.nh * d.D, KV = d.nkv * d.D;
+    rows.push(`<tr><td><a href="${e.page}">${e.name}</a>${id === 'gemma_emb2' ? ' · ' + k : ''}</td><td class="n">${Atlas.int(e.E)}</td><td class="n">${d.nh} × ${d.D}</td><td class="n">${d.nkv}</td><td class="n">${Atlas.int(Q + 2 * KV)}</td><td class="n">${(q8(Q + 2 * KV, e.E) / 1048576).toFixed(2)} MiB</td><td>${id === 'gemma_emb2' ? 'gemm_q8' : 'mv_q8 / gemm_q8'}${e.bias ? ' + bias' : ''}</td><td class="n">${id === 'gemma_emb2' ? `3 × 24 = 72 per batch` : `3 × ${e.layers} = ${3 * e.layers}`}</td></tr>`);
+  }
+  $('cmp').innerHTML = head + '<tbody>' + rows.join('') + '</tbody>';
+})();
+
+// ---------- toy ----------
+const TOK = ['The', 'cat', 'sat', 'down'], N = 4, d = 4;
+const rr = Atlas.rng(7), rnd = () => fr(Atlas.gauss(rr) * 0.8);
+const X = TOK.map(() => Array.from({ length: d }, rnd));
+const Wq = Array.from({ length: d }, () => Array.from({ length: d }, rnd)), Wk = Array.from({ length: d }, () => Array.from({ length: d }, rnd)), Wv = Array.from({ length: d }, () => Array.from({ length: d }, rnd));
+const mv = (W, x) => W.map(row => row.reduce((a, w, i) => fr(w * x[i] + a), 0));
+const Qv = X.map(x => mv(Wq, x)), Kv = X.map(x => mv(Wk, x)), Vv = X.map(x => mv(Wv, x));
+function att(t) {
+  const s = Kv.map(k => fr(k.reduce((a, v, i) => fr(v * Qv[t][i] + a), 0) / 2)), m = Math.max(...s), e = s.map(v => Math.exp(v - m)), Z = e.reduce((a, b) => a + b, 0), p = e.map(v => v / Z);
+  const o = Array.from({ length: d }, (_, i) => p.reduce((a, w, j) => a + w * Vv[j][i], 0));
+  return { s, p, o };
+}
+const steps = [
+  { tag: 'x', short: 'xn', title: 'every token starts as a normalized hidden vector xn', text: 'Four tokens, 4 numbers each. In a real model these come from the previous layer (or the embedding) through RMSNorm.' },
+  { tag: 'q', short: 'q = W_q·xn', title: 'launch 1: queries', text: 'The same 4 × 4 matrix W_q multiplies every token\'s xn. A query encodes what this token is looking for in the others.' },
+  { tag: 'k', short: 'k = W_k·xn', title: 'launch 2: keys', text: 'A different matrix W_k, the same inputs. A key encodes what a token offers: queries that point the same way as a key will score it highly.' },
+  { tag: 'v', short: 'v = W_v·xn', title: 'launch 3: values', text: 'A third matrix W_v. The value is the content a token hands over once it has been chosen; it plays no part in choosing.' },
+  { tag: 's', short: 'scores', title: 'attention for one query: q · k for every key', text: 'The selected token\'s query is dotted with every key (here divided by √4 = 2, as gpt-oss and Gemma 3 scale; EmbeddingGemma 2 builds the scaling into its k norm). This toy is bidirectional, like EmbeddingGemma 2; the generators would only look at earlier tokens.' },
+  { tag: 'p', short: 'softmax', title: 'softmax turns the scores into weights that sum to 1', text: 'The largest score gets the largest share; the others still contribute a little.' },
+  { tag: 'o', short: 'mix values', title: 'the output is the weighted sum of the values', text: 'This vector, one per head, goes on to the output projection W_o and is added to the residual stream. q and k only decided the weights; what flows on came from v.' },
+];
+const order = steps.map(s => s.tag), at = (st, t) => order.indexOf(st.tag) >= order.indexOf(t);
+function drawToy() {
+  const st = stepper.step, A = att(S.tq), W = 640, H = 300, cx = [90, 250, 410, 570];
+  let s = '';
+  const pm = Math.max(...A.p);
+  TOK.forEach((w, j) => {
+    const x = cx[j], sel = j === S.tq;
+    if (at(st, 'p') && st.tag !== 's') { const wd = 2 + 14 * A.p[j] / pm; s += `<path d="M${cx[S.tq]} 70 C ${cx[S.tq]} 150, ${x} 110, ${x} 196" fill="none" stroke="${C.sync}" stroke-width="${wd}" opacity="0.55"/>`; }
+    else if (st.tag === 's') s += `<path d="M${cx[S.tq]} 70 C ${cx[S.tq]} 150, ${x} 110, ${x} 196" fill="none" stroke="${C.line}" stroke-width="1.5"/>`;
+    s += `<g data-t="${j}" style="cursor:pointer"><rect x="${x - 55}" y="20" width="110" height="46" rx="6" fill="${C.panel}" stroke="${sel ? C.fg : C.line}" stroke-width="${sel ? 2 : 1}"/>`;
+    s += `<text x="${x}" y="40" font-size="14" text-anchor="middle" fill="${C.fg}" font-weight="600">${w}</text><text x="${x}" y="57" font-size="10" text-anchor="middle" fill="${C.muted}">${sel ? 'query token' : 'click to query'}</text></g>`;
+    const chips = [['q', C.x, 'q'], ['k', C.w, 'k'], ['v', C.y, 'v']];
+    chips.forEach(([t, col, lab], ci) => { const on = at(st, t); s += `<rect x="${x - 45 + ci * 32}" y="200" width="26" height="22" rx="3" fill="${col}" opacity="${on ? (t === 'q' && !sel && at(st, 's') ? 0.15 : 0.6) : 0.1}"/><text x="${x - 32 + ci * 32}" y="215" font-size="11" text-anchor="middle" fill="${C.fg}">${on ? lab : ''}</text>`; });
+    if (at(st, 's')) s += `<text x="${x}" y="245" font-size="11" text-anchor="middle" fill="${C.fg}">score ${A.s[j].toFixed(2)}</text>`;
+    if (at(st, 'p')) s += `<text x="${x}" y="262" font-size="11" text-anchor="middle" fill="${C.sync}">weight ${(A.p[j] * 100).toFixed(1)}%</text>`;
+  });
+  if (at(st, 'o')) s += `<text x="${W / 2}" y="290" font-size="12" text-anchor="middle" fill="${C.y}">out("${TOK[S.tq]}") = Σ weight · v = [${A.o.map(v => v.toFixed(2)).join(', ')}]</text>`;
+  $('toyfig').setAttribute('viewBox', `0 0 ${W} ${H}`); $('toyfig').innerHTML = s;
+  $('toyfig').querySelectorAll('g[data-t]').forEach(gel => gel.addEventListener('click', () => { S.tq = +gel.dataset.t; drawToy(); }));
+  const f = v => v.map(x => x.toFixed(2)).join(' ');
+  $('toytab').innerHTML = `<tr><th>token</th><th>xn</th><th>q</th><th>k</th><th>v</th></tr>` + TOK.map((w, j) =>
+    `<tr class="${j === S.tq ? 'on' : ''}"><td>${w}</td><td>${f(X[j])}</td><td class="q">${at(st, 'q') ? f(Qv[j]) : '–'}</td><td class="k">${at(st, 'k') ? f(Kv[j]) : '–'}</td><td class="v">${at(st, 'v') ? f(Vv[j]) : '–'}</td></tr>`).join('');
+  $('toycard').innerHTML = [['query', `"${TOK[S.tq]}"`], ['matrices', 'W_q, W_k, W_v: 4 × 4, one per launch'], ['best match', at(st, 'p') ? `"${TOK[A.p.indexOf(pm)]}" (${(pm * 100).toFixed(1)}%)` : '–']].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+}
+const stepper = Atlas.stepper({ steps, render: drawToy, delay: 1600 });
+stepper.go(0);
+drawShape();
+Atlas.onResize(() => { drawShape(); drawToy(); });
+})();
+</script>
+</body>
+</html>
