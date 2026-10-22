@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>The gate ‖ up Step</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.fig svg { display: block; width: 100%; height: auto; }
+.toy td, .toy th { font-family: var(--font-mono); font-size: 12.5px; }
+.toy td.g { color: var(--w); } .toy td.u { color: var(--x); } .toy td.h { color: var(--y); }
+.cmp td, .cmp th { text-align: left; }
+.cmp td.n { text-align: right; font-family: var(--font-mono); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Kernel Atlas · the first step of every feed-forward block · all three engines</div>
+    <h1>gate ‖ up</h1>
+    <p>The feed-forward half of a layer starts with two matrix products of the same normalized hidden state <code>xn</code>: the <b class="w">gate</b> projection and the <b class="x">up</b> projection, both from the model width to the wider feed-forward width. An activation is applied to the gate and the result multiplies the up value element by element, so unit <i>j</i> of the gate decides how much of unit <i>j</i> of up passes on to the <code>down</code> projection. The "‖" means the two weight matrices are stacked into one at load time: Gemma 3 and EmbeddingGemma 2 compute gate and up in a single launch that writes one row <code>gu[t] = [gate | up]</code>. gpt-oss keeps them apart ("×2 gate, up"), one launch each, over the 4 experts the router picked.</p>
+    <div class="formula"><span class="y">h</span>[j] = act(<span class="w">gu</span>[j]) · <span class="x">gu</span>[F + j] &nbsp;&nbsp;<span class="muted">// gu = [W<sub>gate</sub> ‖ W<sub>up</sub>] · xn, one launch, 2F rows</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-shape">
+    <div class="sechead">
+      <h2 id="s-shape">What the launch produces</h2>
+      <p>Pick an engine. The drawing is to scale within an engine: the input row <code>xn</code> on top, the weight rows the launch walks (gate rows, then up rows), the output row they fill, and the activation that pairs unit <i>j</i> of the gate with unit <i>j</i> of up. The curves show three such pairs.</p>
+    </div>
+    <div class="panel">
+      <div class="controls">
+        <span class="seg" id="engSeg" role="group" aria-label="Engine"></span>
+        <span class="seg" id="passSeg" role="group" aria-label="Pass"></span>
+      </div>
+      <div class="fig"><svg id="shape" role="img" aria-label="Shapes of xn, the gate and up weights, the output row and the activation"></svg></div>
+      <div class="tablewrap"><table class="list" id="launch"></table></div>
+      <div class="status" id="next"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-toy">
+    <div class="sechead">
+      <h2 id="s-toy">What the gate does: a 4-unit toy</h2>
+      <p>A model width of 4 and a feed-forward width of 4, so the stacked matrix has 8 rows. Step through the one launch that fills <code>gu</code>, then the activation kernel that turns it into <code>h</code>. Switch the activation to compare Gemma's GEGLU with gpt-oss's clamped SwiGLU on the same numbers.</p>
+    </div>
+    <div class="controls"><span class="seg" id="actSeg" role="group" aria-label="Activation"></span></div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="fig"><svg id="toyfig" role="img" aria-label="Toy gate and up product and activation"></svg></div>
+        <div class="caption" id="caption"></div>
+        <div class="tablewrap"><table class="nums toy" id="toytab"></table></div>
+      </div>
+      <div class="panel">
+        <div class="fig"><svg id="curve" role="img" aria-label="Activation curve with the four gate values marked"></svg></div>
+        <dl class="kv" id="toycard"></dl>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-cmp">
+    <div class="sechead"><h2 id="s-cmp">The three engines side by side</h2><p>Per layer and token. Bytes are the weights one token's gate and up products read: Q8_0 is 34 bytes per 32 weights, Q5_0 22, MXFP4 17 (plus gpt-oss's f32 bias per row).</p></div>
+    <div class="panel tablewrap"><table class="list cmp" id="cmp"></table></div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why one launch, and why gpt-oss still has two</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Stacking is allowed because the pairing is fixed</h3>
+        <p>Gate and up read the same <code>xn</code>, and the activation only ever combines gate unit <i>j</i> with up unit <i>j</i>. So at load time the engines copy <code>ffn_gate.weight</code> into rows 0 … F−1 and <code>ffn_up.weight</code> into rows F … 2F−1 of one quantized matrix (<code>upload_q5(…, &amp;gate_up, 0)</code> and <code>(…, F)</code>; <code>upload_q8</code> in EmbeddingGemma 2). The matrix kernel neither knows nor cares where one ends: it writes a row of 2F floats, and <code>geglu</code> reads <code>gu[t][j]</code> and <code>gu[t][F + j]</code>. One launch instead of two, <code>xn</code> quantized and read once, and twice as many blocks in that one launch, which fills the GPU better when there are few tokens.</p>
+      </div>
+      <div class="panel">
+        <h3>gpt-oss: separate tensors, separate biases, two buffers</h3>
+        <p>In the gpt-oss file the experts' gate and up are separate tensors (<code>ffn_gate_exps</code>, <code>ffn_up_exps</code>), each with its own f32 bias, and <code>swiglu_oai</code> takes two pointers, <code>gate</code> and <code>up</code>, writing its result over <code>gate</code>. The same trick would work per expert: stack each expert's gate and up rows (and biases) into one 5,760 × 2,880 matrix, and <code>mv_mxfp4</code> / <code>gemm_mxfp4</code> would run once with twice the rows. Each launch already spans 4 experts × 2,880 rows, so the gain is one launch per layer, not more parallelism. The engine doesn't do it yet.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer><span>Sources: <code>forward()</code> and the weight loaders in <code>gptoss/gptoss.c</code>, <code>gemma3/gemma3.c</code> and <code>gemma_emb2/emb2.c</code>; shapes from the GGUF headers. The toy numbers are generated and computed in float32 in your browser.</span></footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+// ---------- engines ----------
+const ENG = {
+  gptoss: { name: 'gpt-oss-20b', page: 'gptoss.html', E: 2880, F: 2880, fmt: 'MXFP4', bpw: 17 / 32, stacked: false, K: 4, NE: 32, act: 'swiglu_oai', passes: ['decode', 'prefill'], layers: 24,
+    before: { decode: '<a href="router_topk.html">router_topk</a> picks 4 experts and their weights; <a href="quant_q8.html">quant_q8</a> turns xn into int8 values xq and a scale per 32 (xd).', prefill: '<a href="router_topk.html">router_topk</a> picks 4 experts per token; <a href="moe_sort.html">moe_sort</a> groups the (token, slot) pairs by expert; <a href="quant_q8.html">quant_q8</a> rounds xn in place.' },
+    next: '<a href="quant_q8.html">quant_q8</a> on h, then <a href="mv_mxfp4.html">mv_mxfp4</a> down for each chosen expert and <a href="moe_combine.html">moe_combine</a>, the router-weighted sum added to the residual.' },
+  gemma3: { name: 'Gemma 3 12B', page: 'gemma3.html', E: 3840, F: 15360, fmt: 'Q5_0', bpw: 22 / 32, stacked: true, act: 'geglu', passes: ['decode', 'prefill'], layers: 48,
+    before: { decode: '<a href="add_rmsnorm.html">add_rmsnorm</a> adds the attention output and writes xn = ffn_norm(x); <a href="quant_q8.html">quant_q8</a> turns it into int8 xq and scales xd.', prefill: '<a href="add_rmsnorm.html">add_rmsnorm</a> writes xn = ffn_norm(x) for every token; <a href="quant_q8.html">quant_q8</a> rounds it in place to the values the int8 path would see.' },
+    next: '<a href="quant_q8.html">quant_q8</a> on h, then <a href="mv_q5.html">mv_q5</a> / gemm_q5 down (15,360 → 3,840) and <a href="add_rmsnorm.html">add_rmsnorm</a> with post_ffw_norm.' },
+  gemma_emb2: { name: 'EmbeddingGemma 2', page: 'gemma_emb2.html', E: 512, F: 2048, fmt: 'Q8_0', bpw: 34 / 32, stacked: true, act: 'geglu', passes: ['encode'], layers: 24,
+    before: { encode: '<a href="add_rmsnorm.html">add_rmsnorm</a> adds the attention output and writes xn = ffn_norm(x) for every token of the packed batch.' },
+    next: '<a href="gemm_q8.html">gemm_q8</a> down (2,048 → 512), then <a href="norm_add.html">norm_add</a> with post_ffw_norm, before the per-layer-input step.' },
+};
+const S = { eng: 'gemma3', pass: 'decode', act: 'geglu' };
+const segs = (el, key, opts, onChange) => {
+  el.innerHTML = opts.map(([v, t]) => `<button type="button" data-v="${v}">${t}</button>`).join('');
+  const sync = () => el.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === S[key]));
+  el.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S[key] = b.dataset.v; onChange(); sync(); });
+  sync(); return sync;
+};
+segs($('engSeg'), 'eng', Object.entries(ENG).map(([k, e]) => [k, e.name]), () => {
+  const e = ENG[S.eng]; if (!e.passes.includes(S.pass)) S.pass = e.passes[0]; buildPass(); drawShape();
+});
+function buildPass() { segs($('passSeg'), 'pass', ENG[S.eng].passes.map(p => [p, p === 'decode' ? 'decode · 1 token' : p === 'prefill' ? 'prefill · T tokens' : 'encode · T tokens']), drawShape); }
+buildPass();
+$('crumbs').innerHTML = `<a href="index.html">Kernel Atlas</a><span class="muted">/</span><span class="muted">Models</span><span style="margin-left:auto"></span>` + Object.values(ENG).map(e => `<a href="${e.page}">${e.name} →</a>`).join('');
+Atlas.facts($('facts'), [['1', 'launch for gate ‖ up (Gemma 3, EmbeddingGemma 2)'], ['2', 'launches for gpt-oss (gate, up)'], ['2F', 'output floats per token'], ['geglu', 'Gemma activation'], ['swiglu_oai', 'gpt-oss activation']]);
+
+const MiB = b => (b / 1048576).toFixed(2) + ' MiB';
+const wbytes = (e, rows) => rows * e.E * e.bpw + (e.stacked ? 0 : rows * 4);
+
+// ---------- shape drawing ----------
+function drawShape() {
+  const e = ENG[S.eng], E = e.E, F = e.F, W = 1000, ml = 70, gap = e.stacked ? 0 : 24;
+  const K = e.stacked ? 1 : e.K, R = K * F;            // rows in the gate part and in the up part
+  const sc = (W - ml - 20 - gap) / Math.max(2 * R, E), xg = ml, xu = ml + R * sc + gap;
+  let s = '', y = 10;
+  const label = (x, yy, t, col = C.fg, size = 11, anchor = 'start') => `<text x="${x}" y="${yy}" font-size="${size}" text-anchor="${anchor}" fill="${col}">${t}</text>`;
+  s += label(0, y + 13, 'xn', C.muted) + `<rect x="${ml}" y="${y}" width="${E * sc}" height="18" rx="2" fill="${C.muted}" opacity="0.35"/>` + label(ml + 4, y + 13, `xn: ${Atlas.int(E)} floats`, C.fg, 10.5);
+  y += 34;
+  // weights
+  const mh = 70;
+  s += label(0, y + 38, 'weights', C.muted);
+  if (e.stacked) {
+    s += `<rect x="${xg}" y="${y}" width="${R * sc}" height="${mh}" fill="${C.w}" opacity="0.2"/><rect x="${xu}" y="${y}" width="${R * sc}" height="${mh}" fill="${C.x}" opacity="0.2"/>`;
+    s += `<rect x="${xg}" y="${y}" width="${2 * R * sc}" height="${mh}" fill="none" stroke="${C.fg}" stroke-width="1.2"/><line x1="${xu}" y1="${y}" x2="${xu}" y2="${y + mh}" stroke="${C.fg}" stroke-dasharray="3 3"/>`;
+    s += label(xg + 6, y + 15, `ffn_gate.weight · rows 0 … ${Atlas.int(F - 1)}`, C.fg, 10.5) + label(xu + 6, y + 15, `ffn_up.weight · rows ${Atlas.int(F)} … ${Atlas.int(2 * F - 1)}`, C.fg, 10.5);
+    s += label(xg + 6, y + mh - 8, `one ${e.fmt} matrix gate_up: ${Atlas.int(2 * F)} × ${Atlas.int(E)} · ${MiB(wbytes(e, 2 * F))}`, C.muted, 10);
+    s += `<line x1="${xu}" y1="${y + mh}" x2="${xu}" y2="${y + mh + 22}" stroke="${C.fg}" stroke-width="1.5" marker-end="url(#ar)"/>` + label(xu + 8, y + mh + 16, '1 launch', C.fg, 10.5);
+  } else {
+    const ex = [3, 11, 17, 28];
+    [[xg, C.w, 'ffn_gate_exps', 'gate'], [xu, C.x, 'ffn_up_exps', 'up']].forEach(([x0, col, t, n]) => {
+      for (let k = 0; k < K; k++) {
+        const x = x0 + k * F * sc;
+        s += `<rect x="${x}" y="${y}" width="${F * sc - 2}" height="${mh}" fill="${col}" opacity="0.2" stroke="${col}"/>` + label(x + 5, y + 15, `expert ${ex[k]}`, C.fg, 10);
+      }
+      s += label(x0 + 5, y + mh - 8, `${t}: 4 of 32 experts × ${Atlas.int(F)} rows + bias`, C.muted, 10);
+      s += `<line x1="${x0 + R * sc / 2}" y1="${y + mh}" x2="${x0 + R * sc / 2}" y2="${y + mh + 22}" stroke="${col}" stroke-width="1.5" marker-end="url(#ar)"/>` + label(x0 + R * sc / 2 + 8, y + mh + 16, `launch: ${n}`, C.fg, 10.5);
+    });
+  }
+  y += mh + 26;
+  // output row(s)
+  const oname = e.stacked ? 'gu[t]' : 'gate, up';
+  s += label(0, y + 15, oname, C.muted);
+  for (let k = 0; k < K; k++) {
+    s += `<rect x="${xg + k * F * sc}" y="${y}" width="${F * sc - (K > 1 ? 2 : 0)}" height="20" fill="${C.w}" opacity="${0.4 + 0.2 * (k % 2)}"/>`;
+    s += `<rect x="${xu + k * F * sc}" y="${y}" width="${F * sc - (K > 1 ? 2 : 0)}" height="20" fill="${C.x}" opacity="${0.4 + 0.2 * (k % 2)}"/>`;
+  }
+  s += label(xg + 5, y + 14, e.stacked ? `gate: ${Atlas.int(F)}` : `gate[t]: 4 slots × ${Atlas.int(F)}`, C.fg, 10.5) + label(xu + 5, y + 14, e.stacked ? `up: ${Atlas.int(F)}` : `up[t]: 4 slots × ${Atlas.int(F)}`, C.fg, 10.5);
+  // pairing curves into h
+  const yh = y + 90, pts = [0, 0.5, 0.97];
+  for (let k = 0; k < K; k++) pts.forEach((p, i) => {
+    if (K > 1 && i !== 1) return;
+    const j = k * F + Math.round(p * (F - 1)), a = xg + (j + 0.5) * sc, b = xu + (j + 0.5) * sc;
+    s += `<path d="M${a} ${y + 20} C ${a} ${y + 55}, ${a} ${y + 55}, ${a} ${yh}" fill="none" stroke="${C.w}" stroke-width="1.3"/>`;
+    s += `<path d="M${b} ${y + 20} C ${b} ${y + 70}, ${a} ${y + 40}, ${a} ${yh}" fill="none" stroke="${C.x}" stroke-width="1.3"/>`;
+    s += `<circle cx="${a}" cy="${yh - 26}" r="3" fill="${C.y}"/>`;
+  });
+  const actTxt = e.act === 'geglu' ? `<a href="geglu.html"><tspan fill="${C.sync}">geglu</tspan></a>: h[j] = GELU_tanh(gate[j]) · up[j], with up[j] = gu[t][F + j]` : `<a href="swiglu_oai.html"><tspan fill="${C.sync}">swiglu_oai</tspan></a>: g = min(gate, 7), u = clamp(up, ±7); h = g·σ(1.702 g)·(u + 1), written over gate`;
+  s += label(0, yh + 15, 'h[t]', C.muted) + `<rect x="${xg}" y="${yh}" width="${R * sc}" height="20" fill="${C.y}" opacity="0.5"/>` + label(xg + 5, yh + 14, `h: ${K > 1 ? '4 slots × ' : ''}${Atlas.int(F)} floats`, C.fg, 10.5);
+  s += label(ml, yh + 42, actTxt, C.fg, 11);
+  const H = yh + 52;
+  $('shape').setAttribute('viewBox', `0 0 ${W} ${H}`);
+  $('shape').innerHTML = `<defs><marker id="ar" viewBox="0 0 8 8" refX="4" refY="7" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 0 L4 8z" fill="${C.muted}" transform="rotate(-90 4 4)"/></marker></defs>` + s;
+  // launch table
+  const P = S.pass, rows = [];
+  const act1d = n => `<a href="${e.act}.html">${e.act}</a>`;
+  if (S.eng === 'gptoss') {
+    const dec = P === 'decode', kn = dec ? 'mv_mxfp4' : 'gemm_mxfp4', kl = dec ? `<a href="mv_mxfp4.html">mv_mxfp4</a>` : 'gemm_mxfp4';
+    const grid = dec ? `grid (360, 4 slots) · 256` : `grid (45, ⌈T/32⌉, 32 experts) · 256`;
+    rows.push([kl, `ffn_gate_exps · 32 × ${Atlas.int(F)} × ${Atlas.int(E)}`, grid, dec ? 'gate[k][0 … 2,879] for the 4 slots' : 'gate[t][k][…] for every (token, slot)', 'ffn_gate_exps.bias (in the kernel)']);
+    rows.push([kl, `ffn_up_exps · 32 × ${Atlas.int(F)} × ${Atlas.int(E)}`, grid, dec ? 'up[k][…]' : 'up[t][k][…]', 'ffn_up_exps.bias (in the kernel)']);
+    rows.push([act1d(), 'none', '≤ 448 blocks · 256, grid-stride', dec ? `gate (in place), 4 × ${Atlas.int(F)}` : `gate (in place), T × 4 × ${Atlas.int(F)}`, '–']);
+  } else {
+    const dec = P === 'decode', kn = e.fmt === 'Q5_0' ? (dec ? 'mv_q5' : 'gemm_q5') : 'gemm_q8';
+    const kl = kn === 'gemm_q5' ? 'gemm_q5' : `<a href="${kn}.html">${kn}</a>`;
+    rows.push([kl, `gate_up · ${Atlas.int(2 * F)} × ${Atlas.int(E)}`, dec ? `${Atlas.int(2 * F / 8)} blocks · 256 (one warp per row)` : `grid (${2 * F / 64}, ⌈T/32⌉) · 256`, dec ? `gu[0 … ${Atlas.int(2 * F - 1)}]` : `gu[t], ldy = ${Atlas.int(2 * F)}`, 'none']);
+    rows.push([act1d(), 'none', '≤ 448 blocks · 256, grid-stride', dec ? `h[0 … ${Atlas.int(F - 1)}]` : `h[t], ${Atlas.int(F)} per token`, '–']);
+  }
+  $('launch').innerHTML = `<thead><tr><th>#</th><th>kernel</th><th>weight</th><th>launch</th><th>writes</th><th>bias</th></tr></thead><tbody>` +
+    rows.map((r, i) => `<tr><td>${i + 1}</td>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') + '</tbody>';
+  $('next').innerHTML = `Before, in ${e.name}: ${e.before[P]}<br>Next: ${e.next}`;
+}
+
+// ---------- comparison table ----------
+(() => {
+  const head = `<thead><tr><th>engine</th><th>n_embd</th><th>n_ff</th><th>rows per launch</th><th>weights</th><th>gate + up read per token</th><th>activation</th><th>launches / layer</th></tr></thead>`;
+  const rows = Object.entries(ENG).map(([id, e]) => {
+    const rows = e.stacked ? 2 * e.F : e.K * e.F;
+    const read = e.stacked ? wbytes(e, 2 * e.F) : e.K * wbytes(e, 2 * e.F);
+    return `<tr><td><a href="${e.page}">${e.name}</a></td><td class="n">${Atlas.int(e.E)}</td><td class="n">${Atlas.int(e.F)}${e.stacked ? '' : ' per expert'}</td><td class="n">${e.stacked ? Atlas.int(rows) + ' (gate ‖ up)' : `${Atlas.int(rows)} (4 experts), ×2`}</td><td>${e.fmt}${e.stacked ? ', stacked' : ', separate'}</td><td class="n">${MiB(read)}${e.stacked ? '' : ` of ${MiB(e.NE * wbytes(e, 2 * e.F))}`}</td><td><a href="${e.act}.html">${e.act}</a></td><td class="n">${e.stacked ? '1 + 1' : '2 + 1'}</td></tr>`;
+  });
+  $('cmp').innerHTML = head + '<tbody>' + rows.join('') + '</tbody>';
+})();
+
+// ---------- toy ----------
+const d = 4, F = 4, rr = Atlas.rng(11), rnd = () => fr(Atlas.gauss(rr) * 0.9);
+const X = Array.from({ length: d }, rnd);
+const Wgu = Array.from({ length: 2 * F }, () => Array.from({ length: d }, rnd));   // rows 0..F-1 gate, F..2F-1 up
+const GU = Wgu.map(row => row.reduce((a, w, i) => fr(w * X[i] + a), 0));
+const geluTanh = x => 0.5 * x * (1 + Math.tanh(0.7978845608 * x * (1 + 0.044715 * x * x)));
+const ACT = {
+  geglu: { name: 'GEGLU · Gemma', gate: x => geluTanh(x), up: u => u, f: (g, u) => fr(geluTanh(g) * u), gl: 'GELU_tanh(g)', ul: 'u' },
+  swiglu_oai: { name: 'SwiGLU-OAI · gpt-oss', gate: x => { const g = Math.min(x, 7); return g / (1 + Math.exp(-1.702 * g)); }, up: u => Math.max(-7, Math.min(7, u)) + 1, f: null, gl: 'g·σ(1.702 g)', ul: 'u + 1' },
+};
+ACT.swiglu_oai.f = (g, u) => fr(ACT.swiglu_oai.gate(g) * ACT.swiglu_oai.up(u));
+segs($('actSeg'), 'act', Object.entries(ACT).map(([k, a]) => [k, a.name]), () => drawToy());
+const steps = [
+  { tag: 'x', short: 'xn', title: 'one token\'s normalized hidden state xn', text: 'Four numbers. In a real model this is the output of the feed-forward RMSNorm.' },
+  { tag: 'g', short: 'gate rows', title: 'the launch: rows 0 … 3 of the stacked matrix give the gate', text: 'Each row of W_gate is dotted with xn. In the engines one warp (decode) or one 64-row tile (prefill) does this per row.' },
+  { tag: 'u', short: 'up rows', title: 'same launch: rows 4 … 7 give up', text: 'The kernel just keeps going down the rows. Nothing marks the boundary; the result is one row gu = [gate | up] of 8 floats.' },
+  { tag: 'a', short: 'activation', title: 'second launch: the activation of each gate value', text: 'The activation kernel reads gu[j]. Negative gates are squeezed toward zero, positive ones pass through almost unchanged (see the curve).' },
+  { tag: 'h', short: 'h = act · up', title: 'times the matching up value: h[j] = act(gu[j]) · gu[4 + j]', text: 'Up carries the content, the activated gate scales it, unit by unit. A unit whose gate is negative contributes almost nothing, whatever its up value: that is the "gating".' },
+];
+const order = steps.map(s => s.tag), at = (st, t) => order.indexOf(st.tag) >= order.indexOf(t);
+function drawToy() {
+  const st = stepper.step, A = ACT[S.act], W = 700, H = 290, cw = 60, cg = 70, x0 = 84, xu0 = x0 + 4 * cg + 30;
+  let s = '';
+  const cell = (x, yy, col, on, txt, sub) => `<rect x="${x}" y="${yy}" width="${cw}" height="30" rx="3" fill="${col}" opacity="${on ? 0.5 : 0.1}"/>` + (on ? `<text x="${x + cw / 2}" y="${yy + 20}" font-size="12" text-anchor="middle" fill="${C.fg}">${txt}</text>` : '') + (sub ? `<text x="${x + cw / 2}" y="${yy - 5}" font-size="10" text-anchor="middle" fill="${C.muted}">${sub}</text>` : '');
+  s += `<text x="${x0}" y="14" font-size="11" fill="${C.muted}">gu = [gate | up], one launch over 8 rows</text><text x="0" y="60" font-size="11" fill="${C.muted}">gu</text>`;
+  if (at(st, 'a')) s += `<text x="0" y="140" font-size="11" fill="${C.muted}">act(gate)</text>`;
+  if (at(st, 'h')) s += `<text x="0" y="230" font-size="11" fill="${C.muted}">h</text>`;
+  for (let j = 0; j < F; j++) {
+    const xg = x0 + j * cg, xu = xu0 + j * cg, a = A.gate(GU[j]), h = A.f(GU[j], GU[F + j]);
+    s += cell(xg, 40, C.w, at(st, 'g'), GU[j].toFixed(2), `gu[${j}]`) + cell(xu, 40, C.x, at(st, 'u'), GU[F + j].toFixed(2), `gu[${F + j}]`);
+    if (at(st, 'a')) {
+      s += `<line x1="${xg + cw / 2}" y1="70" x2="${xg + cw / 2}" y2="120" stroke="${C.w}" stroke-width="1.4"/>`;
+      s += cell(xg, 120, C.w, true, a.toFixed(2), '');
+    }
+    if (at(st, 'h')) {
+      s += `<path d="M${xg + cw / 2} 150 V 210" stroke="${C.w}" stroke-width="1.4" fill="none"/><path d="M${xu + cw / 2} 70 C ${xu + cw / 2} 160, ${xg + cw - 6} 150, ${xg + cw - 10} 210" stroke="${C.x}" stroke-width="1.2" fill="none" opacity="0.8"/>`;
+      s += cell(xg, 210, C.y, true, h.toFixed(2), '');
+      if (Math.abs(a) < 0.25) s += `<text x="${xg + cw / 2}" y="258" font-size="10" text-anchor="middle" fill="${C.muted}">gated off</text>`;
+    }
+  }
+  if (at(st, 'h')) s += `<text x="${xu0}" y="${232}" font-size="11" fill="${C.muted}">h then goes to the down projection</text>`;
+  $('toyfig').setAttribute('viewBox', `0 0 ${W} ${H}`); $('toyfig').innerHTML = s;
+  const f = v => v.toFixed(3);
+  $('toytab').innerHTML = `<tr><th>j</th><th>gate gu[j]</th><th>up gu[${F}+j]</th><th>${A.gl}</th><th>${A.ul}</th><th>h[j]</th></tr>` + Array.from({ length: F }, (_, j) =>
+    `<tr><td>${j}</td><td class="g">${at(st, 'g') ? f(GU[j]) : '–'}</td><td class="u">${at(st, 'u') ? f(GU[F + j]) : '–'}</td><td class="g">${at(st, 'a') ? f(A.gate(GU[j])) : '–'}</td><td class="u">${at(st, 'h') ? f(A.up(GU[F + j])) : '–'}</td><td class="h">${at(st, 'h') ? f(A.f(GU[j], GU[F + j])) : '–'}</td></tr>`).join('');
+  // activation curve with the gate points
+  const cw2 = 320, ch = 200, ml = 34, mt = 10, xr = [-4, 4], yr = [-1, 4], px = x => ml + (x - xr[0]) / (xr[1] - xr[0]) * (cw2 - ml - 8), py = v => mt + (yr[1] - v) / (yr[1] - yr[0]) * (ch - mt - 24);
+  let c = `<line x1="${px(xr[0])}" y1="${py(0)}" x2="${px(xr[1])}" y2="${py(0)}" stroke="${C.line}"/><line x1="${px(0)}" y1="${py(yr[0])}" x2="${px(0)}" y2="${py(yr[1])}" stroke="${C.line}"/>`;
+  c += `<path d="M${px(-1)} ${py(-1)} L${px(4)} ${py(4)}" stroke="${C.muted}" stroke-dasharray="2 3" fill="none"/>`;
+  let d = ''; for (let x = xr[0]; x <= xr[1] + 1e-9; x += 0.05) d += `${d ? 'L' : 'M'}${px(x).toFixed(1)} ${py(A.gate(x)).toFixed(1)}`;
+  c += `<path d="${d}" stroke="${C.y}" stroke-width="2" fill="none"/>`;
+  [-4, -2, 0, 2, 4].forEach(v => c += `<text x="${px(v)}" y="${ch - 8}" font-size="10" text-anchor="middle" fill="${C.muted}">${v}</text>`);
+  [0, 2, 4].forEach(v => c += `<text x="${ml - 6}" y="${py(v) + 4}" font-size="10" text-anchor="end" fill="${C.muted}">${v}</text>`);
+  if (at(st, 'a')) for (let j = 0; j < F; j++) { const g = Math.max(xr[0], Math.min(xr[1], GU[j])); c += `<circle cx="${px(g)}" cy="${py(A.gate(GU[j]))}" r="4.5" fill="${C.w}"/><text x="${px(g) + 6}" y="${py(A.gate(GU[j])) - 6}" font-size="10" fill="${C.fg}">${j}</text>`; }
+  c += `<text x="${ml + 4}" y="${mt + 10}" font-size="11" fill="${C.fg}">${A.gl}</text>`;
+  $('curve').setAttribute('viewBox', `0 0 ${cw2} ${ch}`); $('curve').innerHTML = c;
+  const hs = GU.slice(0, F).map((g, j) => A.f(g, GU[F + j]));
+  $('toycard').innerHTML = [['matrix', 'gate ‖ up: 8 × 4, one launch'], ['activation', S.act === 'geglu' ? '<a href="geglu.html">geglu</a> (Gemma 3, EmbeddingGemma 2)' : '<a href="swiglu_oai.html">swiglu_oai</a> (gpt-oss), with +1 on up'], ['gated off', at(st, 'h') ? (GU.slice(0, F).map((g, j) => Math.abs(ACT[S.act].gate(g)) < 0.25 ? j : null).filter(v => v !== null).join(', ') || 'none') : '–'], ['|h| largest', at(st, 'h') ? `unit ${hs.map(Math.abs).indexOf(Math.max(...hs.map(Math.abs)))}` : '–']].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+}
+const stepper = Atlas.stepper({ steps, render: drawToy, delay: 1600 });
+stepper.go(0);
+drawShape();
+Atlas.onResize(() => { drawShape(); drawToy(); });
+Atlas.onTheme(() => { drawShape(); drawToy(); });
+})();
+</script>
+</body>
+</html>
