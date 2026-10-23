@@ -6,7 +6,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="atlas.css">
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <script src="atlas.js"></script>
@@ -20,6 +20,11 @@
     <p>The dataflow of the GGUF file, drawn with the kernel the engine launches at each step. Weight shapes and types come from the file header; each operation is named after its PTX kernel, and the operations that have a walkthrough link to it. Click any box for details.</p>
     <div class="facts" id="facts"></div>
   </header>
+
+  <section aria-labelledby="h-fig">
+    <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017), Figures 1 and 2. Panels: (a) the whole model with its sandwich norms, (b) one attention head, (c) grouped-query attention with head norms, (d) the GEGLU feed-forward. Click the figure to open it full size.</p></div>
+    <figure class="panel paperfig"><a href="figures/gemma3.svg"><img src="figures/gemma3.svg" width="1370" height="1014" alt="Gemma 3 12B architecture: scaled token embedding, 48 layers each with RMSNorm, grouped-query attention, RMSNorm and a residual add, then RMSNorm, GEGLU feed-forward, RMSNorm and a residual add; final RMSNorm, tied linear head and softmax."></a></figure>
+  </section>
 
   <section aria-labelledby="h-ov">
     <div class="sechead"><h2 id="h-ov">Whole model</h2><p class="muted">48 layers in 8 groups of five local layers (sliding window of 1024 tokens) and one global layer (full context). Click a layer box to show it below. The first step of every layer, <a href="qkv.html">×3 q, k, v</a>, and the first step of its feed-forward, <a href="gate_up.html">gate ‖ up</a>, each have a page comparing the three engines.</p></div>

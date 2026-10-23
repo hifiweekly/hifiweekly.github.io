@@ -134,7 +134,7 @@ A.model = function (M) {
   renderAll().catch(e => { console.error(e); $('ovGraph').textContent = 'Graph failed to render: ' + e.message; });
   A.onTheme(() => { init(); renderAll(); });
   const k = A.MODELS.find(m => m.id === M.id);
-  $('crumbs').innerHTML = `<a href="index.html">Kernel Atlas</a><span class="muted">/</span><span class="muted">Models</span><span style="margin-left:auto"></span>` +
+  $('crumbs').innerHTML = `<a href="index.html" class="brand">kernel<i>_</i>atlas</a><span class="muted">/</span><span class="muted">Models</span><span style="margin-left:auto"></span>` +
     A.MODELS.filter(m => m !== k).map(m => `<a href="${m.id}.html">${m.name} →</a>`).join('');
 };
 })();

@@ -1,0 +1,184 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1520" height="852" viewBox="0 190 1520 852" font-family="Helvetica, Arial, sans-serif">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#000"/></marker></defs>
+<rect y="190" width="1520" height="852" fill="#fff"/>
+<rect x="120" y="436" width="230" height="402" rx="12" fill="#ededed" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="931" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Input tokens</text>
+<path d="M235,922 L235,896" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="155" y="852" width="160" height="44" rx="6" fill="#fadadd" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="865.375" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Token</text>
+<text x="235" y="882.625" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Embedding</text>
+<text x="329" y="874" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">201,088 → 2880</text>
+<path d="M235,852 L235,822" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M235,822 L235,808" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M235,808 L235,796" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="155" y="766" width="160" height="30" rx="6" fill="#f2f3c1" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="781" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">RMSNorm</text>
+<path d="M235,766 L235,740" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="155" y="684" width="160" height="56" rx="6" fill="#fcdcb4" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="703.375" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Grouped-Query</text>
+<text x="235" y="720.625" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Attention</text>
+<text x="364" y="673" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">64 query heads,</text>
+<text x="364" y="688.6" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">8 key/value heads</text>
+<text x="364" y="704.2" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">RoPE (YaRN), sinks</text>
+<text x="364" y="719.8" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle"></text>
+<text x="364" y="735.4" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">even layers: window 128</text>
+<text x="364" y="751" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">odd layers: full</text>
+<path d="M235,684 L235,658" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<circle cx="235" cy="648" r="10" fill="#fff" stroke="#000" stroke-width="1.1"/>
+<path d="M228,648 L242,648 M235,641 L235,655" stroke="#000" stroke-width="1.1"/>
+<path d="M235,808 L327,808 L327,648 L245,648" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<path d="M235,638 L235,624" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M235,624 L235,612" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="155" y="582" width="160" height="30" rx="6" fill="#f2f3c1" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="597" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">RMSNorm</text>
+<path d="M235,582 L235,556" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="155" y="500" width="160" height="56" rx="6" fill="#c7e9f6" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="519.375" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Mixture of</text>
+<text x="235" y="536.625" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Experts</text>
+<text x="364" y="512.4" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">32 experts, top-4</text>
+<text x="364" y="528" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">SwiGLU, width 2880</text>
+<text x="364" y="543.6" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">MXFP4 weights</text>
+<path d="M235,500 L235,474" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<circle cx="235" cy="464" r="10" fill="#fff" stroke="#000" stroke-width="1.1"/>
+<path d="M228,464 L242,464 M235,457 L235,471" stroke="#000" stroke-width="1.1"/>
+<path d="M235,624 L327,624 L327,464 L245,464" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="112" y="637" font-size="17" text-anchor="end" fill="#000" dominant-baseline="middle">24×</text>
+<path d="M235,454 L235,436" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M235,436 L235,424" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="155" y="394" width="160" height="30" rx="6" fill="#f2f3c1" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="409" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">RMSNorm</text>
+<path d="M235,394 L235,368" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="155" y="338" width="160" height="30" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="353" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+<text x="329" y="345.2" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">unembedding</text>
+<text x="329" y="360.8" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">2880 → 201,088</text>
+<path d="M235,338 L235,312" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="155" y="282" width="160" height="30" rx="6" fill="#cde8c7" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="297" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Softmax</text>
+<text x="235" y="229" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Output</text>
+<text x="235" y="247" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Probabilities</text>
+<path d="M235,282 L235,256" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="235" y="968" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">(a) gpt-oss-20b</text>
+<path d="M640,600 L640,578" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="580" y="600" width="120" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="640" y="614" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">MatMul</text>
+<path d="M640,652 L640,628" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="580" y="652" width="120" height="28" rx="6" fill="#cde8c7" stroke="#000" stroke-width="1.1"/>
+<text x="640" y="666" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">SoftMax</text>
+<rect x="504" y="652" width="56" height="28" rx="14" fill="#fff" stroke="#000" stroke-width="1.1"/>
+<text x="532" y="666" font-size="13" text-anchor="middle" fill="#000" dominant-baseline="middle">sink</text>
+<path d="M560,666 L580,666" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="640" y="548" font-size="11" text-anchor="middle" fill="#555" dominant-baseline="middle">p = softmax([s₁ … sₙ, sink]) without its last entry</text>
+<path d="M640,706 L640,680" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="580" y="706" width="120" height="38" rx="6" fill="#f4dde6" stroke="#000" stroke-width="1.1"/>
+<text x="640" y="717.5" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Mask</text>
+<text x="640" y="732.5" font-size="11" text-anchor="middle" fill="#555" dominant-baseline="middle">causal / window</text>
+<path d="M640,762 L640,744" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="580" y="762" width="120" height="28" rx="6" fill="#f2f3c1" stroke="#000" stroke-width="1.1"/>
+<text x="640" y="776" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Scale  1/8</text>
+<path d="M640,816 L640,790" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="580" y="816" width="120" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="640" y="830" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">MatMul</text>
+<path d="M610,892 L610,844" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="610" y="906" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Q</text>
+<path d="M670,892 L670,844" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="670" y="906" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">K</text>
+<path d="M722,892 L722,614 L700,614" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="722" y="906" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">V</text>
+<text x="640" y="968" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">(b) Scaled dot-product attention with sink</text>
+<path d="M880,568 L880,548" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="820" y="568" width="120" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="880" y="582" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+<text x="952" y="582" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">4096 → 2880</text>
+<path d="M880,620 L880,596" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="820" y="620" width="120" height="28" rx="6" fill="#f2f3c1" stroke="#000" stroke-width="1.1"/>
+<text x="880" y="634" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Concat</text>
+<path d="M880,676 L880,648" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="792" y="664" width="200" height="50" rx="6" fill="#d4cbe8" stroke="#000" stroke-width="1.1"/>
+<rect x="788" y="668" width="200" height="50" rx="6" fill="#d4cbe8" stroke="#000" stroke-width="1.1"/>
+<rect x="784" y="672" width="200" height="50" rx="6" fill="#d4cbe8" stroke="#000" stroke-width="1.1"/>
+<rect x="780" y="676" width="200" height="50" rx="6" fill="#d4cbe8" stroke="#000" stroke-width="1.1"/>
+<text x="880" y="692.375" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Scaled Dot-Product</text>
+<text x="880" y="709.625" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Attention + sink</text>
+<text x="1006" y="690" font-size="14" text-anchor="start" fill="#000" dominant-baseline="middle">h = 64</text>
+<path d="M810,800 L810,726" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="790" y="792" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<rect x="786" y="796" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<rect x="782" y="800" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="810" y="814" font-size="13" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+<text x="815" y="850" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">8 heads</text>
+<path d="M810,870 L810,828" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<circle cx="880" cy="770" r="12" fill="#fff" stroke="#000" stroke-width="1.1"/>
+<path d="M872,770 C876,761 876,761 880,770 S884,779 888,770" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M880,800 L880,782" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<path d="M880,758 L880,726" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="860" y="792" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<rect x="856" y="796" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<rect x="852" y="800" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="880" y="814" font-size="13" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+<text x="885" y="850" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">8 heads</text>
+<path d="M880,870 L880,828" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<circle cx="950" cy="770" r="12" fill="#fff" stroke="#000" stroke-width="1.1"/>
+<path d="M942,770 C946,761 946,761 950,770 S954,779 958,770" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M950,800 L950,782" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<path d="M950,758 L950,726" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="930" y="792" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<rect x="926" y="796" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<rect x="922" y="800" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="950" y="814" font-size="13" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+<text x="955" y="850" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">64 heads</text>
+<path d="M950,870 L950,828" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="970" y="770" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">RoPE</text>
+<path d="M810,870 L950,870" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M880,900 L880,870" fill="none" stroke="#000" stroke-width="1.1"/>
+<text x="880" y="912" font-size="14" text-anchor="middle" fill="#000" dominant-baseline="middle">x (normed)</text>
+<text x="880" y="940" font-size="11" text-anchor="middle" fill="#555" dominant-baseline="middle">each K/V head serves 8 query heads</text>
+<text x="880" y="968" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">(c) Grouped-query attention</text>
+<path d="M1310,548 L1310,526" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<circle cx="1310" cy="558" r="10" fill="#fff" stroke="#000" stroke-width="1.1"/>
+<path d="M1303,558 L1317,558 M1310,551 L1310,565" stroke="#000" stroke-width="1.1"/>
+<text x="1328" y="558" font-size="13" text-anchor="start" fill="#000" dominant-baseline="middle">Σₖ wₖ · yₖ</text>
+<rect x="1202" y="588" width="240" height="238" rx="12" fill="#ededed" stroke="#000" stroke-width="1.1"/>
+<rect x="1196" y="594" width="240" height="238" rx="12" fill="#ededed" stroke="#000" stroke-width="1.1"/>
+<rect x="1190" y="600" width="240" height="238" rx="12" fill="#ededed" stroke="#000" stroke-width="1.1"/>
+<text x="1450" y="720" font-size="14" text-anchor="start" fill="#000" dominant-baseline="middle">4 of 32</text>
+<path d="M1310,616 L1310,568" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="1250" y="616" width="120" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="1310" y="630" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+<text x="1378" y="630" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">down</text>
+<path d="M1310,676 L1310,644" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="1235" y="676" width="150" height="44" rx="6" fill="#c7e9f6" stroke="#000" stroke-width="1.1"/>
+<text x="1310" y="690" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">SwiGLU</text>
+<text x="1310" y="706" font-size="11" text-anchor="middle" fill="#555" dominant-baseline="middle">g·σ(1.702g)·(u+1)</text>
+<path d="M1265,770 L1265,720" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="1230" y="770" width="70" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="1265" y="784" font-size="13" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+<text x="1225" y="784" font-size="11" text-anchor="end" fill="#555" dominant-baseline="middle">gate</text>
+<path d="M1355,770 L1355,720" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="1320" y="770" width="70" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="1355" y="784" font-size="13" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+<text x="1395" y="784" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">up</text>
+<text x="1310" y="746" font-size="11" text-anchor="middle" fill="#555" dominant-baseline="middle">clamp ±7</text>
+<path d="M1265,870 L1265,798" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<path d="M1355,870 L1355,798" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<path d="M1265,870 L1355,870" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M1095,870 L1095,834" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="1040" y="806" width="110" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="1095" y="820" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+<text x="1087" y="844.85" font-size="11" text-anchor="end" fill="#555" dominant-baseline="middle">router</text>
+<text x="1087" y="859.15" font-size="11" text-anchor="end" fill="#555" dominant-baseline="middle">2880 → 32</text>
+<path d="M1095,806 L1095,782" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="1040" y="754" width="110" height="28" rx="6" fill="#f4dde6" stroke="#000" stroke-width="1.1"/>
+<text x="1095" y="768" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Top-4</text>
+<path d="M1095,754 L1095,730" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="1040" y="702" width="110" height="28" rx="6" fill="#cde8c7" stroke="#000" stroke-width="1.1"/>
+<text x="1095" y="716" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">SoftMax</text>
+<path d="M1150,768 L1190,768" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="1170" y="758" font-size="11" text-anchor="middle" fill="#555" dominant-baseline="middle">ids</text>
+<path d="M1095,702 L1095,558 L1300,558" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="1103" y="620" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">w₁ … w₄</text>
+<path d="M1095,900 L1095,870 L1355,870" fill="none" stroke="#000" stroke-width="1.1"/>
+<text x="1095" y="912" font-size="14" text-anchor="middle" fill="#000" dominant-baseline="middle">x (normed)</text>
+<text x="1222.5" y="968" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">(d) Mixture-of-experts feed-forward</text>
+<text x="760" y="1012" font-size="16" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">Figure 1: The gpt-oss-20b architecture, drawn in the style of Vaswani et al. (2017). Unlike the original Transformer it is decoder-only, normalizes before each sub-layer, and encodes position with RoPE.</text>
+</svg>

@@ -1,135 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kernel Atlas</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="atlas.css">
 <style>
-.family { display: flex; flex-direction: column; gap: 12px; }
-.family > h2 { font-size: 20px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
-.card { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; color: var(--fg); text-decoration: none; min-width: 0; }
-.card:hover { border-color: var(--muted); }
-.card:focus-visible { outline: 2px solid var(--sync); outline-offset: 2px; }
-.card .nm { font-family: var(--font-mono); font-size: 17px; font-weight: 500; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-.card .eng { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.card p { font-size: 14px; color: var(--fg); }
-.card .launch { font-family: var(--font-mono); font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; margin-top: auto; }
-.card .shows { font-size: 12.5px; color: var(--muted); }
-.flows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
-.flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-family: var(--font-mono); font-size: 12.5px; }
-.flow .lbl { color: var(--muted); width: 100%; font-size: 12px; }
-.flow a, .flow span.k { padding: 4px 9px; border-radius: 5px; border: 1px solid var(--line); background: var(--panel); text-decoration: none; color: var(--fg); }
-.flow a { border-color: var(--sync); color: var(--sync); }
-.flow i { color: var(--muted); font-style: normal; }
-.how { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
-.how div { display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
-.logo img { display: block; width: 100%; max-width: 520px; height: auto; }
-.logo .dk { display: none; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .logo .lt { display: none; }
-  :root:not([data-theme="light"]) .logo .dk { display: block; }
-}
-:root[data-theme="dark"] .logo .lt { display: none; }
-:root[data-theme="dark"] .logo .dk { display: block; }
-.how b { font-family: var(--font-display); font-size: 15px; font-weight: 600; }
+/* Index of the v6 atlas ("Scope" theme; tokens and base styles come from atlas.css). */
+body { padding-top: 0; }
+.wrap a, .hero a { color: inherit; }
+.wrap footer a { color: var(--accent); }
+.wrap { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
+
+/* hero: the logo sits on a field of "threads" */
+.hero { margin: 0 calc(-1 * max(16px, env(safe-area-inset-left))); padding: 40px max(16px, env(safe-area-inset-left)) 32px;
+  background: var(--bg2); border-bottom: 1px solid var(--line); }
+.hero .in { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.logo { margin: 0; }
+.logo img { display: block; width: 100%; max-width: 560px; height: auto; }
+.logo .lt { display: none; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .logo .lt { display: block; } :root:not([data-theme="dark"]) .logo .dk { display: none; } }
+:root[data-theme="light"] .logo .lt { display: block; } :root[data-theme="light"] .logo .dk { display: none; }
+.hero p { margin: 0; max-width: 70ch; color: var(--fg); }
+.stats { display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); width: fit-content; max-width: 100%; }
+.stats div { padding: 8px 18px; border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+.stats div:last-child { border-right: 0; }
+.stats b { font: 600 20px/1.2 var(--font-mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+.stats span { font: 12px var(--font-mono); color: var(--muted); }
+
+/* section heads: numbered, lower-case, like the wordmark */
+section { display: flex; flex-direction: column; gap: 18px; }
+.sh { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.sh h2 { margin: 0; font: 600 22px/1.2 var(--font-mono); letter-spacing: -0.01em; }
+.sh h2::after { content: "_"; color: var(--accent); }
+.sh .no { font: 500 12px var(--font-mono); color: var(--accent); }
+.sh p { margin: 0; color: var(--muted); font-size: 13.5px; flex-basis: 100%; }
+
+/* engine filter */
+.filter { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 0; background: var(--bg); border-bottom: 1px solid var(--line); }
+.filter .lbl { font: 12px var(--font-mono); color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line2); border-radius: 6px; overflow: hidden; }
+.seg button { border-radius: 0; font: 500 13px var(--font-mono); color: var(--fg); background: var(--panel); border: 0; border-right: 1px solid var(--line2); padding: 6px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+.d-gptoss { background: var(--e-gptoss); } .d-gemma3 { background: var(--e-gemma3); } .d-emb2 { background: var(--e-emb2); }
+
+/* models */
+.models { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.model { display: flex; flex-direction: column; gap: 10px; padding: 18px; background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--ec); border-radius: 6px; text-decoration: none; transition: border-color .15s, opacity .2s; }
+.model:hover { border-color: var(--ec); }
+.model h3 { margin: 0; font: 600 18px var(--font-mono); display: flex; justify-content: space-between; gap: 8px; }
+.model h3 span { color: var(--ec); }
+.model p { margin: 0; font-size: 14px; }
+.model dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; margin: 0; font: 12.5px var(--font-mono); }
+.model dt { color: var(--muted); } .model dd { margin: 0; }
+.model .thumb { background: #fff; border-radius: 4px; padding: 6px; }
+.model .thumb img { display: block; width: 100%; height: auto; }
+.model .ptx { margin-top: auto; font: 12px var(--font-mono); color: var(--muted); border-top: 1px dashed var(--line2); padding-top: 8px; }
+
+/* launch-order tracks */
+.tracks { display: flex; flex-direction: column; gap: 22px; }
+.track { display: flex; flex-direction: column; gap: 8px; transition: opacity .2s; }
+.track .tl { font: 12.5px var(--font-mono); color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.track .tl a { color: var(--fg); font-weight: 600; text-decoration: none; }
+.rail { display: flex; gap: 0; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+.step { flex: none; display: flex; flex-direction: column; gap: 3px; min-width: 104px; padding: 8px 10px; border: 1px solid var(--line2); border-radius: 5px; background: var(--panel); text-decoration: none; position: relative; margin-right: 18px; }
+.step:not(:last-child)::after { content: ""; position: absolute; top: 50%; right: -19px; width: 18px; border-top: 1px solid var(--line2); }
+.step > a { display: flex; flex-direction: column; gap: 3px; color: inherit; }
+.step .n { font: 10.5px var(--font-mono); color: var(--muted); }
+.step .k { font: 500 13px var(--font-mono); }
+.step .note { font: 11.5px var(--font-mono); color: var(--accent); text-decoration: none; }
+.step.mm { background: linear-gradient(var(--mm), var(--mm)), var(--panel); border-color: color-mix(in srgb, var(--accent) 45%, var(--line2)); }
+.step.nopage { border-style: dashed; color: var(--muted); }
+a.step:hover { border-color: var(--accent); }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font: 12px var(--font-mono); color: var(--muted); }
+.legend i { display: inline-block; width: 14px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; border: 1px solid var(--line2); }
+
+/* kernel index */
+.fam { display: flex; flex-direction: column; gap: 12px; }
+.fam h3 { margin: 0; font: 500 13px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+.fam h3::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
+.kc { display: flex; flex-direction: column; gap: 7px; padding: 14px 16px 12px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line2); border-radius: 5px; text-decoration: none; min-width: 0; transition: border-color .15s, opacity .2s; }
+.kc:hover { border-left-color: var(--accent); }
+.kc .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.kc .name { font: 600 15.5px var(--font-mono); }
+.kc .eng { display: flex; gap: 4px; }
+.kc p { margin: 0; font-size: 13.5px; }
+.kc .shows { font-size: 12.5px; color: var(--muted); }
+.kc .launch { margin-top: auto; font: 11.5px var(--font-mono); color: var(--muted); padding-top: 7px; border-top: 1px dashed var(--line2); }
+.off { opacity: 0.22; }
+.hide { display: none !important; }
+
+.how { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.how div { padding: 14px 16px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
+.how div:last-child { border-right: 0; }
+.how b { font: 600 13px var(--font-mono); color: var(--accent); }
+footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
+@media (max-width: 640px) { .how div { border-right: 0; border-bottom: 1px solid var(--line); } .stats div { padding: 6px 12px; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
+</head>
+<body>
+<div class="hero"><div class="in">
+  <h1 class="logo"><img class="dk" src="kernel_atlas_dark.png" width="817" height="187" alt="kernel_atlas: GPU kernels, mapped thread by thread"><img class="lt" src="kernel_atlas_light.png" width="817" height="187" alt=""></h1>
+  <p id="intro"></p>
+  <div class="stats" id="stats"></div>
+</div></div>
 
 <div class="wrap">
-  <header>
-    <div class="eyebrow">ptx_test · gpt-oss-20b, Gemma 3 12B and EmbeddingGemma 2 engines · hand-written PTX</div>
-    <h1 class="logo"><img class="lt" src="kernel_atlas_light.png" width="817" height="187" alt="kernel_atlas: GPU kernels, mapped thread by thread"><img class="dk" src="kernel_atlas.png" width="817" height="187" alt="kernel_atlas: GPU kernels, mapped thread by thread"></h1>
-    <p>Interactive walkthroughs of the GPU kernels behind the three inference engines in this project: two text generators and one text-embedding encoder. Each page steps through one kernel the way the hardware runs it: which thread touches which bytes, where threads cooperate, and the matching lines of the hand-written PTX and of an equivalent CUDA C++ version. Every number on the pages is computed in your browser by re-running the kernel's float32 arithmetic on generated data.</p>
-  </header>
+  <div class="filter" role="group" aria-label="Show engine">
+    <span class="lbl">engine</span>
+    <span class="seg" id="seg"></span>
+    <span class="lbl" id="count"></span>
+  </div>
+
+  <section aria-labelledby="h-models">
+    <div class="sh"><span class="no">01</span><h2 id="h-models">models</h2><p>Each model page opens with its architecture, drawn like the figures of <i>Attention Is All You Need</i>, then shows the GGUF graph with every step named by its kernel.</p></div>
+    <div class="models" id="models"></div>
+  </section>
+
+  <section aria-labelledby="h-order">
+    <div class="sh"><span class="no">02</span><h2 id="h-order">launch_order</h2><p>One layer, kernel by kernel. Amber notes are steps with their own page; tinted boxes are matrix products, where the time goes.</p></div>
+    <div class="legend"><span><i style="background:var(--mm)"></i>matrix product</span><span><i></i>other kernel</span><span><i style="border-style:dashed"></i>no page yet</span></div>
+    <div class="tracks" id="tracks"></div>
+  </section>
+
+  <section aria-labelledby="h-kernels">
+    <div class="sh"><span class="no">03</span><h2 id="h-kernels">kernels</h2><p>Coloured dots show which engines run the kernel; the filter above dims the rest.</p></div>
+    <div id="fams" style="display:flex;flex-direction:column;gap:28px"></div>
+  </section>
 
   <section aria-labelledby="h-how">
-    <h2 id="h-how" style="font-size:20px">How to read a page</h2>
-    <div class="panel how">
-      <div><b>Step through it</b><span>Play, the arrow buttons, the slider, or your keyboard's ← and → keys move one step of the kernel at a time.</span></div>
-      <div><b>Point at the data</b><span>Hovering over a cell names the element, the thread that owns it and the values involved. Clicking selects that thread so every panel follows it.</span></div>
-      <div><b>Read the code</b><span>The source panel highlights the lines for the current step, in hand-written PTX or the equivalent CUDA C++.</span></div>
-      <div><b>Ask why</b><span>Each page ends with the design reasons: the access pattern, the reduction scheme, what the kernel avoids.</span></div>
-    </div>
-  </section>
-
-  <section class="family" aria-labelledby="h-models">
-    <h2 id="h-models">Models</h2>
-    <div class="cards">
-      <a class="card" href="gptoss.html"><div class="nm">gpt-oss-20b<span class="eng">gpt-oss</span></div><p>24 layers alternating local (window 128) and global attention, each with a 32-expert MoE feed-forward (top 4).</p><div class="shows">Shows: the GGUF graph with each step named by its kernel; decode vs prefill; launch order; every tensor and its engine format.</div><div class="launch">gptoss.ptx · 15 kernels</div></a>
-      <a class="card" href="gemma3.html"><div class="nm">Gemma 3 12B<span class="eng">Gemma 3</span></div><p>48 layers, five local (window 1024) to one global, dense GELU feed-forward, tied output head.</p><div class="shows">Shows: the same views; add_rmsnorm fusing the residual add with the next norm.</div><div class="launch">gemma3.ptx · 13 kernels</div></a>
-      <a class="card" href="gemma_emb2.html"><div class="nm">EmbeddingGemma 2<span class="eng">EmbeddingGemma 2</span></div><p>271M encoder: 24 bidirectional layers (five ±512 local to one whole-text global), per-layer inputs, one 768-dim vector per text.</p><div class="shows">Shows: packed texts in one batch, 256- and 512-dim heads, the per-layer-input branch, mean pooling on the host.</div><div class="launch">emb2.ptx · 9 kernels, 4 shared with gemma3.ptx</div></a>
-    </div>
-  </section>
-
-  <section aria-labelledby="h-where">
-    <h2 id="h-where" style="font-size:20px">Launch order of one layer</h2>
-    <div class="panel flows">
-      <div class="flow"><span class="lbl"><a href="gptoss.html" style="border:0;padding:0">gpt-oss-20b</a>, decode (prefill: mv_* become gemm_*, and moe_sort runs after router_topk)</span>
-        <a href="rmsnorm.html">rmsnorm</a><i>→</i><a href="mv_q8.html">mv_q8</a><a href="qkv.html">×3 q, k, v</a><i>→</i><a href="rope_kv.html">rope_kv</a><i>→</i><a href="attention.html">attention</a><i>→</i><a href="mv_q8.html">mv_q8</a><span class="k">+ residual</span><i>→</i><a href="rmsnorm.html">rmsnorm</a><i>→</i><a href="mv_f32.html">mv_f32</a><i>→</i><a href="router_topk.html">router_topk</a><i>→</i><a href="quant_q8.html">quant_q8</a><i>→</i><a href="mv_mxfp4.html">mv_mxfp4</a><a href="gate_up.html">×2 gate, up</a><i>→</i><a href="swiglu_oai.html">swiglu_oai</a><i>→</i><a href="quant_q8.html">quant_q8</a><i>→</i><a href="mv_mxfp4.html">mv_mxfp4</a><span class="k">down</span><i>→</i><a href="moe_combine.html">moe_combine</a></div>
-      <div class="flow"><span class="lbl"><a href="gemma3.html" style="border:0;padding:0">Gemma 3 12B</a>, decode (prefill: gemm_q8 and gemm_q5; rmsnorm runs once before layer 0)</span>
-        <a href="mv_q8.html">mv_q8</a><a href="qkv.html">×3 q, k, v</a><i>→</i><a href="qk_norm_rope.html">qk_norm_rope</a><i>→</i><a href="attention.html">attention</a><i>→</i><a href="mv_q8.html">mv_q8</a><i>→</i><a href="add_rmsnorm.html">add_rmsnorm</a><i>→</i><a href="quant_q8.html">quant_q8</a><i>→</i><a href="mv_q5.html">mv_q5</a><a href="gate_up.html">gate ‖ up</a><i>→</i><a href="geglu.html">geglu</a><i>→</i><a href="quant_q8.html">quant_q8</a><i>→</i><a href="mv_q5.html">mv_q5</a><i>→</i><a href="add_rmsnorm.html">add_rmsnorm</a></div>
-      <div class="flow"><span class="lbl"><a href="gemma_emb2.html" style="border:0;padding:0">EmbeddingGemma 2</a>, all T tokens of a batch at once (every product is gemm_q8)</span>
-        <a href="gemm_q8.html">gemm_q8</a><a href="qkv.html">×3 q, k, v</a><i>→</i><a href="head_norm_rope.html">head_norm_rope</a><i>→</i><a href="attention_enc.html">attention_enc</a><i>→</i><a href="gemm_q8.html">gemm_q8</a><i>→</i><a href="add_rmsnorm.html">add_rmsnorm</a><i>→</i><a href="gemm_q8.html">gemm_q8</a><a href="gate_up.html">gate ‖ up</a><i>→</i><a href="geglu.html">geglu</a><i>→</i><a href="gemm_q8.html">gemm_q8</a><i>→</i><a href="norm_add.html">norm_add</a><i>→</i><a href="gemm_q8.html">gemm_q8</a><span class="k">inp_gate</span><i>→</i><a href="gelu_mul.html">gelu_mul</a><i>→</i><a href="gemm_q8.html">gemm_q8</a><span class="k">proj</span><i>→</i><a href="norm_add.html">norm_add</a><span class="k">× layer scale</span><i>→</i><a href="rmsnorm.html">rmsnorm</a></div>
-      <div class="flow"><span class="lbl">After the last layer, the two generators (EmbeddingGemma 2 instead: gemm_q8 to 768 values per token, then mean pooling on the CPU)</span>
-        <a href="mv_q8.html">mv_q8</a><span class="k">output head</span><i>→</i><a href="argmax.html">argmax</a><i>→</i><span class="k">sample_logits</span><i>→</i><a href="compact_logits.html">compact_logits</a><span class="k">top-k / top-p only</span></div>
-    </div>
+    <div class="sh"><span class="no">04</span><h2 id="h-how">reading_a_page</h2></div>
+    <div class="how" id="how"></div>
   </section>
 
   <section aria-labelledby="h-names">
-    <h2 id="h-names" style="font-size:20px">Names used on every page</h2>
-    <div class="panel how">
-      <div><b>Kernels</b><span>The PTX <code>.entry</code> name, e.g. <code>swiglu_oai</code>; its page is <code>swiglu_oai.html</code>.</span></div>
-      <div><b>Engines</b><span><i>gpt-oss</i>, <i>Gemma 3</i>, <i>EmbeddingGemma 2</i>, or <i>gpt-oss + Gemma 3</i> when the PTX is identical in both files. emb2.ptx copies rmsnorm, add_rmsnorm, geglu and gemm_q8 from gemma3.ptx unchanged; their pages list it under "runs in".</span></div>
-      <div><b>Tensors</b><span>GGUF names without <code>blk.N.</code>; shapes are rows × cols (output × input); types F32, F16, BF16, Q8_0, Q5_0, MXFP4.</span></div>
-      <div><b>Layers and buffers</b><span><i>local</i> = sliding-window layer, <i>global</i> = full context. Buffers use the engine's names: x, xn, qkv, att, y, gu, h, logits.</span></div>
-    </div>
+    <div class="sh"><span class="no">05</span><h2 id="h-names">names</h2><p>Used on every page.</p></div>
+    <div class="how" id="names"></div>
   </section>
 
-  <section class="family" aria-labelledby="h-norm">
-    <h2 id="h-norm">Norms and activations</h2>
-    <div class="cards">
-      <a class="card" href="rmsnorm.html"><div class="nm">rmsnorm<span class="eng">gpt-oss + Gemma 3</span></div><p>Scales a hidden vector to unit RMS and applies per-dimension weights.</p><div class="shows">Shows: strided loop, warp butterfly, shared-memory partials, one barrier.</div><div class="launch">grid (tokens) · 1024 threads</div></a>
-      <a class="card" href="add_rmsnorm.html"><div class="nm">add_rmsnorm<span class="eng">Gemma 3</span></div><p>Post-norm, residual add and the next pre-norm of a row in one launch, twice per layer.</p><div class="shows">Shows: three passes, two reductions, both call sites, the memory saved by fusing.</div><div class="launch">grid (tokens) · 1024 threads</div></a>
-      <a class="card" href="norm_add.html"><div class="nm">norm_add<span class="eng">EmbeddingGemma 2</span></div><p>Post-norm and residual add with each layer's learned output scale folded in, twice per layer.</p><div class="shows">Shows: one reduction, two passes, the 24 real layer scales, why add_rmsnorm's third pass is dropped.</div><div class="launch">grid (tokens) · 256 threads</div></a>
-      <a class="card" href="qk_norm_rope.html"><div class="nm">qk_norm_rope<span class="eng">Gemma 3</span></div><p>Per-head RMSNorm and rotary embedding for queries and keys, plus the f16 KV-cache write.</p><div class="shows">Shows: why lanes own dims 4l and 128 + 4l, every pair's rotation angle, the ring slot.</div><div class="launch">grid (32 heads, tokens) · 32 threads</div></a>
-      <a class="card" href="head_norm_rope.html"><div class="nm">head_norm_rope<span class="eng">EmbeddingGemma 2</span></div><p>Per-head RMSNorm and RoPE for 256- and 512-dim heads, value heads normalized without weight, positions per token.</p><div class="shows">Shows: pair ownership with a 128-stride, a 4-warp reduction, packed positions, the k_norm constants that replace 1/√d.</div><div class="launch">grid (8 or 6 heads, tokens) · 128 threads</div></a>
-      <a class="card" href="swiglu_oai.html"><div class="nm">swiglu_oai<span class="eng">gpt-oss</span></div><p>OpenAI's clamped SwiGLU, combining gate and up projections of each expert.</p><div class="shows">Shows: every register for one element; grid-stride laps in decode vs prefill.</div><div class="launch">≤ 448 blocks · 256 threads · grid-stride</div></a>
-      <a class="card" href="geglu.html"><div class="nm">geglu<span class="eng">Gemma 3</span></div><p>Tanh-approximated GELU on the gate half times the up half.</p><div class="shows">Shows: tanh from one ex2, the tanh vs erf GELU curves, flat-index arithmetic.</div><div class="launch">≤ 448 blocks · 256 threads · grid-stride</div></a>
-      <a class="card" href="gelu_mul.html"><div class="nm">gelu_mul<span class="eng">EmbeddingGemma 2</span></div><p>GELU of the per-layer gate times that layer's slice of the per-layer inputs, in place.</p><div class="shows">Shows: a strided view into the [T][24][512] buffer, every register of one element.</div><div class="launch">≤ 448 blocks · 256 threads · grid-stride</div></a>
-    </div>
-  </section>
-
-  <section class="family" aria-labelledby="h-mm">
-    <h2 id="h-mm">Matrix products</h2>
-    <div class="cards">
-      <a class="card" href="mv_q8.html"><div class="nm">mv_q8<span class="eng">gpt-oss + Gemma 3</span></div><p>Decode-time matrix × vector with 8-bit weights: one warp per output row.</p><div class="shows">Shows: contiguous kilobyte loads per round, dot4_s8, the per-row reduction.</div><div class="launch">grid ⌈rows / 8⌉ · 256 threads</div></a>
-      <a class="card" href="gemm_q8.html"><div class="nm">gemm_q8<span class="eng">gpt-oss + Gemma 3</span></div><p>Prefill matrix × matrix: 64 rows × 32 tokens per block through shared memory.</p><div class="shows">Shows: tile staging, thread roles from the index bits, bank-conflict padding.</div><div class="launch">grid (rows / 64, ⌈T / 32⌉) · 256 threads</div></a>
-      <a class="card" href="quant_q8.html"><div class="nm">quant_q8<span class="eng">gpt-oss + Gemma 3</span></div><p>Turns a float vector into int8 blocks of 32 with one scale each, for the integer dot products.</p><div class="shows">Shows: the warp-wide max, rounding, all six call sites, the in-place mode used in prefill.</div><div class="launch">≤ 448 blocks · 256 threads · grid-stride over blocks</div></a>
-      <a class="card" href="mv_q5.html"><div class="nm">mv_q5<span class="eng">Gemma 3</span></div><p>Decode matrix × vector with Q5_0 feed-forward weights and int8 activations.</p><div class="shows">Shows: rebuilding 5-bit weights with one multiply, dp4a, the −16 correction; gate ‖ up and down.</div><div class="launch">grid ⌈rows / 8⌉ · 256 threads</div></a>
-      <a class="card" href="mv_mxfp4.html"><div class="nm">mv_mxfp4<span class="eng">gpt-oss</span></div><p>Decode matrix × vector for the 4 chosen experts, 4-bit E2M1 weights decoded with byte permutes.</p><div class="shows">Shows: reading 4 of 32 experts, fp4x4 via prmt, the e8m0 scale; gate, up and down.</div><div class="launch">grid (360, 4 slots) · 256 threads</div></a>
-    </div>
-  </section>
-
-  <section class="family" aria-labelledby="h-att">
-    <h2 id="h-att">Attention</h2>
-    <div class="cards">
-      <a class="card" href="rope_kv.html"><div class="nm">rope_kv<span class="eng">gpt-oss</span></div><p>Rotary embedding for 64 query and 8 key heads, plus the f16 KV-cache write.</p><div class="shows">Shows: one warp per head, NeoX pairs, the YaRN angle blend, the ring-buffer slot.</div><div class="launch">grid (11, tokens) · 256 threads</div></a>
-      <a class="card" href="attention.html"><div class="nm">attention<span class="eng">Gemma 3</span></div><p>Grouped-query attention over the f16 cache with a sliding window, one pass, no stored scores.</p><div class="shows">Shows: 8 warps × 2 keys per step, online softmax per warp, the final merge.</div><div class="launch">grid (16 q heads, tokens) · 256 threads</div></a>
-      <a class="card" href="attention_enc.html"><div class="nm">attention_enc<span class="eng">EmbeddingGemma 2</span></div><p>Bidirectional attention within each packed text, ±512 on local layers, with an exact two-pass softmax in shared memory.</p><div class="shows">Shows: the batch's attention pattern, the key range from seg and window, scores → max → exp → sum, two accumulators.</div><div class="launch">grid (4 q heads, tokens) · 256 threads · 4·keys B</div></a>
-    </div>
-  </section>
-
-  <section class="family" aria-labelledby="h-rs">
-    <h2 id="h-rs">Routing and sampling</h2>
-    <div class="cards">
-      <a class="card" href="mv_f32.html"><div class="nm">mv_f32<span class="eng">gpt-oss</span></div><p>The MoE router: 32 expert scores per token from a float32 32 × 2880 matrix.</p><div class="shows">Shows: one warp per row, 90 coalesced loads per lane, the logits handed to router_topk.</div><div class="launch">grid (4, tokens) · 256 threads</div></a>
-      <a class="card" href="router_topk.html"><div class="nm">router_topk<span class="eng">gpt-oss</span></div><p>Picks each token's 4 experts from 32 logits and softmaxes their weights.</p><div class="shows">Shows: four rounds of warp argmax with tie-breaking, a softmax over the picks.</div><div class="launch">grid (tokens) · 32 threads</div></a>
-      <a class="card" href="moe_sort.html"><div class="nm">moe_sort<span class="eng">gpt-oss</span></div><p>Groups (token, expert) pairs by expert so each expert's weights are read once per chunk.</p><div class="shows">Shows: histogram, serial scan, scatter with atomics; arbitrary but harmless order.</div><div class="launch">1 block · 1024 threads</div></a>
-      <a class="card" href="moe_combine.html"><div class="nm">moe_combine<span class="eng">gpt-oss</span></div><p>Mixes the 4 expert outputs with the router weights and adds them to the residual stream.</p><div class="shows">Shows: the [token][slot][2880] layout, one element's four FMAs, grid-stride over tokens.</div><div class="launch">≤ 448 blocks · 256 threads · grid-stride</div></a>
-      <a class="card" href="argmax.html"><div class="nm">argmax<span class="eng">gpt-oss + Gemma 3</span></div><p>Finds the highest logit of 201,088 with deterministic tie-breaking.</p><div class="shows">Shows: thread, warp and block levels; a planted tie resolved to the smaller index.</div><div class="launch">1 block · 1024 threads</div></a>
-      <a class="card" href="compact_logits.html"><div class="nm">compact_logits<span class="eng">gpt-oss + Gemma 3</span></div><p>Keeps only logits near the maximum so the host sorts hundreds of candidates instead of the vocabulary.</p><div class="shows">Shows: the threshold moving with temperature, atomic append, the host's fallback ladder.</div><div class="launch">≤ 448 blocks · 256 threads · grid-stride</div></a>
-    </div>
-  </section>
-
-  <footer><span>Sources: <code>gptoss/gptoss.ptx</code>, <code>gemma3/gemma3.ptx</code>, <code>gemma_emb2/emb2.ptx</code> and their host code. Model graphs: <code>model_htmls/gptoss_graph.html</code> and <code>gemma3_graph.html</code> (regenerated for the 12B). Kernels without a page yet (dashed in the graphs): gemm_q5, gemm_mxfp4, sample_logits, the gpt-oss variant of attention, and EmbeddingGemma 2's one-line scale.<br/><br/>Copyright (c) 2026 Edward Jiang, all rights reserved.</span></footer>
+  <footer id="foot"></footer>
 </div>
+
+<script src="catalog.js"></script>
+<script>
+(() => {
+  const C = window.CATALOG, $ = id => document.getElementById(id), E = C.ENGINES;
+  const MM = /^(mv_|gemm_)/;
+  const dots = list => list.map(e => `<i class="dot d-${e}" title="${E[e].name}"></i>`).join('');
+  const nKernels = C.FAMILIES.filter(f => f.id !== 'steps').reduce((a, f) => a + f.kernels.length, 0);
+  $('intro').textContent = C.INTRO;
+  $('stats').innerHTML = [[3, 'engines'], [nKernels, 'kernel pages'], [2, 'cross-engine steps'], ['0', 'libraries: PTX + C']].map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('');
+  $('models').innerHTML = C.MODELS.map(m => `<a class="model" data-eng="${m.id}" href="${C.page(E[m.id].page.replace('.html', ''))}" style="--ec:var(--e-${m.id})">
+    <h3>${E[m.id].name}<span>→</span></h3><div class="thumb"><img src="${m.fig}" alt="" loading="lazy"></div><p>${m.desc}</p>
+    <dl>${m.spec.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl><div class="ptx">${m.ptx}</div></a>`).join('');
+  const stepHtml = (s, i) => {
+    const [k, note, nh, hasPage] = s, mm = MM.test(k) ? ' mm' : '';
+    const noteHtml = note ? (nh ? `<a class="note" href="${C.page(nh)}">${note}</a>` : `<span class="note" style="color:var(--muted)">${note}</span>`) : '';
+    const inner = `<span class="n">${String(i + 1).padStart(2, '0')}</span><span class="k">${k}</span>`;
+    return hasPage === false ? `<div class="step nopage">${inner}${noteHtml}</div>`
+      : nh ? `<div class="step${mm}"><a href="${C.page(k)}" style="text-decoration:none">${inner}</a>${noteHtml}</div>`
+      : `<a class="step${mm}" href="${C.page(k)}">${inner}${noteHtml}</a>`;
+  };
+  $('tracks').innerHTML = C.FLOWS.map(f => `<div class="track" data-eng="${f.id}"><div class="tl"><i class="dot d-${f.id}"></i><a href="${C.page(E[f.id].page.replace('.html', ''))}">${E[f.id].name}</a><span>· ${f.note}</span></div><div class="rail">${f.steps.map(stepHtml).join('')}</div></div>`).join('') +
+    `<div class="track" data-eng="gptoss gemma3"><div class="tl"><i class="dot d-gptoss"></i><i class="dot d-gemma3"></i><span>${C.TAIL.note}</span></div><div class="rail">${C.TAIL.steps.map(stepHtml).join('')}</div></div>`;
+  $('fams').innerHTML = C.FAMILIES.map(f => `<div class="fam"><h3>${f.name}</h3><div class="grid">${f.kernels.map(k =>
+    `<a class="kc" data-eng="${k.engines.join(' ')}" href="${k.href}"><div class="top"><span class="name">${k.name}</span><span class="eng">${dots(k.engines)}</span></div><p>${k.desc}</p><div class="shows">${k.shows}</div><div class="launch">${k.launch}</div></a>`).join('')}</div></div>`).join('');
+  $('how').innerHTML = C.HOW.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('');
+  $('names').innerHTML = C.NAMES.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('');
+  $('foot').innerHTML = `<span>${C.FOOT}</span>`;
+
+  // engine filter, remembered per viewer when storage is available
+  let cur = 'all';
+  try { cur = localStorage.getItem('atlas-engine') || 'all'; } catch (e) {}
+  const opts = [['all', 'all', '']].concat(Object.entries(E).map(([id, e]) => [id, e.short, `<i class="dot d-${id}"></i>`]));
+  $('seg').innerHTML = opts.map(([id, t, d]) => `<button type="button" data-v="${id}">${d}${t}</button>`).join('');
+  function apply() {
+    document.querySelectorAll('#seg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === cur));
+    let shown = 0;
+    document.querySelectorAll('.kc, .model').forEach(el => { const on = cur === 'all' || el.dataset.eng.split(' ').includes(cur); el.classList.toggle('off', !on); if (on && el.classList.contains('kc')) shown++; });
+    document.querySelectorAll('.track').forEach(el => el.classList.toggle('hide', !(cur === 'all' || el.dataset.eng.split(' ').includes(cur))));
+    $('count').textContent = `${shown} of ${nKernels + 2} pages`;
+  }
+  $('seg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; cur = b.dataset.v; try { localStorage.setItem('atlas-engine', cur); } catch (err) {} apply(); });
+  apply();
+})();
+</script>
+</body>
+</html>

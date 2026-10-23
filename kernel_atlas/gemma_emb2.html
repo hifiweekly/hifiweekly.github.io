@@ -6,7 +6,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="atlas.css">
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <script src="atlas.js"></script>
@@ -20,6 +20,11 @@
     <p>A 271M-parameter text encoder: a Gemma 4 style layer stack that reads the whole text in both directions and ends in one 768-dimensional vector per text. There is no decoding and no KV cache; every text is a single forward pass, and several texts share one batch. Each step of the GGUF dataflow is drawn with the kernel the engine launches for it. Click any box for details.</p>
     <div class="facts" id="facts"></div>
   </header>
+
+  <section aria-labelledby="h-fig">
+    <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017), Figures 1 and 2. Panels: (a) the whole encoder with the per-layer-input branch, (b) bidirectional attention, (c) attention with q, k and v head norms, (d) the per-layer input inside a layer. Click the figure to open it full size.</p></div>
+    <figure class="panel paperfig"><a href="figures/gemma_emb2.svg"><img src="figures/gemma_emb2.svg" width="1460" height="1288" alt="EmbeddingGemma 2 architecture: scaled token embedding, 24 bidirectional layers of sandwich-normed attention and GEGLU feed-forward plus a per-layer input and a learned layer scale; final RMSNorm, linear 512 to 768, mean pooling and L2 normalization."></a></figure>
+  </section>
 
   <section aria-labelledby="h-ov">
     <div class="sechead"><h2 id="h-ov">Whole model</h2><p class="muted">24 layers in 4 groups of five local layers (each token sees ±512 positions of its own text) and one global layer (the whole text). Before the layers, every token gets 24 extra 512-value inputs, one per layer. Click a layer box to show it below. The first step of every layer, <a href="qkv.html">×3 q, k, v</a>, and the first step of its feed-forward, <a href="gate_up.html">gate ‖ up</a>, each have a page comparing the three engines.</p></div>

@@ -77,7 +77,7 @@ A.chrome = function (id) {
   const prev = A.KERNELS[(i + A.KERNELS.length - 1) % A.KERNELS.length], next = A.KERNELS[(i + 1) % A.KERNELS.length];
   const el = A.$('crumbs');
   const runs = k.models.map(m => A.MODELS.find(x => x.id === m)).map(m => `<a href="${m.id}.html#k=${k.id}">${m.name}</a>`).join(' ');
-  if (el) el.innerHTML = `<a href="index.html">Kernel Atlas</a><span class="muted">/</span><span class="muted">${k.family} · ${A.engineLabel(k.engine)}</span>` +
+  if (el) el.innerHTML = `<a href="index.html" class="brand">kernel<i>_</i>atlas</a><span class="muted">/</span><span class="muted">${k.family} · ${A.engineLabel(k.engine)}</span>` +
     `<span class="muted">runs in</span>${runs}` +
     `<span style="margin-left:auto"></span><a href="${prev.id}.html">← ${prev.name}</a><a href="${next.id}.html">${next.name} →</a>`;
   const f = A.$('foot');

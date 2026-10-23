@@ -7,7 +7,7 @@
 <title>The gate ‖ up Step</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="atlas.css">
 <script src="atlas.js"></script>
 <style>
@@ -114,7 +114,7 @@ segs($('engSeg'), 'eng', Object.entries(ENG).map(([k, e]) => [k, e.name]), () =>
 });
 function buildPass() { segs($('passSeg'), 'pass', ENG[S.eng].passes.map(p => [p, p === 'decode' ? 'decode · 1 token' : p === 'prefill' ? 'prefill · T tokens' : 'encode · T tokens']), drawShape); }
 buildPass();
-$('crumbs').innerHTML = `<a href="index.html">Kernel Atlas</a><span class="muted">/</span><span class="muted">Models</span><span style="margin-left:auto"></span>` + Object.values(ENG).map(e => `<a href="${e.page}">${e.name} →</a>`).join('');
+$('crumbs').innerHTML = `<a href="index.html" class="brand">kernel<i>_</i>atlas</a><span class="muted">/</span><span class="muted">Models</span><span style="margin-left:auto"></span>` + Object.values(ENG).map(e => `<a href="${e.page}">${e.name} →</a>`).join('');
 Atlas.facts($('facts'), [['1', 'launch for gate ‖ up (Gemma 3, EmbeddingGemma 2)'], ['2', 'launches for gpt-oss (gate, up)'], ['2F', 'output floats per token'], ['geglu', 'Gemma activation'], ['swiglu_oai', 'gpt-oss activation']]);
 
 const MiB = b => (b / 1048576).toFixed(2) + ' MiB';

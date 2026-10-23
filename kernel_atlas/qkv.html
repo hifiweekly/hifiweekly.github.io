@@ -7,7 +7,7 @@
 <title>The q, k, v Step</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="atlas.css">
 <script src="atlas.js"></script>
 <style>
@@ -112,7 +112,7 @@ segs($('kindSeg'), 'kind', [['local', 'local layer'], ['global', 'global layer']
 let syncPass;
 function buildPass() { syncPass = segs($('passSeg'), 'pass', ENG[S.eng].passes.map(p => [p, p === 'decode' ? 'decode · 1 token' : p === 'prefill' ? 'prefill · T tokens' : 'encode · T tokens']), drawShape); }
 buildPass();
-$('crumbs').innerHTML = `<a href="index.html">Kernel Atlas</a><span class="muted">/</span><span class="muted">Models</span><span style="margin-left:auto"></span>` + Object.values(ENG).map(e => `<a href="${e.page}">${e.name} →</a>`).join('');
+$('crumbs').innerHTML = `<a href="index.html" class="brand">kernel<i>_</i>atlas</a><span class="muted">/</span><span class="muted">Models</span><span style="margin-left:auto"></span>` + Object.values(ENG).map(e => `<a href="${e.page}">${e.name} →</a>`).join('');
 Atlas.facts($('facts'), [['3', 'launches per layer'], ['1', 'input row xn, shared'], ['1', 'output row qkv = [q | k | v]'], ['mv_q8', 'decode (1 token)'], ['gemm_q8', 'prefill / encode (T tokens)']]);
 
 const q8 = (r, c) => r * c * 34 / 32;

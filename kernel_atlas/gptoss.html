@@ -6,7 +6,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="atlas.css">
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <script src="atlas.js"></script>
@@ -20,6 +20,11 @@
     <p>The dataflow of the GGUF file, drawn with the kernel the engine launches at each step. Weight shapes and types come from the file header; each operation is named after its PTX kernel, and the operations that have a walkthrough link to it. Click any box for details.</p>
     <div class="facts" id="facts"></div>
   </header>
+
+  <section aria-labelledby="h-fig">
+    <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017), Figures 1 and 2. Panels: (a) the whole model, (b) one attention head with its sink, (c) grouped-query attention, (d) the mixture-of-experts feed-forward. Click the figure to open it full size.</p></div>
+    <figure class="panel paperfig"><a href="figures/gptoss.svg"><img src="figures/gptoss.svg" width="1520" height="856" alt="gpt-oss-20b architecture: token embedding, 24 layers of RMSNorm, grouped-query attention with sinks and a residual add, then RMSNorm, a 32-expert top-4 mixture of experts and a residual add; final RMSNorm, linear unembedding and softmax."></a></figure>
+  </section>
 
   <section aria-labelledby="h-ov">
     <div class="sechead"><h2 id="h-ov">Whole model</h2><p class="muted">24 layers alternate local (sliding window of 128 tokens) and global (full context), starting with local. Click a layer box to show it below. The first step of every layer, <a href="qkv.html">×3 q, k, v</a>, and the first step of its feed-forward, <a href="gate_up.html">gate ‖ up</a>, each have a page comparing the three engines.</p></div>
