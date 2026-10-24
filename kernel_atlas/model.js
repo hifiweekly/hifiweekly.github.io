@@ -87,6 +87,8 @@ A.model = function (M) {
     if (n.launch) rows.push(['launch', n.launch[st.pass] || n.launch.any]);
     if (n.io) rows.push(['buffers', n.io]);
     if (n.note) rows.push(['note', n.note]);
+    const tri = M.id === 'gemma3' && n.kernel && A.TRITON && (A.TRITON[n.kernel] || A.TRITON_EXTRA[n.kernel]);
+    if (tri) rows.push(['Triton', A.TRITON[n.kernel] ? A.TRITON[n.kernel].fns.filter(f => f[0] === '_').map(f => `<code>${f}</code>`).join(' + ') : `<code>${tri.label}</code>`]);
     if (rows.length) h += `<dl class="kv">${rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>`;
     if (k) h += `<p><a href="${k.id}.html">Open the ${k.name} walkthrough →</a>${k.engine !== 'shared' && k.engine !== M.engine ? ` <span class="muted">(the page shows the ${k.engine} version)</span>` : ''}</p>`;
     else if (n.kernel) h += `<p class="muted">No walkthrough page for <code>${n.kernel}</code> yet.</p>`;

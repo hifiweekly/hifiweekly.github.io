@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="atlas.css">
 <script src="atlas.js"></script>
+<script src="triton.js"></script>
 <style>
 /* Layout: a technical-manual page. The GEMM triad (Xs × Ws → Y) is the centerpiece,
    with the 256-thread block beside it and the source underneath; one stepper drives all. */
@@ -128,6 +129,7 @@ pre.code .n { color: var(--y); }
         <div class="tabs" role="tablist">
           <button role="tab" id="t-cpp" aria-pressed="true">CUDA C++ (condensed)</button>
           <button role="tab" id="t-ptx" aria-pressed="false">Hand-written PTX (excerpt)</button>
+          <button role="tab" id="t-py" aria-pressed="false">Triton (Python)</button>
         </div>
       </div>
       <pre class="code" id="code"></pre>
@@ -584,14 +586,16 @@ function highlight(src, lang) {
   return code + (comment ? `<span class="c">${comment}</span>` : '');
 }
 function drawCode() {
-  const tag = PHASES.find(p => p.id === S.phase).tag, src = S.lang === 'cpp' ? CPP : PTX;
+  const tag = PHASES.find(p => p.id === S.phase).tag, src = S.lang === 'cpp' ? CPP : S.lang === 'py' ? Atlas.TRITON.gemm_q8.src : PTX;
   $('code').innerHTML = src.split('\n').map(l => {
     const i = l.indexOf('|'), t = l.slice(0, i).trim(), body = l.slice(i + 1);
-    return `<span class="ln${t === tag ? ' on' : ''}">${highlight(body, S.lang) || ' '}</span>`;
+    return `<span class="ln${t.split(',').map(x => x.trim()).includes(tag) ? ' on' : ''}">${(S.lang === 'py' ? Atlas.hl(body, 'py') : highlight(body, S.lang)) || ' '}</span>`;
   }).join('');
 }
-$('t-cpp').addEventListener('click', () => { S.lang = 'cpp'; $('t-cpp').setAttribute('aria-pressed', 'true'); $('t-ptx').setAttribute('aria-pressed', 'false'); drawCode(); });
-$('t-ptx').addEventListener('click', () => { S.lang = 'ptx'; $('t-ptx').setAttribute('aria-pressed', 'true'); $('t-cpp').setAttribute('aria-pressed', 'false'); drawCode(); });
+const LANGS = { cpp: 't-cpp', ptx: 't-ptx', py: 't-py' };
+function setLang(l) { S.lang = l; Object.entries(LANGS).forEach(([k, id]) => $(id).setAttribute('aria-pressed', String(k === l))); drawCode(); }
+Object.entries(LANGS).forEach(([k, id]) => $(id).addEventListener('click', () => { Atlas.codeTab.set(k); setLang(k); }));
+{ const saved = Atlas.codeTab.get(); if (LANGS[saved]) { S.lang = saved; Object.entries(LANGS).forEach(([k, id]) => $(id).setAttribute('aria-pressed', String(k === saved))); } }
 
 // ---------- stepper ----------
 $('chips').innerHTML = PHASES.map(p => `<button class="chip" data-ph="${p.id}" aria-pressed="false"><i style="background: var(${p.color})"></i>${p.label}</button>`).join('');

@@ -14,7 +14,7 @@ window.CATALOG = (() => {
       spec: [['layers', '24'], ['width', '2,880'], ['q / kv heads', '64 / 8'], ['feed-forward', '32 experts, top 4'], ['weights', 'MXFP4 experts, Q8_0']] },
     { id: 'gemma3', fig: 'figures/gemma3.svg', desc: '48 layers, five local (window 1024) to one global, dense GELU feed-forward, tied output head.',
       shows: 'The same views; add_rmsnorm fusing the residual add with the next norm.',
-      ptx: 'gemma3.ptx · 13 kernels',
+      ptx: 'gemma3.ptx · 13 kernels · Triton port: kernels.py · 15 kernels',
       spec: [['layers', '48'], ['width', '3,840'], ['q / kv heads', '16 / 8'], ['feed-forward', '15,360, GEGLU'], ['weights', 'Q5_0 FFN, Q8_0']] },
     { id: 'emb2', fig: 'figures/gemma_emb2.svg', desc: '271M encoder: 24 bidirectional layers (five ±512 local to one whole-text global), per-layer inputs, one 768-dim vector per text.',
       shows: 'Packed texts in one batch, 256- and 512-dim heads, the per-layer-input branch, mean pooling on the host.',
@@ -74,7 +74,7 @@ window.CATALOG = (() => {
   const HOW = [
     ['Step through it', "Play, the arrow buttons, the slider, or your keyboard's ← and → keys move one step of the kernel at a time."],
     ['Point at the data', 'Hovering over a cell names the element, the thread that owns it and the values involved. Clicking selects that thread so every panel follows it.'],
-    ['Read the code', 'The source panel highlights the lines for the current step, in hand-written PTX or the equivalent CUDA C++.'],
+    ['Read the code', 'The source panel highlights the lines for the current step, in hand-written PTX or the equivalent CUDA C++, and on Gemma 3 kernels in the Triton port too. The tab you pick is kept from page to page.'],
     ['Ask why', 'Each page ends with the design reasons: the access pattern, the reduction scheme, what the kernel avoids.'],
   ];
   const NAMES = [
@@ -83,9 +83,11 @@ window.CATALOG = (() => {
     ['Tensors', 'GGUF names without <code>blk.N.</code>; shapes are rows × cols (output × input); types F32, F16, BF16, Q8_0, Q5_0, MXFP4.'],
     ['Layers and buffers', '<i>local</i> = sliding-window layer, <i>global</i> = full context. Buffers use the engine\'s names: x, xn, qkv, att, y, gu, h, logits.'],
   ];
-  const INTRO = "Interactive walkthroughs of the GPU kernels behind the three inference engines in this project: two text generators and one text-embedding encoder. Each page steps through one kernel the way the hardware runs it: which thread touches which bytes, where threads cooperate, and the matching lines of the hand-written PTX and of an equivalent CUDA C++ version. Every number on the pages is computed in your browser by re-running the kernel's float32 arithmetic on generated data.";
-  const FOOT = 'Sources: <code>gptoss/gptoss.ptx</code>, <code>gemma3/gemma3.ptx</code>, <code>gemma_emb2/emb2.ptx</code> and their host code. Model graphs: <code>model_htmls/gptoss_graph.html</code> and <code>gemma3_graph.html</code> (regenerated for the 12B). Kernels without a page yet: gemm_q5, gemm_mxfp4, sample_logits, the gpt-oss variant of attention, and EmbeddingGemma 2\'s one-line scale.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.';
+  const INTRO = "Interactive walkthroughs of the GPU kernels behind the three inference engines in this project: two text generators and one text-embedding encoder. Each page steps through one kernel the way the hardware runs it: which thread touches which bytes, where threads cooperate, and the matching lines of the hand-written PTX and of an equivalent CUDA C++ version. Every number on the pages is computed in your browser by re-running the kernel's float32 arithmetic on generated data. Gemma 3 also has a Triton rewrite; its kernels appear on the same pages as a third listing, tagged with the same steps, with a section on how each one differs from the PTX.";
+  const FOOT = 'Sources: <code>gptoss/gptoss.ptx</code>, <code>gemma3/gemma3.ptx</code>, <code>gemma_emb2/emb2.ptx</code> and their host code; the Triton port <code>gemma3_triton/kernels.py</code> (compiler figures from Triton 3.8 on sm_89). Model graphs: <code>model_htmls/gptoss_graph.html</code> and <code>gemma3_graph.html</code> (regenerated for the 12B). Kernels without a page yet: gemm_q5, gemm_mxfp4, sample_logits, the gpt-oss variant of attention, and EmbeddingGemma 2\'s one-line scale.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.';
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const page = name => BASE + name + '.html';
-  return { BASE, ENGINES, MODELS, FAMILIES, FLOWS, TAIL, HOW, NAMES, INTRO, FOOT, esc, page };
+  // kernels whose page carries the Triton port of gemma3_triton/kernels.py
+  const TRITON = ['rmsnorm', 'add_rmsnorm', 'qk_norm_rope', 'geglu', 'mv_q8', 'gemm_q8', 'quant_q8', 'mv_q5', 'attention', 'argmax', 'compact_logits'];
+  return { TRITON, BASE, ENGINES, MODELS, FAMILIES, FLOWS, TAIL, HOW, NAMES, INTRO, FOOT, esc, page };
 })();

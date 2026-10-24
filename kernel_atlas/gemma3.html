@@ -10,12 +10,13 @@
 <link rel="stylesheet" href="atlas.css">
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <script src="atlas.js"></script>
+<script src="triton.js"></script>
 <script src="model.js"></script>
 
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Model graph · gemma3/gemma-3-12b-it-Q5_0.gguf · engine gemma3.ptx</div>
+    <div class="eyebrow">Model graph · gemma3/gemma-3-12b-it-Q5_0.gguf · engines gemma3.ptx and gemma3_triton/kernels.py</div>
     <h1>Gemma 3 12B</h1>
     <p>The dataflow of the GGUF file, drawn with the kernel the engine launches at each step. Weight shapes and types come from the file header; each operation is named after its PTX kernel, and the operations that have a walkthrough link to it. Click any box for details.</p>
     <div class="facts" id="facts"></div>
@@ -59,6 +60,30 @@
   <section aria-labelledby="h-t">
     <div class="sechead"><h2 id="h-t">Tensors of one layer, plus the shared ones</h2><p class="muted">Shapes are rows × cols, that is output × input, the way the kernels index them. The GGUF header lists the same dimensions in the other order (3840 × 4096 for attn_q.weight). The engine loads either file: BF16 tensors are converted at load time; the Q5_0 file already holds Q8_0 attention and Q5_0 feed-forward weights.</p></div>
     <div class="panel tablewrap"><table class="list" id="tensors"></table></div>
+  </section>
+
+  <section aria-labelledby="h-tri">
+    <div class="sechead"><h2 id="h-tri">The Triton engine</h2><p class="muted"><code>gemma3_triton/</code> rewrites <code>gemma3.c</code> and <code>gemma3.ptx</code> in Python and Triton. It reads the same model files with the same weight formats (Q5_0 feed-forward, Q8_0 attention and output head, f16 KV cache) and launches the same sequence of kernels, so every box in the graphs above has a Triton counterpart. torch only allocates memory, moves bytes while loading and captures the CUDA graph; no torch math runs in the forward pass. Each kernel page with a Triton port has a <b>Triton (Python)</b> tab in its code panel, tagged with the same steps, and a section on how the port differs.</p></div>
+    <div class="facts" id="triFacts"></div>
+    <div class="panel tablewrap"><table class="list" id="triMap"></table></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Where it differs from the PTX engine</h3>
+        <div class="tablewrap"><table class="list" id="triDiff"></table></div>
+      </div>
+      <div class="panel">
+        <h3>Measured on the RTX 4070 SUPER</h3>
+        <p class="muted">1,256-token prompt, greedy decoding.</p>
+        <div class="tablewrap"><table class="list" id="triPerf"></table></div>
+        <p>Greedy text matches the PTX engine, and the logits after a prompt agree to KL 2.8e-6 with the same top 5. Loading the BF16 file (quantized on the GPU) gives logits bit-identical to loading the Q5_0 file, and KV-cache reuse is bit-exact (<code>python gemma3.py cache-test</code>). 30 kernel self-tests compare against CPU references (<code>make test</code>).</p>
+        <p class="muted">Before steady state: about 3 s on the first launch in a process while Triton hashes its library for the compile-cache key, and about 60 ms on the first decode step, which captures the CUDA graph.</p>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>Triton kernels without a walkthrough page</h3><div class="tabs" id="triTabs"></div></div>
+      <p class="muted" id="triNote"></p>
+      <pre class="code" id="triCode"></pre>
+    </div>
   </section>
 
   <footer>Sources: the wiring of <code>model_htmls/gemma3_graph.html</code>, regenerated with <code>gguf_graph.py</code> from <code>gemma3/gemma-3-12b-it-BF16.gguf</code> because that file was drawn from Gemma 3 27B (62 layers, 5376 wide). Its attention scale 1/√240 follows the 27B rule; the 12B uses 1/√256, as <code>read_config()</code> does. Kernels and launch shapes: <code>forward()</code> in <code>gemma3/gemma3.c</code>. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.</footer>
@@ -155,4 +180,47 @@ const M = {
   ],
 };
 Atlas.model(M);
+
+// the Triton engine section
+(() => {
+  const $ = Atlas.$, page = k => Atlas.KERNELS.some(x => x.id === k) ? `<a href="${k}.html#s-triton">${k}</a>` : k;
+  Atlas.facts($('triFacts'), [['15', '@triton.jit kernels for inference, + 2 weight quantizers'], ['1', 'CUDA-graph replay per decode token (PTX: ~670 launches)'], ['998 / 367', 'prompt tok/s, Triton / PTX'], ['44.2 / 42.4', 'decode tok/s, Triton / PTX'], ['2.8e-6', 'KL of the logits vs PTX']]);
+  const rows = [
+    ['rmsnorm', '_rmsnorm', '(T,) · 8 warps', 'whole row in registers; div.full, so last bits differ'],
+    ['add_rmsnorm', '_add_rmsnorm', '(T,) · 8 warps', 'pass 3 reads registers; last bits differ'],
+    ['quant_q8', '_quant_q8', '⌈nblk / 32⌉ · 4 warps', 'bit-identical (div_rn, rint)'],
+    ['mv_q8', '_mv_q8', '⌈rows / 4⌉ · 4 warps', '4 rows × 1024 columns per step'],
+    ['mv_q5', '_mv_q5', '⌈rows / 4⌉ · 4 warps', 'same exact integer block sums, no dp4a'],
+    ['gemm_q8', '_gemm_q8', '(rows / 64, ⌈T / 32⌉) · 4 warps', 'dequantized tile, tf32x3 tensor cores (~1e-6 of f32)'],
+    ['gemm_q5', '_gemm_q5', '(rows / 64, ⌈T / BT⌉), BT ≤ 128 · 4 warps', 'int8 × int8 → int32 tensor cores per block, exact'],
+    ['qk_norm_rope', '_qk_norm_rope', '(32, T) · 4 warps', 'one pair per thread; position read on the GPU'],
+    ['attention', '_attention + _attention_merge', 'decode (8, 1, 32) + (16, T); prefill (8, ⌈T / 16⌉, 1)', 'flash attention per kv head; keys split 32 ways when decoding'],
+    ['geglu', '_geglu', '⌈n · T / 1024⌉ · 4 warps', 'div.full in tanh'],
+    ['argmax', '_argmax', '(1,) · 16 warps', 'same index, ties to the smallest'],
+    ['compact_logits', '_compact_logits', '⌈n / 1024⌉ · 4 warps', 'same candidates, arbitrary order'],
+    ['sample_logits', '_sample_logits', '(1,) · 16 warps', 'inverse CDF with tl.cumsum'],
+    ['embedding lookup (host)', '_embed', '(T,) · 4 warps', 'on the GPU, from the tied Q8 head'],
+  ];
+  $('triMap').innerHTML = '<thead><tr><th>PTX kernel</th><th>Triton function</th><th>launch</th><th>vs the PTX</th></tr></thead><tbody>' +
+    rows.map(([k, f, l, d]) => `<tr><td>${page(k)}</td><td><code>${f}</code></td><td>${l}</td><td>${d}</td></tr>`).join('') + '</tbody>';
+  $('triDiff').innerHTML = '<thead><tr><th></th><th>PTX</th><th>Triton</th></tr></thead><tbody>' + [
+    ['prompt FFN (gemm_q5)', 'f32 FMA on Q8-rounded activations', 'int8 × int8 → int32 tl.dot per 32-value block (exact; llama.cpp\'s MMQ idea)'],
+    ['prompt projections (gemm_q8)', 'f32 FMA', 'dequantized tile, tl.dot in tf32x3'],
+    ['attention', 'one block per (head, token)', 'flash attention over 32-key blocks, both q heads of a kv head in one tile; flash decoding with a merge'],
+    ['embedding lookup', 'host', 'embed kernel reading the tied Q8 head'],
+    ['decode launches', '~670 driver calls per token', 'one CUDA-graph replay; position and ids read from device memory'],
+    ['quantizing a BF16 file', 'CPU threads', 'GPU kernels, bit-identical to ggml\'s reference'],
+  ].map(([a, b, c]) => `<tr><td>${a}</td><td>${b}</td><td>${c}</td></tr>`).join('') + '</tbody>';
+  $('triPerf').innerHTML = '<thead><tr><th></th><th>PTX gemma3/</th><th>Triton</th></tr></thead><tbody>' +
+    [['prompt', '367 tok/s', '998 tok/s'], ['decode', '42.4 tok/s', '44.2 tok/s (43 with top-k / top-p)']].map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') + '</tbody>';
+  const notes = {
+    gemm_q5: 'Prefill feed-forward. Each step rebuilds one 32-value Q5_0 block of 64 rows as int8 (q − 16), interleaves the low and high halves back into value order with join and permute, and multiplies it with the int8 activations on tensor cores (mma.sync.m16n8k32.s8.s8.s32). The int32 result is exact, then scaled by d_w · d_x. Weight-bound, so the token tile grows with the chunk, up to 128.',
+    embed: 'The PTX engine looks up the token row on the CPU. Here one program per token dequantizes its row of the tied Q8_0 output head, so the token ids can stay in device memory and the decode step stays inside the CUDA graph.',
+    sample_logits: 'Temperature sampling with min-p over the whole vocabulary, in one program: pass 1 sums the weights, pass 2 finds the first index whose running sum (tl.cumsum) passes u · Z. Used when neither top-k nor top-p is set; otherwise compact_logits hands the host a short candidate list.',
+  };
+  const code = Atlas.code($('triCode'), $('triTabs'), Atlas.TRITON_EXTRA, { remember: false });
+  const note = () => { const b = $('triTabs').querySelector('[aria-pressed="true"]'); $('triNote').textContent = notes[b ? b.dataset.n : 'gemm_q5']; };
+  $('triTabs').addEventListener('click', note);
+  code.show(''); note();
+})();
 </script>

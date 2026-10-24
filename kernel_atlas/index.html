@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="atlas.css">
 <style>
-/* Index of the v6 atlas ("Scope" theme; tokens and base styles come from atlas.css). */
+/* Index of the v7 atlas ("Scope" theme; tokens and base styles come from atlas.css). */
 body { padding-top: 0; }
 .wrap a, .hero a { color: inherit; }
 .wrap footer a { color: var(--accent); }
@@ -92,6 +92,7 @@ a.step:hover { border-color: var(--accent); }
 .kc .eng { display: flex; gap: 4px; }
 .kc p { margin: 0; font-size: 13.5px; }
 .kc .shows { font-size: 12.5px; color: var(--muted); }
+.kc .tri { float: right; margin-left: 8px; color: var(--e-gemma3); }
 .kc .launch { margin-top: auto; font: 11.5px var(--font-mono); color: var(--muted); padding-top: 7px; border-top: 1px dashed var(--line2); }
 .off { opacity: 0.22; }
 .hide { display: none !important; }
@@ -156,7 +157,7 @@ footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--lin
   const dots = list => list.map(e => `<i class="dot d-${e}" title="${E[e].name}"></i>`).join('');
   const nKernels = C.FAMILIES.filter(f => f.id !== 'steps').reduce((a, f) => a + f.kernels.length, 0);
   $('intro').textContent = C.INTRO;
-  $('stats').innerHTML = [[3, 'engines'], [nKernels, 'kernel pages'], [2, 'cross-engine steps'], ['0', 'libraries: PTX + C']].map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('');
+  $('stats').innerHTML = [[3, 'engines'], [nKernels, 'kernel pages'], [2, 'cross-engine steps'], [C.TRITON.length, 'with Triton code']].map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('');
   $('models').innerHTML = C.MODELS.map(m => `<a class="model" data-eng="${m.id}" href="${C.page(E[m.id].page.replace('.html', ''))}" style="--ec:var(--e-${m.id})">
     <h3>${E[m.id].name}<span>→</span></h3><div class="thumb"><img src="${m.fig}" alt="" loading="lazy"></div><p>${m.desc}</p>
     <dl>${m.spec.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl><div class="ptx">${m.ptx}</div></a>`).join('');
@@ -171,7 +172,7 @@ footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--lin
   $('tracks').innerHTML = C.FLOWS.map(f => `<div class="track" data-eng="${f.id}"><div class="tl"><i class="dot d-${f.id}"></i><a href="${C.page(E[f.id].page.replace('.html', ''))}">${E[f.id].name}</a><span>· ${f.note}</span></div><div class="rail">${f.steps.map(stepHtml).join('')}</div></div>`).join('') +
     `<div class="track" data-eng="gptoss gemma3"><div class="tl"><i class="dot d-gptoss"></i><i class="dot d-gemma3"></i><span>${C.TAIL.note}</span></div><div class="rail">${C.TAIL.steps.map(stepHtml).join('')}</div></div>`;
   $('fams').innerHTML = C.FAMILIES.map(f => `<div class="fam"><h3>${f.name}</h3><div class="grid">${f.kernels.map(k =>
-    `<a class="kc" data-eng="${k.engines.join(' ')}" href="${k.href}"><div class="top"><span class="name">${k.name}</span><span class="eng">${dots(k.engines)}</span></div><p>${k.desc}</p><div class="shows">${k.shows}</div><div class="launch">${k.launch}</div></a>`).join('')}</div></div>`).join('');
+    `<a class="kc" data-eng="${k.engines.join(' ')}" href="${k.href}"><div class="top"><span class="name">${k.name}</span><span class="eng">${dots(k.engines)}</span></div><p>${k.desc}</p><div class="shows">${k.shows}</div><div class="launch">${k.launch}${C.TRITON.includes(k.name) ? '<span class="tri">+ Triton</span>' : ''}</div></a>`).join('')}</div></div>`).join('');
   $('how').innerHTML = C.HOW.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('');
   $('names').innerHTML = C.NAMES.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('');
   $('foot').innerHTML = `<span>${C.FOOT}</span>`;

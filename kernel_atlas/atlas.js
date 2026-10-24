@@ -73,15 +73,18 @@ new MutationObserver(recolor).observe(document.documentElement, { attributes: tr
 
 // ---------- page chrome ----------
 A.chrome = function (id) {
+  A.page = id;
   const i = A.KERNELS.findIndex(k => k.id === id), k = A.KERNELS[i];
   const prev = A.KERNELS[(i + A.KERNELS.length - 1) % A.KERNELS.length], next = A.KERNELS[(i + 1) % A.KERNELS.length];
   const el = A.$('crumbs');
   const runs = k.models.map(m => A.MODELS.find(x => x.id === m)).map(m => `<a href="${m.id}.html#k=${k.id}">${m.name}</a>`).join(' ');
   if (el) el.innerHTML = `<a href="index.html" class="brand">kernel<i>_</i>atlas</a><span class="muted">/</span><span class="muted">${k.family} · ${A.engineLabel(k.engine)}</span>` +
     `<span class="muted">runs in</span>${runs}` +
+    (A.TRITON && A.TRITON[id] ? `<a href="#s-triton">Triton version</a>` : '') +
     `<span style="margin-left:auto"></span><a href="${prev.id}.html">← ${prev.name}</a><a href="${next.id}.html">${next.name} →</a>`;
   const f = A.$('foot');
   if (f) f.innerHTML = `<span>${f.innerHTML}</span><span><a href="${prev.id}.html">← ${prev.name}</a> · <a href="index.html">all kernels</a> · <a href="${next.id}.html">${next.name} →</a></span>`;
+  if (A.tritonSection) A.tritonSection(id);
 };
 A.facts = (el, list) => { el.innerHTML = list.map(([b, s]) => `<div class="fact"><b>${b}</b><span>${s}</span></div>`).join(''); };
 A.legend = (el, list) => { el.innerHTML = list.map(([c, t]) => `<span><i class="sw" style="background: var(${c})"></i>${t}</span>`).join(''); };
@@ -174,18 +177,26 @@ A.butterfly = function (svg, table, stage, opts = {}) {
 // Source lines are "TAGS|text"; TAGS is a comma list matched against the step's tag.
 const KW = {
   cpp: /\b(extern|__global__|__launch_bounds__|__shared__|__device__|const|unsigned|float|float2|float4|uint4|uint2|int|int8_t|uint32_t|__half|void|for|if|else|return|while|__syncthreads|__ldg|__half2float|__float2half|__shfl_xor_sync|atomicAdd|fmaf|fminf|fmaxf|exp2f|sqrtf|rsqrtf|copysignf|break|bool)\b/g,
+  py: /@triton\.jit|\b(def|for|in|range|if|else|return|and|or|not|None|True|False)\b|\b(tl|triton|libdevice)\.[\w.]+/g,
   ptx: /\b(ld\.[\w.]+|st\.[\w.]+|fma\.rn\.f32|mul\.[\w.]+|bar\.sync|bra(\.uni)?|call(\.uni)?|setp\.[\w.]+|selp\.[\w.]+|add\.[\w.]+|sub\.[\w.]+|and\.[\w.]+|or\.pred|shr\.u32|shl\.b32|mov\.[\w.]+|cvt\.[\w.]+|shfl\.sync\.bfly\.b32|atom\.[\w.]+|ex2\.approx\.f32|div\.[\w.]+|rem\.u32|sqrt\.rn\.f32|rcp\.rn\.f32|max\.f32|min\.[\w.]+|abs\.f32|neg\.f32|copysign\.f32|mad\.lo\.u32|bfe\.s32|div\.u32|ret)\b/g,
 };
 function hl(src, lang) {
   let code = A.esc(src), comment = '';
-  const ci = code.indexOf('//'); if (ci >= 0) { comment = code.slice(ci); code = code.slice(0, ci); }
+  const ci = code.indexOf(lang === 'py' ? '#' : '//'); if (ci >= 0) { comment = code.slice(ci); code = code.slice(0, ci); }
   code = code.replace(KW[lang], '<span class="k">$&</span>');
   return code + (comment ? `<span class="c">${comment}</span>` : '');
 }
-A.code = function (pre, tabsEl, listings) {
-  const names = Object.keys(listings); let cur = names[0], tag = '';
-  tabsEl.innerHTML = names.map((n, i) => `<button data-n="${n}" aria-pressed="${i === 0}">${listings[n].label}</button>`).join('');
-  tabsEl.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; cur = b.dataset.n; tabsEl.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); draw(); });
+// Pages whose kernel has a Triton port (triton.js) get it as a third listing. The chosen tab is
+// remembered per viewer, so someone reading the Triton code keeps seeing it from page to page.
+A.tritonListing = id => A.TRITON && A.TRITON[id] && { label: 'Triton (Python)', lang: 'py', src: A.TRITON[id].src };
+A.codeTab = { get() { try { return localStorage.getItem('atlas-code'); } catch (e) { return null; } }, set(v) { try { localStorage.setItem('atlas-code', v); } catch (e) {} } };
+A.hl = hl;
+A.code = function (pre, tabsEl, listings, opts = {}) {
+  const py = A.tritonListing(A.page);
+  if (py && !listings.py) listings = { ...listings, py };
+  const keep = opts.remember !== false, names = Object.keys(listings), saved = keep && A.codeTab.get(); let cur = names.includes(saved) ? saved : names[0], tag = '';
+  tabsEl.innerHTML = names.map(n => `<button data-n="${n}" aria-pressed="${n === cur}">${listings[n].label}</button>`).join('');
+  tabsEl.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; cur = b.dataset.n; if (keep) A.codeTab.set(cur); tabsEl.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); draw(); });
   function draw() {
     const L = listings[cur];
     pre.innerHTML = L.src.split('\n').map(l => {
