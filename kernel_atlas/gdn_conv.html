@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>gdn_conv Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.regs td.ins { font-family: var(--font-mono); color: var(--muted); text-align: left; white-space: nowrap; }
+.red { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.red div { font-family: var(--font-mono); font-size: 11px; text-align: center; padding: 6px 0; border-radius: 2px; background: var(--bg); color: var(--muted); }
+.red div.on { background: var(--sync); color: var(--panel); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · one thread per channel and token</div>
+    <h1>Inside <code>gdn_conv</code></h1>
+    <p>Before the delta rule sees q, k and v, each of their 8192 channels passes through a short causal convolution: a weighted sum of the channel's value at this token and at the three tokens before it, with 4 learned weights per channel, then SiLU. It gives the linear-attention layer a little local context of its own. The 16 query and 16 key heads are then L2-normalized, so the recurrence only ever sees unit-length keys. The tokens before a chunk live in a small conv state; <code>conv_save</code> updates it afterwards.</p>
+    <div class="formula"><span class="y">y</span>ₜ[c] = SiLU( Σ<sub>s=0…3</sub> <span class="w">w</span>[c][s] · <span class="x">x</span><sub>t−3+s</sub>[c] ) &nbsp;·&nbsp; q, k heads: y ← y / √(Σ y² + ε) &nbsp;&nbsp;<span class="muted">// x_u for u &lt; 0 is row 3 + u of the conv state; ε = 1e-6</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">One head of 128 channels, one token</h2>
+      <p>The grid is time × channel for the chosen head: the top three rows are the conv state (the last 3 inputs before this chunk), below them the chunk's T tokens. A block is one (head, token): its 128 threads each read a column of 4 cells ending at their token. Pick the head, the token and the chunk length; click a column to follow its thread.</p>
+    </div>
+    <div class="panel"><div class="controls">
+      <label for="hd">head <select id="hd"></select></label>
+      <label for="tt">token t <input id="tt" type="range" min="0" max="3" value="1"> <span id="tv" class="mono"></span></label>
+      <label for="nt">tokens in the chunk T <input id="nt" type="range" min="1" max="6" value="4"> <span id="ntv" class="mono"></span></label>
+    </div></div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x" id="inlabel"></b><span>rows: positions · columns: the head's 128 channels</span></div>
+        <canvas id="gin"></canvas>
+        <div class="cvlabel"><b class="y">out = cv (the kernel's output, the delta rule's q, k, v)</b><span id="outsub"></span></div>
+        <canvas id="gout"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over a cell to see what it holds.</div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b><span>float32</span></div>
+        <div class="tablewrap"><table class="nums regs" id="regs"></table></div>
+        <div class="cvlabel"><b class="s">shared float gc_red[4]</b><span>q and k heads only</span></div>
+        <div class="red" id="red"></div>
+        <dl class="kv" id="card"></dl>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>A depthwise convolution: no channel talks to another</h3>
+        <p>Each channel has its own 4 weights and sees only its own past, so a thread needs 4 loads of x, one float4 of weights and 4 FMAs, in the same order as ggml's <code>ssm_conv</code> (sum from tap 0). The x values come from the qkvz buffer, where each token's row is 12,288 floats: thread c of the block for token t reads column c of rows t − 3 … t, and the 128 threads of a block read 512 consecutive bytes of each row.</p>
+        <p>The L2 norm needs the whole head, which is why a block is exactly one head: 4 warp butterflies, 4 partials in shared memory, one barrier. The 32 value heads skip it (a block-uniform branch on blockIdx.x).</p>
+      </div>
+      <div class="panel">
+        <h3>The conv state and conv_save</h3>
+        <p>Positions before the chunk come from the conv state, 3 rows × 8192 channels per layer (96 KB). It is updated by a separate small kernel, <code>conv_save</code>, after gdn_conv: the blocks for tokens 0–2 still read the old rows, and with no ordering between blocks, writing them in the same launch would race.</p>
+        <p>conv_save keeps the last 3 rows of [state; chunk]. When the chunk has fewer than 3 tokens, the old rows shift up; each thread owns one channel and writes rows 0, 1, 2 in order, so it always reads a row before overwriting it. Like the recurrent state, the conv state holds exactly the tokens seen so far: it is part of the chat snapshot.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernels <code>gdn_conv</code> and <code>conv_save</code>; launched by <code>gdn_conv()</code> (grid (64, T), 128 threads) and <code>conv_save()</code> (grid-stride over 8192 channels) in <code>qwen35.c</code>, after the [qkv ‖ z] product and before <a href="gdn_recur.html">gdn_recur</a>. Weights: <code>ssm_conv1d.weight</code>, 8192 × 4 F32. Values here are generated and computed in float32 in the kernel's order.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('gdn_conv');
+const D = 128, EPS = 1e-6, LOG2E = 1.4426950408889634, NP = 3;
+Atlas.facts($('facts'), [['(64, T)', 'grid = (128-channel heads, tokens)'], ['128', 'threads: one per channel'], ['16 B', 'shared (q, k heads)'], ['4', 'taps per channel'], ['96 KB', 'conv state per layer']]);
+$('hd').innerHTML = Array.from({ length: 64 }, (_, h) => `<option value="${h}">${h < 16 ? `q head ${h}` : h < 32 ? `k head ${h - 16}` : `v head ${h - 32}`} · channels ${h * 128}–${h * 128 + 127}</option>`).join('');
+const S = { h: 18, t: 1, T: 4, c: 21 };
+let M;
+const kind = () => S.h < 16 ? 'q' : S.h < 32 ? 'k' : 'v', normed = () => S.h < 32;
+
+function build() {
+  const r = Atlas.rng(777 + S.h * 13), T = S.T;
+  const state = [0, 1, 2].map(() => Float32Array.from({ length: D }, () => fr(Atlas.gauss(r) * 0.9)));
+  const inp = Array.from({ length: T }, () => Float32Array.from({ length: D }, () => fr(Atlas.gauss(r) * 0.9)));
+  const w = Array.from({ length: D }, () => [0.12, 0.18, 0.3, 0.55].map(s => fr(Atlas.gauss(r) * s)));
+  const xAt = (u, c) => u < 0 ? state[3 + u][c] : inp[u][c];
+  const out = [], regs = [];
+  for (let t = 0; t < T; t++) {
+    const pre = new Float32Array(D), act = new Float32Array(D), rg = [];
+    for (let c = 0; c < D; c++) {
+      let sum = 0; const taps = [];
+      for (let s = 0; s < 4; s++) { const u = t + s - 3, x = xAt(u, c); sum = fr(x * w[c][s] + sum); taps.push({ u, x, w: w[c][s], sum }); }
+      pre[c] = sum; act[c] = fr(sum / fr(fr(2 ** fr(sum * fr(-LOG2E))) + 1)); rg.push(taps);
+    }
+    let y = act, red = null, scale = null, tot = null;
+    if (normed()) {
+      const sq = Array.from(act, v => fr(v * v));
+      red = [0, 1, 2, 3].map(k => Atlas.bflyTable(sq.slice(32 * k, 32 * k + 32), (a, b) => fr(a + b))[5][0]);
+      tot = fr(fr(fr(red[0] + red[1]) + fr(red[2] + red[3])) + EPS);
+      scale = fr(1 / fr(Math.sqrt(tot)));
+      y = act.map(v => fr(v * scale));
+    }
+    out.push({ pre, act, y, red, scale, tot }); regs.push(rg);
+  }
+  // float64 reference of the whole chunk
+  let err = 0;
+  for (let t = 0; t < T; t++) {
+    const a = []; for (let c = 0; c < D; c++) { let s = 0; for (let k = 0; k < 4; k++) s += w[c][k] * xAt(t + k - 3, c); a.push(s / (1 + Math.exp(-s))); }
+    const n = normed() ? Math.sqrt(a.reduce((p, v) => p + v * v, 0) + EPS) : 1;
+    for (let c = 0; c < D; c++) err = Math.max(err, Math.abs(a[c] / n - out[t].y[c]));
+  }
+  const all = [...state, ...inp], newState = [0, 1, 2].map(k => all[T + k]);
+  M = { state, inp, w, out, regs, err, newState, xMax: Math.max(...all.flatMap(v => Array.from(v).map(Math.abs))) };
+}
+function buildSteps() {
+  const n = normed(), st = [{ tag: 'I', kind: 'idx', short: 'indices', title: `block (${S.h}, ${S.t}): head ${S.h} (${kind()}), token ${S.t}; thread → channel ${S.h} · 128 + tid`, text: 'The thread loads its channel\'s 4 weights with one float4 (w is [8192][4]) and starts the sum at 0.' }];
+  for (let s = 0; s < 4; s++) {
+    const u = S.t + s - 3;
+    st.push({ tag: 'X', kind: 'tap', s, short: `tap ${s}`, title: `tap ${s}: x at position t − ${3 - s} = ${u}${u < 0 ? `, from conv state row ${3 + u}` : ', from this chunk'}`, delay: 900,
+      text: u < 0 ? `Position ${u} is before the chunk, so it comes from the conv state: row 3 + u = ${3 + u}, written by conv_save at the end of the previous chunk (or step).` : `Row ${u} of the qkvz buffer, column ${S.h} · 128 + c: the same matrix product that produced this token's input also produced it. One FMA adds w[c][${s}] · x.` });
+  }
+  st.push({ tag: 'S', kind: 'silu', short: 'SiLU', title: 'SiLU: x / (1 + e^−x)', text: 'One ex2.approx and one division, as in swiglu.' });
+  if (n) {
+    st.push({ tag: 'N', kind: 'red', short: 'Σ y²', title: 'L2 norm, part 1: squares, warp butterflies, gc_red[warp], bar.sync', text: `${kind() === 'q' ? 'A query' : 'A key'} head: each thread squares its value, each warp reduces 32 squares with a butterfly, lane 0 writes the warp sum to shared memory, one barrier.` });
+    st.push({ tag: 'M', kind: 'scale', short: 'scale', title: 'L2 norm, part 2: 1 / √(Σ y² + ε), same in all 128 threads', text: 'One ld.shared.v4 (a broadcast) returns the 4 partials. The sum is the squared length of the head\'s 128-vector; after scaling it is 1 (up to ε).' });
+  }
+  st.push({ tag: 'O', kind: 'out', short: 'store', title: `store out[t][c] (row stride 8192)${n ? '' : ' - a value head skips the norm'}`, text: n ? 'Coalesced: 128 threads, 512 consecutive bytes.' : 'Value heads go to the recurrence as they are: the block-uniform branch <code>@%p6 bra STORE</code> jumps over the reduction.' });
+  st.push({ tag: 'V', kind: 'save', short: 'conv_save', title: 'then conv_save: the state keeps the last 3 inputs', text: `A second launch, after every block of gdn_conv is done. New state rows = the last 3 rows of [state; chunk] = ${S.T >= 3 ? `chunk rows ${S.T - 3}, ${S.T - 2}, ${S.T - 1}` : `the old rows shifted up by ${S.T}, then the chunk`}.` });
+  return st;
+}
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `I|extern "C" __global__ void gdn_conv(const float *in, unsigned ld, const float *state,
+I|        const float *w, float *out, unsigned C, unsigned nnorm, float eps)
+I|{
+I|    __shared__ float red[4];
+I|    unsigned head = blockIdx.x, t = blockIdx.y, c = head * 128 + threadIdx.x;
+I|    float4 wc = ((const float4 *)w)[c];                          // 4 taps of channel c
+I|    float sum = 0;
+X|    for (unsigned s = 0; s < 4; s++) {                           // positions t-3 .. t
+X|        unsigned u3 = t + s;                                     // u + 3
+X|        float x = u3 < 3 ? state[u3 * C + c] : in[(u3 - 3) * ld + c];
+X|        sum = fmaf(x, (&wc.x)[s], sum);
+X|    }
+S|    float y = sum / (1.0f + exp2f(sum * -1.442695041f));         // silu
+N|    if (head < nnorm) {                                          // q and k heads
+N|        float ss = y * y;
+N|        for (int off = 16; off >= 1; off >>= 1) ss += __shfl_xor_sync(~0u, ss, off);
+N|        if ((threadIdx.x & 31) == 0) red[threadIdx.x >> 5] = ss;
+N|        __syncthreads();
+M|        float4 p = *(float4 *)red;
+M|        y *= 1.0f / sqrtf((p.x + p.y) + (p.z + p.w) + eps);       // L2 norm
+N|    }
+O|    out[t * C + c] = y;
+I|}
+V|extern "C" __global__ void conv_save(const float *in, unsigned ld, float *state,
+V|        unsigned C, unsigned T)
+V|{
+V|    for (unsigned c = blockIdx.x * blockDim.x + threadIdx.x; c < C; c += gridDim.x * blockDim.x)
+V|        for (unsigned r = 0; r < 3; r++) {                       // in order: reads before writes
+V|            unsigned src = T + r;                                // index into [state; in]
+V|            state[r * C + c] = src < 3 ? state[src * C + c] : in[(src - 3) * ld + c];
+V|        }
+V|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    shl.b32             %r7, %r5, 7;
+I|    add.u32             %r7, %r7, %r4;          // channel
+I|    ld.global.nc.v4.f32 {%f2, %f3, %f4, %f5}, [%rd5];   // w[c][0..3]
+I|    mov.f32             %f6, 0f00000000;        // sum
+X|TAP:
+X|    add.u32             %r9, %r6, %r8;          // u + 3
+X|    setp.lt.u32         %p1, %r9, 3;
+X|    @%p1 bra            FROM_STATE;
+X|    sub.u32             %r10, %r9, 3;
+X|    mad.lo.u32          %r10, %r10, %r1, %r7;   // in[u][c]
+X|    ld.global.f32       %f7, [%rd6];
+X|    bra.uni             HAVE_X;
+X|FROM_STATE:
+X|    mad.lo.u32          %r10, %r9, %r2, %r7;    // state[3 + u][c]
+X|    ld.global.f32       %f7, [%rd6];
+X|HAVE_X:
+X|    fma.rn.f32          %f6, %f7, %f8, %f6;     // sum += x * w[s]
+X|    add.u32             %r8, %r8, 1;
+X|    setp.lt.u32         %p5, %r8, 4;
+X|    @%p5 bra            TAP;
+S|    mul.f32             %f9, %f6, 0fBFB8AA3B;   // -x log2(e)
+S|    ex2.approx.f32      %f9, %f9;
+S|    add.f32             %f9, %f9, 0f3F800000;
+S|    div.rn.f32          %f10, %f6, %f9;         // silu
+N|    setp.ge.u32         %p6, %r5, %r3;          // head >= nnorm: v head
+N|    @%p6 bra            STORE;
+N|    mul.f32             %f11, %f10, %f10;
+N|    shfl.sync.bfly.b32  %f12, %f11, 16, 31, -1;
+N|    ...                                         // offsets 8, 4, 2, 1
+N|    @%p7 st.shared.f32  [%r14], %f11;
+N|    bar.sync            0;
+M|    ld.shared.v4.f32    {%f13, %f14, %f15, %f16}, [gc_red];
+M|    add.f32             %f13, %f13, %f14;
+M|    add.f32             %f15, %f15, %f16;
+M|    add.f32             %f13, %f13, %f15;
+M|    add.f32             %f13, %f13, %f1;        // + eps
+M|    sqrt.rn.f32         %f13, %f13;
+M|    rcp.rn.f32          %f13, %f13;
+M|    mul.f32             %f10, %f10, %f13;
+O|STORE:
+O|    st.global.f32       [%rd7], %f10;           // out[t][c]
+V|ROW:                                           // conv_save
+V|    add.u32             %r11, %r3, %r10;        // source index T + r
+V|    setp.lt.u32         %p2, %r11, 3;
+V|    @%p2 bra            SRC_STATE;
+V|    ...
+V|    st.global.f32       [%rd4], %f1;            // state[r][c]` },
+});
+
+const gin = Atlas.grid($('gin'), NP + 6, D), gout = Atlas.grid($('gout'), 6, D);
+let steps, hover = null;
+const stepper = Atlas.stepper({ steps: [{ tag: '', title: '', text: '' }], code, render: () => draw() });
+function rebuild(keep) { $('tt').max = S.T - 1; S.t = Math.min(S.t, S.T - 1); $('tt').value = S.t; build(); steps = buildSteps(); stepper.setSteps(steps, keep); }
+const col = (v, mx) => ({ c: v >= 0 ? C.y : C.x, a: 0.1 + 0.85 * Math.min(1, Math.abs(v) / mx) });
+function draw() {
+  if (!M || !steps) return;
+  const st = stepper.step, T = S.T, rows = NP + T, saved = st.kind === 'save';
+  if (gin.rows !== rows) gin.resize(rows, D);
+  if (gout.rows !== T) gout.resize(T, D);
+  $('gin').style.aspectRatio = `${D} / ${rows * 3.2}`; $('gout').style.aspectRatio = `${D} / ${T * 3.2}`;
+  const g = gin.prep(), tapRows = st.kind === 'tap' ? [S.t + st.s] : st.kind === 'idx' ? [] : [S.t, S.t + 1, S.t + 2, S.t + 3];
+  for (let rr = 0; rr < rows; rr++) for (let c = 0; c < D; c++) {
+    const v = rr < NP ? (saved ? M.newState[rr][c] : M.state[rr][c]) : M.inp[rr - NP][c], { c: cc, a } = col(v, M.xMax);
+    const inBlock = rr >= S.t && rr <= S.t + 3;
+    g.cell(rr, c, cc, saved ? (rr < NP ? a : a * 0.35) : inBlock ? a : a * 0.35, 0.08);
+  }
+  g.hline(NP, C.fg, 1.5);
+  if (!saved) {
+    g.box(S.t, 0, 4, D, C.sync, 1.5);
+    tapRows.forEach(rr => g.box(rr, S.c, 1, 1, C.fg, 2));
+  } else g.box(0, 0, NP, D, C.sync, 2);
+  if (hover && hover.which === 'in') g.box(hover.r, hover.c, 1, 1, C.sync, 1.5);
+  $('inlabel').textContent = saved ? 'after conv_save: the top 3 rows are the new conv state' : `x: conv state (rows −3 … −1) and the chunk (rows 0 … ${T - 1}); the block for token ${S.t} reads rows ${S.t - 3} … ${S.t}`;
+  const o = gout.prep(), order = ['idx', 'tap', 'silu', 'red', 'scale', 'out', 'save'], at = k => order.indexOf(st.kind) >= order.indexOf(k);
+  const yMax = Math.max(1e-9, ...M.out.flatMap(p => Array.from(p.y).map(Math.abs)));
+  for (let t = 0; t < T; t++) for (let c = 0; c < D; c++) {
+    const done = t < S.t || (t === S.t && at('out')), v = M.out[t].y[c], { c: cc, a } = col(v, yMax);
+    o.cell(t, c, done ? cc : C.zero, done ? a : 0.3, 0.08);
+  }
+  o.box(S.t, S.c, 1, 1, C.fg, 2);
+  $('outsub').textContent = normed() ? `${kind()} head: each row has length 1` : 'v head: no norm';
+  Atlas.legend($('legend'), [['--y', 'positive'], ['--x', 'negative'], ['--sync', 'the rows this block reads'], ['--zero', 'not written yet (earlier tokens: other blocks, any order)']]);
+
+  // registers of the selected thread
+  const P = M.out[S.t], rg = M.regs[S.t][S.c], R = [];
+  rg.forEach((tp, s) => R.push(['X', s, `fma.rn.f32 (tap ${s})`, `x[${tp.u}] = ${tp.x.toFixed(4)} · w = ${tp.w.toFixed(4)}${tp.u < 0 ? '  (state)' : ''}`, tp.sum.toFixed(5)]));
+  R.push(['S', 0, 'ex2 / div.rn', 'SiLU(sum)', P.act[S.c].toFixed(5)]);
+  if (normed()) R.push(['M', 0, 'mul.f32', `× scale ${P.scale.toFixed(5)}`, P.y[S.c].toFixed(5)]);
+  const curTap = st.kind === 'tap' ? st.s : at('silu') ? 4 : -1;
+  $('regs').innerHTML = '<tr><th style="text-align:left">instruction</th><th style="text-align:left">operands</th><th>result</th></tr>' + R.map(([tg, s, ins, what, v]) => {
+    const shown = tg === 'X' ? s <= curTap : tg === 'S' ? at('silu') : at('scale');
+    const on = (tg === 'X' && st.kind === 'tap' && s === st.s) || (tg === 'S' && st.kind === 'silu') || (tg === 'M' && st.kind === 'scale');
+    return `<tr class="${on ? 'on' : ''}"${shown ? '' : ' style="opacity:.35"'}><td class="ins">${ins}</td><td style="text-align:left">${shown ? what : ''}</td><td>${shown ? v : '–'}</td></tr>`;
+  }).join('');
+  $('thlabel').textContent = `thread ${S.c} of block (${S.h}, ${S.t}) · channel ${S.h * 128 + S.c}`;
+  $('red').innerHTML = (P.red || [0, 0, 0, 0]).map((v, k) => `<div class="${normed() && at('red') ? 'on' : ''}">${normed() && at('red') ? v.toFixed(2) : 'warp ' + k}</div>`).join('');
+  const card = [['weights', M.w[S.c].map(v => v.toFixed(3)).join(', ')]];
+  if (normed() && at('scale')) card.push(['Σ y² + ε', P.tot.toFixed(4)], ['scale', P.scale.toFixed(5)]);
+  if (at('out')) card.push(['max |error| vs float64 (whole chunk)', M.err.toExponential(2)]);
+  $('card').innerHTML = card.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  $('tv').textContent = S.t; $('ntv').textContent = S.T;
+}
+const pickIn = p => { const rr = p.r; return rr < NP ? { pos: rr - NP, v: M.state[rr][p.c], src: `conv state row ${rr}` } : { pos: rr - NP, v: M.inp[rr - NP][p.c], src: `qkvz row ${rr - NP}` }; };
+gin.hook(p => { hover = { which: 'in', ...p }; const q = pickIn(p); $('status').textContent = `position ${q.pos} · channel ${S.h * 128 + p.c} · x = ${q.v.toFixed(4)} · ${q.src}`; draw(); },
+  p => { S.c = p.c; draw(); }, () => { hover = null; draw(); });
+gout.hook(p => { $('status').textContent = `out[${p.r}][${S.h * 128 + p.c}] = ${M.out[p.r].y[p.c].toFixed(5)} · written by thread ${p.c} of block (${S.h}, ${p.r})`; },
+  p => { S.c = p.c; S.t = p.r; $('tt').value = S.t; rebuild(true); }, () => {});
+$('hd').value = S.h;
+$('hd').addEventListener('change', () => { S.h = +$('hd').value; rebuild(false); });
+$('tt').addEventListener('input', () => { S.t = +$('tt').value; rebuild(true); });
+$('nt').addEventListener('input', () => { S.T = +$('nt').value; rebuild(true); });
+rebuild(false);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

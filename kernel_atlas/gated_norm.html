@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>gated_norm Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.trio .cv { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.red { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.red div { font-family: var(--font-mono); font-size: 11px; text-align: center; padding: 6px 0; border-radius: 2px; background: var(--bg); color: var(--muted); }
+.red div.on { background: var(--sync); color: var(--panel); }
+.red div.sel { outline: 2px solid var(--fg); }
+.layout svg { display: block; width: 100%; height: auto; }
+@media (max-width: 620px) { .trio { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · one block of 128 threads per (head, token)</div>
+    <h1>Inside <code>gated_norm</code></h1>
+    <p>After <a href="gdn_recur.html">gdn_recur</a> has read each DeltaNet head's state, the 32 head outputs o (128 values each) are normalized and gated before the output projection: an RMSNorm over each head separately, a learned weight shared by all heads, and a multiplicative gate silu(z), where z is a fourth projection of the layer input computed alongside q, k and v. One block handles one head of one token, so a thread owns one value and the only reduction is over 128 numbers.</p>
+    <div class="formula"><span class="y">out</span>[j] = <span class="x">o</span>[j] · <span class="s">1 / √(Σ o² / 128 + ε)</span> · <span class="w">w</span>[j] · SiLU(<span class="x">z</span>[j]) &nbsp;&nbsp;<span class="muted">// per head of 128; w = ssm_norm.weight (128 values, all heads); ε = 1e-6</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">One head, 128 threads</h2>
+      <p>The three grids are the head's 128 values drawn as 4 warps (rows) × 32 lanes (columns): thread j owns cell j in each. Step through the sum of squares, the butterfly, the four-way merge through shared memory and the gated output. Click a cell to follow that thread.</p>
+    </div>
+    <div class="panel"><div class="controls">
+      <label for="hd">v head <select id="hd"></select></label>
+      <label for="zs">z spread <input id="zs" type="range" min="0.2" max="4" step="0.1" value="1.6"> <span id="zv" class="mono"></span></label>
+    </div></div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="trio">
+          <div class="cv"><div class="cvlabel"><b class="x">o (from gdn_recur)</b></div><canvas id="go"></canvas></div>
+          <div class="cv"><div class="cvlabel"><b class="w">SiLU(z) (gate)</b></div><canvas id="gz"></canvas></div>
+          <div class="cv"><div class="cvlabel"><b class="y">out</b></div><canvas id="gy"></canvas></div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over a cell to see its value and thread.</div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="tcard"></dl>
+        <div class="cvlabel"><b class="s">shared float gn_red[4]</b><span>one partial per warp</span></div>
+        <div class="red" id="red"></div>
+        <div class="tablewrap"><table class="nums" id="scale"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="y" id="bflabel">warp butterfly</b><span>shfl.sync.bfly: lane l adds the value of lane l xor offset</span></div>
+      <div class="figure"><svg id="bfly" style="min-width: 760px"></svg></div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-map">
+    <div class="sechead">
+      <h2 id="s-map">Where o and z come from</h2>
+      <p>o is <a href="gdn_recur.html">gdn_recur</a>'s output, 32 heads × 128 per token. z was produced much earlier, by the same matrix product as q, k and v (<a href="mv_q4_1.html">mv_q4_1</a> on the stacked [qkv ‖ z] matrix), so it sits in the last 4096 floats of each 12,288-float row of that buffer: the kernel reads it with a row stride of 12,288 (ldz) instead of copying it out.</p>
+    </div>
+    <div class="panel">
+      <div class="layout"><svg id="layout" role="img" aria-label="Rows of the qkvz buffer and of o"></svg></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>A norm per head, not per token</h3>
+        <p>Each head's state accumulates at its own scale: a head whose decay g stays near 1 keeps a much larger S than one that forgets quickly. Normalizing every head to unit RMS before mixing them in the output projection is a group norm with 32 groups. The weight w is shared, so it shapes the 128 dims of a head the same way in every head.</p>
+        <p>With a block per head, the reduction is 4 warp butterflies and a 4-entry shared array: one barrier, and every thread adds the 4 partials itself (one <code>ld.shared.v4</code>, a broadcast).</p>
+      </div>
+      <div class="panel">
+        <h3>The output gate</h3>
+        <p>SiLU(z) lets the layer input decide, value by value, how much of the recurrent read-out passes on. It is the same idea as the sigmoid gate on Qwen's full-attention outputs, applied here after the norm. SiLU uses one <code>ex2.approx</code> and one division, as in <a href="swiglu.html">swiglu</a>.</p>
+        <p>The kernel writes into xn, which <a href="quant_q8.html">quant_q8</a> turns into int8 blocks for the output projection (<a href="mv_q5_k.html">mv_q5_k</a>).</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>gated_norm</code>; launched by <code>gated_norm()</code> in <code>qwen35.c</code> with grid (32 heads, tokens) and 128 threads. Values here are generated and computed in float32 in the kernel's order.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('gated_norm');
+const D = 128, EPS = 1e-6, LOG2E = 1.4426950408889634;
+Atlas.facts($('facts'), [['(32, tokens)', 'grid = (heads, tokens)'], ['128', 'threads: one per value'], ['16 B', 'shared memory'], ['1', 'barrier'], ['12,288', 'row stride of z']]);
+$('hd').innerHTML = Array.from({ length: 32 }, (_, h) => `<option value="${h}">${h}</option>`).join('');
+const S = { h: 9, zs: 1.6, tid: 45 };
+let M;
+function build() {
+  const r = Atlas.rng(4100 + S.h * 7), o = new Float32Array(D), z = new Float32Array(D), w = new Float32Array(D);
+  const amp = 0.02 + 0.1 * r();
+  for (let j = 0; j < D; j++) { o[j] = fr(Atlas.gauss(r) * amp); z[j] = fr(Atlas.gauss(r) * S.zs); w[j] = fr(0.88 + 0.07 * Atlas.gauss(r)); }
+  const sq = Array.from(o, v => fr(v * v)), tables = [0, 1, 2, 3].map(k => Atlas.bflyTable(sq.slice(32 * k, 32 * k + 32), (a, b) => fr(a + b))), red = tables.map(t => t[5][0]);
+  const total = fr(fr(fr(red[0] + red[1]) + fr(red[2] + red[3]))), mean = fr(total * fr(1 / 128)), ve = fr(mean + EPS), rt = fr(Math.sqrt(ve)), scale = fr(1 / rt);
+  const nrm = new Float32Array(D), sz = new Float32Array(D), out = new Float32Array(D);
+  for (let j = 0; j < D; j++) {
+    nrm[j] = fr(fr(o[j] * scale) * w[j]);
+    sz[j] = fr(z[j] / fr(fr(2 ** fr(z[j] * fr(-LOG2E))) + 1));
+    out[j] = fr(nrm[j] * sz[j]);
+  }
+  let ref = 0; for (let j = 0; j < D; j++) ref += o[j] * o[j];
+  let err = 0; for (let j = 0; j < D; j++) err = Math.max(err, Math.abs(out[j] - o[j] / Math.sqrt(ref / D + EPS) * w[j] * z[j] / (1 + Math.exp(-z[j]))));
+  M = { o, z, w, sq, tables, red, total, mean, ve, rt, scale, refScale: 1 / Math.sqrt(ref / D + EPS), nrm, sz, out, err };
+}
+const steps = [{ tag: 'L', kind: 'sq', short: 'o²', title: 'load o[j] and square it', text: 'Thread j of the block reads o[t][h·128 + j]: the 128 threads read 512 consecutive bytes. One multiply gives o², and each warp now holds 32 squares.' }];
+for (let s = 1; s <= 5; s++) steps.push({ tag: 'B', kind: 'bfly', s, short: `butterfly xor ${32 >> s}`, title: `warp butterfly, round ${s}: offset ${32 >> s}`, delay: 1000,
+  text: `Each lane adds the register of lane <code>lane ^ ${32 >> s}</code>. The 4 warps do this at the same time.${s === 5 ? ' Now every lane holds its warp\'s sum of 32 squares.' : ''}` });
+steps.push({ tag: 'R', kind: 'red', short: '→ shared, barrier', title: 'lane 0 of each warp → gn_red[warp], then bar.sync', text: 'Four partial sums go to shared memory; <code>bar.sync 0</code> is the kernel\'s only barrier.' });
+steps.push({ tag: 'C', kind: 'scale', short: 'scale', title: 'every thread computes the same scale', text: 'One <code>ld.shared.v4.f32</code> returns all four partials to every thread (a broadcast). Add them pairwise, multiply by 1/128, add ε, then <code>sqrt.rn</code> and <code>rcp.rn</code>.' });
+steps.push({ tag: 'W', kind: 'norm', short: '· scale · w', title: 'rmsnorm(o) · w', text: 'o[j] · scale · w[j], with w = ssm_norm.weight (one 128-value vector shared by the 32 heads of a layer).' });
+steps.push({ tag: 'Z', kind: 'silu', short: 'SiLU(z)', title: 'the gate: SiLU(z[j]) = z / (1 + e^−z)', text: 'z is loaded from the qkvz buffer at row stride ldz = 12,288: t · 12,288 + 8192 + h·128 + j. SiLU as in swiglu: one ex2.approx and one division.' });
+steps.push({ tag: 'O', kind: 'out', short: 'store', title: 'out[j] = rmsnorm(o)·w · SiLU(z)', text: 'One multiply and a coalesced store into xn, the input of quant_q8 and the output projection.' });
+
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `A|extern "C" __global__ void gated_norm(const float *o, const float *z, unsigned ldz,
+A|        const float *w, float *out, float eps)
+A|{
+A|    __shared__ float red[4];
+A|    unsigned j = threadIdx.x, h = blockIdx.x, t = blockIdx.y, width = gridDim.x * 128;
+L|    float v = o[t * width + h * 128 + j];
+L|    float ss = v * v;
+B|    for (int off = 16; off >= 1; off >>= 1) ss += __shfl_xor_sync(~0u, ss, off);
+R|    if ((j & 31) == 0) red[j >> 5] = ss;
+R|    __syncthreads();
+C|    float4 p = *(float4 *)red;                                  // broadcast to every thread
+C|    float scale = 1.0f / sqrtf(((p.x + p.y) + (p.z + p.w)) / 128 + eps);
+W|    float y = v * scale * w[j];
+Z|    float zz = z[t * ldz + h * 128 + j];                        // row stride 12288
+Z|    float g = zz / (1.0f + exp2f(zz * -1.442695041f));          // silu(z)
+O|    out[t * width + h * 128 + j] = y * g;
+A|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `L|    ld.global.f32       %f2, [%rd6];            // o
+L|    mul.f32             %f3, %f2, %f2;
+B|    shfl.sync.bfly.b32  %f4, %f3, 16, 31, -1;
+B|    add.f32             %f3, %f3, %f4;
+B|    ...                                         // offsets 8, 4, 2, 1
+R|    @%p1 st.shared.f32  [%r12], %f3;            // lane 0: gn_red[warp]
+R|    bar.sync            0;
+C|    ld.shared.v4.f32    {%f5, %f6, %f7, %f8}, [gn_red];
+C|    add.f32             %f5, %f5, %f6;
+C|    add.f32             %f7, %f7, %f8;
+C|    add.f32             %f5, %f5, %f7;
+C|    mul.f32             %f5, %f5, 0f3C000000;   // / 128
+C|    add.f32             %f5, %f5, %f1;          // + eps
+C|    sqrt.rn.f32         %f5, %f5;
+C|    rcp.rn.f32          %f5, %f5;               // scale
+W|    ld.global.nc.f32    %f9, [%rd7];            // w[j]
+W|    mul.f32             %f10, %f2, %f5;
+W|    mul.f32             %f10, %f10, %f9;        // rmsnorm(o) * w
+Z|    mad.lo.u32          %r13, %r4, %r1, %r6;    // t * ldz + h * 128 + j
+Z|    ld.global.f32       %f11, [%rd8];           // z
+Z|    mul.f32             %f12, %f11, 0fBFB8AA3B;
+Z|    ex2.approx.f32      %f12, %f12;
+Z|    add.f32             %f12, %f12, 0f3F800000;
+Z|    div.rn.f32          %f12, %f11, %f12;       // silu(z)
+O|    mul.f32             %f10, %f10, %f12;
+O|    st.global.f32       [%rd9], %f10;` },
+});
+
+const grids = ['go', 'gz', 'gy'].map(id => Atlas.grid($(id), 4, 32));
+const order = ['sq', 'bfly', 'red', 'scale', 'norm', 'silu', 'out'];
+let hover = null;
+function draw() {
+  const st = stepper.step, at = k => order.indexOf(st.kind) >= order.indexOf(k), warp = S.tid >> 5, lane = S.tid & 31;
+  const oMax = Math.max(...M.o.map(Math.abs)), yMax = Math.max(1e-9, ...M.out.map(Math.abs));
+  const views = [[M.o, oMax, true], [M.sz, 3, at('silu')], [M.out, yMax, at('out')]];
+  views.forEach(([arr, mx, on], k) => {
+    const g = grids[k].prep();
+    for (let w = 0; w < 4; w++) for (let l = 0; l < 32; l++) {
+      const j = 32 * w + l, v = arr[j], a = 0.12 + 0.85 * Math.min(1, Math.abs(v) / mx);
+      g.cell(w, l, on ? (v < 0 ? C.x : C.y) : C.zero, on ? a : 0.3);
+    }
+    if ((st.kind === 'bfly' || st.kind === 'red') && k === 0) g.box(warp, 0, 1, 32, C.sync, 2);
+    g.box(warp, lane, 1, 1, C.fg, 2);
+    if (hover && hover.k === k) g.box(hover.r, hover.c, 1, 1, C.sync, 1.5);
+  });
+  const stage = st.kind === 'sq' ? 0 : st.kind === 'bfly' ? st.s : 5;
+  Atlas.butterfly($('bfly'), M.tables[warp], stage, { sel: lane, fmt: v => (v * 1e4).toFixed(1) });
+  $('bflabel').textContent = `warp ${warp}: partial sums of o² (shown × 10⁴)`;
+  const redOn = at('red');
+  $('red').innerHTML = M.red.map((v, k) => `<div class="${redOn ? 'on' : ''} ${k === warp ? 'sel' : ''}">${redOn ? v.toExponential(2) : 'warp ' + k}</div>`).join('');
+  const sOn = at('scale');
+  $('scale').innerHTML = `<caption>Scale (identical in all 128 threads)</caption>` + [
+    ['(r₀ + r₁) + (r₂ + r₃)', M.total.toExponential(4)], ['× 1/128', M.mean.toExponential(4)], ['+ ε', M.ve.toExponential(4)], ['sqrt.rn', M.rt.toExponential(4)], ['rcp.rn → scale', M.scale.toFixed(4)], ['float64 reference', M.refScale.toFixed(4)],
+  ].map(([a, b]) => `<tr${sOn ? '' : ' style="opacity:.35"'}><th>${a}</th><td>${sOn ? b : '–'}</td></tr>`).join('');
+  const j = S.tid;
+  $('thlabel').textContent = `thread ${j} · warp ${warp}, lane ${lane} · value ${j} of head ${S.h}`;
+  const rows = [['o[j]', M.o[j].toExponential(4)], ['o²', M.sq[j].toExponential(4)]];
+  if (at('norm')) rows.push(['· scale · w[j]', `${M.w[j].toFixed(4)} → ${M.nrm[j].toFixed(5)}`]);
+  if (at('silu')) rows.push(['z[j] → SiLU(z)', `${M.z[j].toFixed(4)} → ${M.sz[j].toFixed(5)}`]);
+  if (at('out')) rows.push(['out[j]', M.out[j].toFixed(6)], ['max |error| (all 128) vs float64', M.err.toExponential(2)]);
+  $('tcard').innerHTML = rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  Atlas.legend($('legend'), [['--y', 'positive'], ['--x', 'negative (SiLU dips to −0.28 for z ≈ −1.28)'], ['--sync', 'the warp in the butterfly'], ['--zero', 'not computed yet']]);
+  $('zv').textContent = S.zs.toFixed(1);
+  drawLayout();
+}
+function drawLayout() {
+  const W = 900, ml = 64, wid = W - ml - 10, h = S.h, Z = 12288;
+  const seg = (x0, n, tot) => [ml + x0 / tot * wid, n / tot * wid];
+  let s = `<text x="0" y="14" font-size="11" fill="${C.muted}">qkvz buffer (big): 12,288 floats per token, from the stacked [qkv ‖ z] product</text>`;
+  [['q', 0, 2048, C.x], ['k', 2048, 2048, C.x], ['v', 4096, 4096, C.x], ['z', 8192, 4096, C.w]].forEach(([n, a, b, col]) => {
+    const [x, w] = seg(a, b, Z);
+    s += `<rect x="${x}" y="24" width="${w - 2}" height="26" fill="${col}" opacity="${n === 'z' ? 0.45 : 0.18}"/><text x="${x + w / 2}" y="41" font-size="11" text-anchor="middle" fill="${C.fg}">${n}${n === 'z' ? ' (32 heads × 128)' : ''}</text>`;
+  });
+  const [zx, zw] = seg(8192 + 128 * h, 128, Z);
+  s += `<rect x="${zx}" y="20" width="${Math.max(zw, 3)}" height="34" fill="none" stroke="${C.fg}" stroke-width="2"/><text x="${zx}" y="68" font-size="10.5" fill="${C.fg}">z of head ${h}: floats ${8192 + 128 * h} … ${8192 + 128 * h + 127}</text>`;
+  s += `<text x="0" y="98" font-size="11" fill="${C.muted}">o (ro): 4,096 floats per token, from gdn_recur</text>`;
+  for (let k = 0; k < 32; k++) { const [x, w] = seg(128 * k, 128, 4096); s += `<rect x="${x}" y="106" width="${w - 1}" height="22" fill="${C.x}" opacity="${k === h ? 0.6 : 0.15}"/>`; }
+  const [ox] = seg(128 * h, 128, 4096);
+  s += `<text x="${Math.min(ox, W - 240)}" y="146" font-size="10.5" fill="${C.fg}">head ${h}: block (${h}, t) reads these 128 and writes them to xn</text>`;
+  s += `<text x="0" y="41" font-size="10.5" fill="${C.muted}">row t</text><text x="0" y="121" font-size="10.5" fill="${C.muted}">row t</text>`;
+  $('layout').setAttribute('viewBox', `0 0 ${W} 156`); $('layout').innerHTML = s;
+}
+grids.forEach((g, k) => g.hook(p => {
+  hover = { k, ...p }; const j = 32 * p.r + p.c, arr = [M.o, M.sz, M.out][k], name = ['o', 'SiLU(z)', 'out'][k];
+  $('status').textContent = `${name}[${j}] = ${arr[j].toExponential(3)} · thread ${j} (warp ${p.r}, lane ${p.c})`; draw();
+}, p => { S.tid = 32 * p.r + p.c; draw(); }, () => { hover = null; draw(); }));
+$('hd').value = S.h;
+$('hd').addEventListener('change', () => { S.h = +$('hd').value; build(); draw(); });
+$('zs').addEventListener('input', () => { S.zs = +$('zs').value; build(); draw(); });
+build();
+const stepper = Atlas.stepper({ steps, code, render: draw });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

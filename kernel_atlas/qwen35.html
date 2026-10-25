@@ -93,7 +93,7 @@
     </div>
   </section>
 
-  <footer>Sources: <code>forward()</code> in <code>qwen35/qwen35.c</code> (kernels, buffers, launch shapes) and <code>qwen35/qwen35.ptx</code>; tensor shapes and types from <code>Qwen3.5-9B-Q4_1.gguf</code>; the layer semantics follow llama.cpp's <code>src/models/qwen35.cpp</code> and its fused <code>gated_delta_net.cu</code>. Kernels without a page yet: mv_q4_1, mv_q8_0, mv_q5_k, mv_q6_k, gemm_q, gdn_conv, conv_save, gated_norm, swiglu. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.</footer>
+  <footer>Sources: <code>forward()</code> in <code>qwen35/qwen35.c</code> (kernels, buffers, launch shapes) and <code>qwen35/qwen35.ptx</code>; tensor shapes and types from <code>Qwen3.5-9B-Q4_1.gguf</code>; the layer semantics follow llama.cpp's <code>src/models/qwen35.cpp</code> and its fused <code>gated_delta_net.cu</code>. Kernels without a page yet: mv_q6_k (the output head), gemm_q (the prompt GEMM); conv_save is described on the gdn_conv page. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.</footer>
 </div>
 
 <script>
@@ -149,7 +149,7 @@ const M = {
       { id: 'cw', kind: 'w', label: 'ssm_conv1d.weight', sub: '8192 × 4 · F32' },
       { id: 'cs', kind: 'io', label: 'conv state', sub: 'f32 [3][8192]: the last 3 inputs' },
       { id: 'conv', kind: 'op', kernel: 'gdn_conv', sub: 'causal conv1d over 4 tokens, silu<br/>L2 norm of the 16 q and 16 k heads', launch: { any: 'grid (64, T) · 128' }, io: 'big[qkv], conv state → cv' },
-      { id: 'save', kind: 'op', kernel: 'conv_save', sub: 'conv state ← last 3 inputs', launch: { any: '32 blocks · 256 · grid-stride' }, io: 'big[qkv] → conv state' },
+      { id: 'save', kind: 'op', kernel: 'conv_save', sub: 'conv state ← last 3 inputs', launch: { any: '32 blocks · 256 · grid-stride' }, io: 'big[qkv] → conv state', note: 'described on the <a href="gdn_conv.html">gdn_conv</a> page' },
       { id: 'dtw', kind: 'w', label: 'ssm_dt.bias ‖ ssm_a', t: 'ssm_dt.bias', sub: '32 + 32 · F32' },
       { id: 'ss', kind: 'io', label: 'recurrent state S', sub: 'f32 32 × 128 × 128 (2 MB)' },
       { id: 'rec', kind: 'op', kernel: 'gdn_recur', sub: 'g = exp(softplus(α + dt)·a), b = σ(β)<br/>S = gS + k((v − gSᵀk)b)ᵀ<br/>o = Sᵀq / √128, token by token', launch: { any: 'grid (32 heads, 4) · 32' }, io: 'cv, ba, S → ro, S' },

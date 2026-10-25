@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>swiglu Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.regs td.ins { font-family: var(--font-mono); color: var(--muted); text-align: left; white-space: nowrap; }
+.plot svg, .layout svg { display: block; width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · element-wise, grid-stride</div>
+    <h1>Inside <code>swiglu</code></h1>
+    <p>Every Qwen 3.5 layer ends with a SwiGLU feed-forward. One stacked Q4_1 matrix produces the gate and up projections side by side, 2 × 12,288 values per token; <code>swiglu</code> applies SiLU to the gate half and multiplies by the up half, giving the 12,288 inputs of the down projection. SiLU is x · σ(x), and the sigmoid costs one base-2 exponential and one division. It is <a href="geglu.html">geglu</a> with a different activation: same indexing, half the arithmetic.</p>
+    <div class="formula"><span class="y">out</span>[t][j] = SiLU(<span class="w">g</span>) · <span class="x">u</span> &nbsp;&nbsp; SiLU(g) = g / (1 + e<sup>−g</sup>) &nbsp;&nbsp;<span class="muted">// gu[t] = [g: n | u: n], n = 12,288; e^−g computed as 2^(−g · log₂e)</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-one">
+    <div class="sechead">
+      <h2 id="s-one">One element, instruction by instruction</h2>
+      <p>Pick g and u and step through one thread's instructions. The formula g / (1 + e<sup>−g</sup>) needs no special cases: for very negative g, e<sup>−g</sup> overflows to ∞ and the division gives −0; for very positive g, e<sup>−g</sup> = 0 and the result is g itself.</p>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="controls">
+          <label for="gs">g <input id="gs" type="range" min="-8" max="6" step="0.02" value="-1.3"> <span id="gv" class="mono"></span></label>
+          <label for="us">u <input id="us" type="range" min="-4" max="4" step="0.02" value="1.6"> <span id="uv" class="mono"></span></label>
+        </div>
+        <div class="plot"><svg id="plot" role="img" aria-label="SiLU and GELU curves and the selected point"></svg></div>
+        <div class="legend" id="legend"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b>registers of one thread</b><span>float32</span></div>
+        <div class="tablewrap"><table class="nums regs" id="regs"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-map">
+    <div class="sechead">
+      <h2 id="s-map">Finding g and u from a flat index</h2>
+      <p>The grid-stride loop runs over i = 0 … tokens·n − 1, the output elements. Each token's input row holds 2n values, so the thread divides once to find its token, t = i / n; the gate sits at gu[i + t·n] and the up value n floats later. Drag the slider to move through a 4-token chunk.</p>
+    </div>
+    <div class="panel">
+      <div class="controls"><label for="is">output element i <input id="is" type="range" min="0" max="49151" step="1" value="20000"> <span id="iv" class="mono"></span></label></div>
+      <div class="layout"><svg id="layout" role="img" aria-label="Memory layout of gu and out"></svg></div>
+      <div class="status" id="mapstatus"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>A separate launch, on purpose</h3>
+        <p>SiLU could be applied in the epilogue of the gate ‖ up product, but the down projection needs its input as int8 blocks, so <a href="quant_q8.html">quant_q8</a> runs in between anyway. Keeping swiglu separate leaves the matrix kernels format-generic. Its cost is small: per layer and decode token it reads 96 KB and writes 48 KB; over the 32 layers that is about 1/1000 of what the matrix products read.</p>
+      </div>
+      <div class="panel">
+        <h3>Matching llama.cpp</h3>
+        <p>ggml computes silu(x) = x / (1 + expf(−x)) and multiplies by the up value. The kernel uses the same expression; the only difference is <code>ex2.approx</code> for the exponential, a relative error near 2⁻²². For a decode step the output feeds an int8 quantization with steps of 1/127 of the block maximum, far coarser.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>swiglu</code>; launched by <code>swiglu()</code> through <code>launch_1d()</code> in <code>qwen35.c</code> over n × tokens elements (256 threads, at most 8 blocks per SM), after the gate ‖ up product (<a href="mv_q4_1.html">mv_q4_1</a> or gemm_q) and before quant_q8 and the down projection.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('swiglu');
+const N = 12288, TOK = 4, LOG2E = 1.4426950408889634;
+Atlas.facts($('facts'), [['≤ 448', 'blocks (8 per SM)'], ['256', 'threads per block'], ['0 B', 'shared memory'], ['1 ex2 + 1 div', 'per element'], ['1 div.u32', 'to find the token']]);
+
+const S = { g: -1.3, u: 1.6, i: 20000 };
+const silu = x => x / (1 + Math.exp(-x));
+function erf(x) { const s = Math.sign(x), a = Math.abs(x), t = 1 / (1 + 0.3275911 * a); return s * (1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-a * a)); }
+const gelu = x => 0.5 * x * (1 + erf(x / Math.SQRT2));
+function regs() {
+  const g = fr(S.g), u = fr(S.u);
+  const t = fr(g * fr(-LOG2E)), e = fr(2 ** t), d = fr(e + 1), s = fr(g / d), out = fr(s * u);
+  return [
+    ['I', 'div.u32 / mad.lo', 't = i / n; src = i + t·n', null],
+    ['L', 'ld.global.f32 ×2', 'g = gu[src], u = gu[src + n]', `${g.toFixed(4)}, ${u.toFixed(4)}`],
+    ['E', 'mul.f32', '−g · log₂e', t.toFixed(5)],
+    ['E', 'ex2.approx.f32', 'e = 2^(−g log₂e) = e^−g', e.toPrecision(6)],
+    ['D', 'add.f32', '1 + e^−g', d.toPrecision(6)],
+    ['D', 'div.rn.f32', 'SiLU(g) = g / (1 + e^−g)', s.toFixed(6)],
+    ['S', 'mul / st.global', 'out[i] = SiLU(g) · u', out.toFixed(6)],
+  ];
+}
+const steps = [
+  { tag: 'I', short: 'index', title: 'token and source offset', text: 'One integer division per element finds the token: t = i / n. Output row t starts at t·n, but input row t starts at t·2n, so the gate is at i + t·n.' },
+  { tag: 'L', short: 'load', title: 'load g and u from the same row', text: 'The gate and up values of one output are exactly n floats apart. Neighbouring threads read neighbouring floats in both halves, so both loads coalesce.' },
+  { tag: 'E', short: 'e^−g', title: 'e^−g as one base-2 exponential', text: 'The GPU has a fast 2^x (<code>ex2.approx</code>) but no e^x instruction, so the kernel scales by log₂e first: e^−g = 2^(−g · log₂e). The constant 0fBFB8AA3B is −log₂e.' },
+  { tag: 'D', short: 'divide', title: 'g / (1 + e^−g): SiLU without a separate sigmoid', text: 'Writing SiLU as g / (1 + e^−g) folds the sigmoid and the multiply by g into one IEEE division. Large negative g: e^−g = ∞, result −0. Large positive g: e^−g → 0, result g.' },
+  { tag: 'S', short: 'store', title: 'multiply by u and store out[i]', text: 'The output is a separate buffer of n floats per token (the engine reuses xn), the input of the down projection. Then i += stride.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `A|extern "C" __global__ void swiglu(const float *gu, float *out, unsigned n, unsigned tokens)
+A|{
+I|    for (unsigned i = blockIdx.x * blockDim.x + threadIdx.x; i < n * tokens;
+I|         i += gridDim.x * blockDim.x) {
+I|        unsigned t = i / n, src = i + t * n;                    // = t*2n + j
+L|        float g = gu[src], u = gu[src + n];
+E|        float e = exp2f(g * -1.442695041f);                     // e^-g
+D|        float s = g / (1.0f + e);                               // silu(g) = g * sigmoid(g)
+S|        out[i] = s * u;
+I|    }
+A|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|LOOP:
+I|    setp.ge.u32         %p1, %r7, %r2;
+I|    @%p1 bra            DONE;
+I|    div.u32             %r9, %r7, %r1;          // t
+I|    mad.lo.u32          %r10, %r9, %r1, %r7;    // t*2n + j = t*n + i
+L|    ld.global.f32       %f1, [%rd3];            // g
+L|    ld.global.f32       %f2, [%rd4];            // u
+E|    mul.f32             %f3, %f1, 0fBFB8AA3B;   // -g log2(e)
+E|    ex2.approx.f32      %f3, %f3;
+D|    add.f32             %f3, %f3, 0f3F800000;
+D|    div.rn.f32          %f4, %f1, %f3;          // silu(g)
+S|    mul.f32             %f4, %f4, %f2;
+S|    st.global.f32       [%rd5], %f4;
+S|    add.u32             %r7, %r7, %r8;
+S|    bra.uni             LOOP;` },
+});
+
+function drawRegs(st) {
+  const R = regs(), order = 'ILEDS', upto = order.indexOf(st.tag);
+  $('regs').innerHTML = `<tr><th style="text-align:left">instruction</th><th style="text-align:left">computes</th><th>value</th></tr>` + R.map(([t, ins, what, v]) => {
+    const k = order.indexOf(t);
+    return `<tr class="${t === st.tag ? 'on' : ''}"${k > upto ? ' style="opacity:.35"' : ''}><td class="ins">${ins}</td><td style="text-align:left">${what}</td><td>${v === null ? '' : k <= upto ? v : '–'}</td></tr>`;
+  }).join('');
+}
+function drawPlot() {
+  const W = 620, H = 300, ml = 44, mr = 12, mt = 14, mb = 30, x0 = -8, x1 = 6, y0 = -1, y1 = 6;
+  const X = v => ml + (v - x0) / (x1 - x0) * (W - ml - mr), Y = v => mt + (y1 - v) / (y1 - y0) * (H - mt - mb);
+  let s = '';
+  for (let v = -8; v <= 6; v += 2) s += `<line x1="${X(v)}" y1="${mt}" x2="${X(v)}" y2="${H - mb}" stroke="${C.line}" stroke-width="0.6"/><text x="${X(v)}" y="${H - mb + 16}" font-size="10" text-anchor="middle" fill="${C.muted}">${v}</text>`;
+  for (let v = -1; v <= 6; v++) s += `<line x1="${ml}" y1="${Y(v)}" x2="${W - mr}" y2="${Y(v)}" stroke="${C.line}" stroke-width="0.6"/><text x="${ml - 6}" y="${Y(v) + 3}" font-size="10" text-anchor="end" fill="${C.muted}">${v}</text>`;
+  const path = (f, col, w, dash) => { let d = ''; for (let i = 0; i <= 400; i++) { const v = x0 + (x1 - x0) * i / 400; d += (i ? 'L' : 'M') + X(v).toFixed(1) + ' ' + Y(Math.max(y0, Math.min(y1, f(v)))).toFixed(1); } return `<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`; };
+  s += path(v => Math.max(0, v), C.muted, 1, '2 3');
+  s += path(gelu, C.w, 1.4, '5 4');
+  s += path(silu, C.y, 2.2, '');
+  const sy = silu(S.g);
+  s += `<circle cx="${X(S.g)}" cy="${Y(Math.max(y0, sy))}" r="5" fill="${C.y}" stroke="${C.fg}" stroke-width="1.5"/>`;
+  s += `<text x="${ml + 8}" y="${mt + 12}" font-size="11" fill="${C.fg}">SiLU(${S.g.toFixed(2)}) = ${sy.toFixed(5)} · u = ${regs()[6][3]}</text>`;
+  s += `<text x="${ml + 8}" y="${mt + 28}" font-size="10.5" fill="${C.muted}">minimum of SiLU: −0.2785 at g = −1.2785; it is not monotone</text>`;
+  $('plot').setAttribute('viewBox', `0 0 ${W} ${H}`); $('plot').innerHTML = s;
+  Atlas.legend($('legend'), [['--y', 'SiLU (what the kernel computes)'], ['--w', 'dashed: GELU (Gemma 3), for comparison'], ['--muted', 'dotted: ReLU']]);
+}
+function drawLayout() {
+  const i = S.i, t = Math.floor(i / N), j = i - t * N, src = i + t * N;
+  const W = 900, rowH = 26, gap = 10, ml = 70, half = (W - ml - 20) / 2;
+  let s = `<text x="0" y="16" font-size="11" fill="${C.muted}">gu (input, the engine's big buffer): one row of 2n = 24,576 floats per token</text>`;
+  for (let k = 0; k < TOK; k++) {
+    const y = 26 + k * (rowH + gap);
+    s += `<text x="${ml - 8}" y="${y + rowH / 2 + 4}" font-size="11" text-anchor="end" fill="${k === t ? C.fg : C.muted}">token ${k}</text>`;
+    s += `<rect x="${ml}" y="${y}" width="${half - 2}" height="${rowH}" fill="${C.w}" opacity="${k === t ? 0.55 : 0.2}"/><rect x="${ml + half}" y="${y}" width="${half - 2}" height="${rowH}" fill="${C.x}" opacity="${k === t ? 0.55 : 0.2}"/>`;
+    if (k === 0) s += `<text x="${ml + half / 2}" y="${y + rowH / 2 + 4}" font-size="11" text-anchor="middle" fill="${C.fg}">g: n</text><text x="${ml + half * 1.5}" y="${y + rowH / 2 + 4}" font-size="11" text-anchor="middle" fill="${C.fg}">u: n</text>`;
+    if (k === t) {
+      const gx = ml + j / N * (half - 2), ux = ml + half + j / N * (half - 2);
+      s += `<line x1="${gx}" y1="${y - 3}" x2="${gx}" y2="${y + rowH + 3}" stroke="${C.fg}" stroke-width="2.5"/><line x1="${ux}" y1="${y - 3}" x2="${ux}" y2="${y + rowH + 3}" stroke="${C.fg}" stroke-width="2.5"/>`;
+    }
+  }
+  const oy = 26 + TOK * (rowH + gap) + 26, oh = rowH / 1.4, ow = half - 2;
+  s += `<text x="0" y="${oy - 8}" font-size="11" fill="${C.muted}">out (xn): one row of n = 12,288 floats per token</text>`;
+  for (let k = 0; k < TOK; k++) {
+    const y = oy + k * (oh + 6);
+    s += `<text x="${ml - 8}" y="${y + oh / 2 + 4}" font-size="11" text-anchor="end" fill="${k === t ? C.fg : C.muted}">token ${k}</text>`;
+    s += `<rect x="${ml}" y="${y}" width="${ow}" height="${oh}" fill="${C.y}" opacity="${k === t ? 0.55 : 0.2}"/>`;
+    if (k === t) { const x = ml + j / N * ow; s += `<line x1="${x}" y1="${y - 3}" x2="${x}" y2="${y + oh + 3}" stroke="${C.fg}" stroke-width="2.5"/>`; }
+  }
+  $('layout').setAttribute('viewBox', `0 0 ${W} ${oy + TOK * (oh + 6) + 6}`); $('layout').innerHTML = s;
+  $('iv').textContent = Atlas.int(i);
+  $('mapstatus').innerHTML = `i = ${Atlas.int(i)} → t = i / n = ${t}, j = ${Atlas.int(j)} · g at gu[i + t·n] = gu[${Atlas.int(src)}], u at gu[${Atlas.int(src + N)}] · result to out[${Atlas.int(i)}]`;
+}
+function draw() { const st = stepper.step; $('gv').textContent = S.g.toFixed(2); $('uv').textContent = S.u.toFixed(2); drawRegs(st); drawPlot(); drawLayout(); }
+$('gs').addEventListener('input', () => { S.g = +$('gs').value; draw(); });
+$('us').addEventListener('input', () => { S.u = +$('us').value; draw(); });
+$('is').addEventListener('input', () => { S.i = +$('is').value; drawLayout(); });
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1300 });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>mv_q8_0 Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · decode: one warp per row, Q8_0 weights × int8 activations</div>
+    <h1>Inside <code>mv_q8_0</code></h1>
+    <p>The plainest of the four weight formats: 32 signed 8-bit integers and one f16 scale per block. In the Unsloth Q4_1 file it serves only the DeltaNet gates, the stacked 64 × 4096 [β ‖ α] matrix, which decides per head how much to write (β) and how fast to forget (α). When the engine loads the BF16 file, or the Q8_0 file that <code>qwen35_demo quantize</code> writes, every matrix is Q8_0 and this kernel does all of the decoding work. Both operands are int8, so a block is 8 <code>dp4a</code> and one FMA: no nibbles, no offsets.</p>
+    <div class="formula"><span class="y">y</span>[r] = Σ<sub>b</sub> <span class="w">d</span>[r][b] · dₓ[b] · Σ<sub>j&lt;32</sub> <span class="w">q</span><sub>j</sub> · <span class="x">x</span><sub>j</sub> + resid[r] &nbsp;&nbsp;<span class="muted">// weight = d · q, q in −127…127; activation = dₓ · x, x int8</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-blk">
+    <div class="sechead">
+      <h2 id="s-blk">One lane, one Q8_0 block</h2>
+      <p>A block is 32 bytes of int8 weights and a 2-byte scale, kept in two arrays (q and d). Step through the lane's loads, the eight dot products and the single float multiply-add.</p>
+    </div>
+    <div class="controls">
+      <span class="seg" id="useSeg" role="group" aria-label="Which matrix"></span>
+      <label>block <input id="blk" type="range" min="0" value="9"> <span id="blkv" class="mono"></span></label>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="figure"><svg id="block" role="img" aria-label="One Q8_0 block times int8 activations"></svg></div>
+        <div class="legend" id="legend"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b class="w">what the 64 rows are</b></div>
+        <div class="tablewrap"><table class="nums" id="rowsT"></table></div>
+        <dl class="kv" id="card"></dl>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-map">
+    <div class="sechead">
+      <h2 id="s-map">The whole launch</h2>
+      <p id="mapdesc"></p>
+    </div>
+    <div class="panel">
+      <canvas id="map"></canvas>
+      <div class="legend" id="maplegend"></div>
+      <div class="status" id="mapstatus"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>A tiny matrix: launch-bound, not bandwidth-bound</h3>
+        <p>[β ‖ α] is 64 rows: 8 thread blocks on a GPU with 56 SMs, 278 KB of weights. It finishes in about 2.5 µs, mostly the cost of starting a kernel. The engine stacks β and α into one matrix so this happens once per DeltaNet layer instead of twice; the 64 outputs go to the <code>ba</code> buffer, which <a href="gdn_recur.html">gdn_recur</a> reads as σ(β) and the decay gate.</p>
+        <p>The GGUF keeps these two in Q8_0 even in the 4-bit file: the gates are small and sensitive, and 8 bits cost almost nothing here.</p>
+      </div>
+      <div class="panel">
+        <h3>The whole model in Q8_0</h3>
+        <p>Loading <code>Qwen3.5-9B-BF16.gguf</code>, the engine quantizes every matrix to Q8_0 with ggml's reference rounding (d = max|w| / 127). The model then takes 8.2 GiB on the GPU instead of 5.0, decoding reads 8.5 GB per token instead of 5, and its logits are closer to the unquantized model; against llama.cpp running the same Q8_0 file the KL is 7.5e-4 to 1.2e-3.</p>
+        <p>Per block the work is the same as <a href="mv_q4_1.html">mv_q4_1</a> minus the unpacking and the offset FMA: 34 bytes read for 32 weights, two <code>v4.u32</code> loads of weights against the same two of activations.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>mv_q8_0</code>; launched by <code>mv()</code> in <code>qwen35.c</code> with ⌈rows / 8⌉ blocks of 256 threads, after <a href="quant_q8.html">quant_q8</a>; the GGUF's 34-byte blocks are split into q and d arrays at load time. Weights and activations here are generated.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('mv_q8_0');
+const USES = {
+  ba: { label: '[β ‖ α] (Q4_1 file)', rows: 64, cols: 4096, w: 'ssm_beta ‖ ssm_alpha', in: 'xq: quantized attn_norm(x)', out: 'ba: β (32) | α (32)' },
+  gu: { label: '[gate ‖ up] (Q8_0 / BF16 file)', rows: 24576, cols: 4096, w: 'ffn_gate ‖ ffn_up', in: 'xq: quantized post_attention_norm(x)', out: 'big: gate | up' },
+};
+const S = { use: 'ba', blk: 9 };
+const nb = () => USES[S.use].cols / 32;
+function blockData() {
+  const r = Atlas.rng(Atlas.h32(S.blk * 7919 + S.use.length * 101 + 3)), q = [], x = [];
+  for (let j = 0; j < 32; j++) q.push(Math.max(-127, Math.min(127, Math.round(40 * Atlas.gauss(r)))));
+  q[Math.floor(r() * 32)] = r() < 0.5 ? -127 : 127;
+  for (let j = 0; j < 32; j++) x.push(Math.max(-127, Math.min(127, Math.round(42 * Atlas.gauss(r)))));
+  return { q, x, d: Atlas.f16(0.0002 + 0.0003 * r()), dx: fr(0.004 + 0.02 * r()) };
+}
+const steps = [
+  { tag: 'I', short: 'which row', title: 'row = blockIdx.x · 8 + warp; lane b starts at block b', text: 'Pointers to the row\'s q (cols bytes) and d (cols / 32 halves).' },
+  { tag: 'L', short: 'loads', title: 'load 32 weights, the scale, 32 activations and dₓ', text: 'Two <code>v4.u32</code> for the weights, one <code>b16</code> for d, two <code>v4.u32</code> for the activations, one <code>f32</code> for dₓ. The activation block\'s dₓΣx is not needed: Q8_0 has no offset.' },
+  { tag: 'D', w: 0, short: 'dp4a 0', title: 'dp4a.s32.s32: weights 0–3 times activations 0–3', text: 'Both operands are signed bytes. One instruction multiplies four pairs and adds them to the running 32-bit sum.' },
+  { tag: 'D', w: 7, short: '8 dp4a', title: 'eight dp4a: the whole block', text: 'Weight word k pairs with activation word k: the layouts match, no shuffling. The sum is exact.' },
+  { tag: 'X', short: 'scale FMA', title: 'acc += float(Σqx) · (d · dₓ)', text: 'The only rounding in the block: the f16 scale converted, multiplied by dₓ, one FMA.' },
+  { tag: 'R', short: 'reduce, store', title: 'warp butterfly; lane 0 stores y[row]', text: 'For [β ‖ α], 128 blocks per row = 4 rounds per lane; rows 0–31 are β, 32–63 are α.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `I|extern "C" __global__ void mv_q8_0(const int8_t *q, const __half *d, const int8_t *xq,
+I|        const float2 *xds, const float *resid, float *y, unsigned rows, unsigned cols)
+I|{
+I|    unsigned lane = threadIdx.x & 31, row = blockIdx.x * 8 + (threadIdx.x >> 5);
+I|    if (row >= rows) return;
+I|    unsigned nb = cols / 32;
+X|    float acc = 0.0f;
+X|    for (unsigned b = lane; b < nb; b += 32) {
+L|        const int4 *wv = (const int4 *)(q + (size_t)row * cols + 32 * b);
+L|        int4 w0 = __ldg(wv), w1 = __ldg(wv + 1);
+L|        const int4 *xv = (const int4 *)(xq + 32 * b);
+L|        int4 x0 = __ldg(xv), x1 = __ldg(xv + 1);
+D|        int s = __dp4a(w0.x, x0.x, 0);  s = __dp4a(w0.y, x0.y, s);
+D|        s = __dp4a(w0.z, x0.z, s);      s = __dp4a(w0.w, x0.w, s);
+D|        s = __dp4a(w1.x, x1.x, s);      s = __dp4a(w1.y, x1.y, s);
+D|        s = __dp4a(w1.z, x1.z, s);      s = __dp4a(w1.w, x1.w, s);
+X|        acc = fmaf((float)s, __half2float(d[(size_t)row * nb + b]) * xds[b].x, acc);
+X|    }
+R|    for (int off = 16; off >= 1; off >>= 1) acc += __shfl_xor_sync(0xffffffff, acc, off);
+R|    if (lane == 0) y[row] = acc + (resid ? resid[row] : 0.0f);
+I|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    mad.lo.u32          %r8, %r7, %r6, %r5;     // row
+I|    mul.wide.u32        %rd7, %r8, %r2;
+I|    add.s64             %rd8, %rd1, %rd7;       // q row
+L|    ld.global.nc.v4.u32 {%r11, %r12, %r13, %r14}, [%rd11];
+L|    ld.global.nc.v4.u32 {%r15, %r16, %r17, %r18}, [%rd11+16];
+L|    ld.global.nc.b16    %h0, [%rd13];           // d
+L|    ld.global.nc.v4.u32 {%r20, %r21, %r22, %r23}, [%rd15];
+L|    ld.global.nc.v4.u32 {%r24, %r25, %r26, %r27}, [%rd15+16];
+L|    ld.global.nc.f32    %f2, [%rd17];           // d_x
+D|    dp4a.s32.s32        %r40, %r11, %r20, 0;
+D|    dp4a.s32.s32        %r40, %r12, %r21, %r40;
+D|    ...                                         // %r13 .. %r18
+D|    dp4a.s32.s32        %r40, %r18, %r27, %r40;
+X|    cvt.f32.f16         %f4, %h0;
+X|    mul.f32             %f6, %f4, %f2;          // d * d_x
+X|    cvt.rn.f32.s32      %f7, %r40;
+X|    fma.rn.f32          %f1, %f7, %f6, %f1;
+R|REDUCE:
+R|    shfl.sync.bfly.b32  %f8, %f1, 16, 31, -1;
+R|    ...
+R|    st.global.f32       [%rd19], %f1;` },
+});
+$('useSeg').innerHTML = Object.entries(USES).map(([k, u]) => `<button type="button" data-v="${k}">${u.label}</button>`).join('');
+const syncSeg = () => $('useSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === S.use));
+$('useSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.use = b.dataset.v; syncSeg(); facts(); draw(); });
+function facts() {
+  const U = USES[S.use], n = nb();
+  Atlas.facts($('facts'), [[`${Atlas.int(Math.ceil(U.rows / 8))} × 256`, 'blocks × threads'], [`${Atlas.int(U.rows)} × ${Atlas.int(U.cols)}`, `${U.w} (rows × cols)`], [String(n), 'Q8_0 blocks per row'], [String(Math.ceil(n / 32)), 'rounds per lane'], ['34 B', 'per 32 weights (8.5 bits)'], [`${(U.rows * n * 34 / 1048576).toFixed(2)} MiB`, 'weights read']]);
+}
+function draw() {
+  const st = stepper.step, B = blockData(), U = USES[S.use], O = ['I', 'L', 'D', 'X', 'R'], at = t => O.indexOf(st.tag) >= O.indexOf(t);
+  const wsel = st.tag === 'D' ? st.w : at('X') ? 7 : -1;
+  $('blkv').textContent = `${S.blk} of ${nb()} → lane ${S.blk % 32}, round ${Math.floor(S.blk / 32)}`;
+  const W = 760, H = 300, x0 = 76, cw = (W - x0 - 10) / 32;
+  let s = `<text x="4" y="18" font-size="10.5" fill="${C.fg}">d</text><rect x="${x0}" y="4" width="160" height="22" rx="2" fill="${C.bg}" stroke="${C.muted}"/><text x="${x0 + 80}" y="19" font-size="10.5" text-anchor="middle" fill="${C.w}">${at('L') ? 'd = ' + B.d.toExponential(3) : 'f16 scale'}</text>`;
+  const vy = 52, lab = ['q (int8)', 'x (int8)', 'q · x'];
+  lab.forEach((l, k) => s += `<text x="4" y="${vy + 15 + k * 34}" font-size="10.5" fill="${C.fg}">${l}</text>`);
+  for (let j = 0; j < 32; j++) {
+    const x = x0 + j * cw, word = j >> 2, cur = st.tag === 'D' && word === wsel && st.w === 0;
+    s += `<rect x="${x + 1}" y="${vy}" width="${cw - 2}" height="22" rx="2" fill="${cur ? C.hl : C.bg}" stroke="${word % 2 ? C.line : C.muted}"/>`;
+    if (at('L')) s += `<text x="${x + cw / 2}" y="${vy + 15}" font-size="8.5" text-anchor="middle" fill="${B.q[j] < 0 ? C.x : C.w}">${B.q[j]}</text>`;
+    s += `<rect x="${x + 1}" y="${vy + 34}" width="${cw - 2}" height="22" rx="2" fill="${cur ? C.hl : C.bg}" stroke="${C.line}"/>`;
+    if (at('L')) s += `<text x="${x + cw / 2}" y="${vy + 49}" font-size="8.5" text-anchor="middle" fill="${B.x[j] < 0 ? C.x : C.fg}">${B.x[j]}</text>`;
+    s += `<rect x="${x + 1}" y="${vy + 68}" width="${cw - 2}" height="22" rx="2" fill="${C.bg}" stroke="${C.line}"/>`;
+    if (word <= wsel) s += `<text x="${x + cw / 2}" y="${vy + 83}" font-size="7.5" text-anchor="middle" fill="${C.fg}">${B.q[j] * B.x[j]}</text>`;
+    if (j % 4 === 0) s += `<text x="${x + 2}" y="${vy - 4}" font-size="8.5" fill="${C.muted}">w${word}</text>`;
+  }
+  const dy = 168; let acc = 0;
+  s += `<text x="4" y="${dy + 15}" font-size="10.5" fill="${C.fg}">dp4a</text>`;
+  for (let k = 0; k < 8; k++) {
+    for (let q = 0; q < 4; q++) acc += B.q[4 * k + q] * B.x[4 * k + q];
+    const x = x0 + k * ((W - x0 - 10) / 8), wd = (W - x0 - 10) / 8 - 6, done = k <= wsel;
+    s += `<rect x="${x}" y="${dy}" width="${wd}" height="38" rx="3" fill="${done ? C.panel : C.bg}" stroke="${done ? C.sync : C.line}"/><text x="${x + wd / 2}" y="${dy + 14}" font-size="9" text-anchor="middle" fill="${C.muted}">word ${k} · ${4 * k}–${4 * k + 3}</text>`;
+    if (done) s += `<text x="${x + wd / 2}" y="${dy + 30}" font-size="10.5" text-anchor="middle" fill="${C.fg}">${acc}</text>`;
+  }
+  const p = fr(fr(B.d) * B.dx), term = fr(acc * p);
+  let ref = 0; for (let j = 0; j < 32; j++) ref += B.d * B.q[j] * B.dx * B.x[j];
+  s += `<text x="4" y="${H - 40}" font-size="10.5" fill="${at('X') ? C.fg : C.muted}">${at('X') ? `Σ q·x = ${acc}  ·  (d · dₓ = ${p.toExponential(4)})  =  ${term.toExponential(5)}` : 'then: one FMA with d · dₓ'}</text>`;
+  s += `<text x="4" y="${H - 16}" font-size="10.5" fill="${at('X') ? C.muted : C.bg}">float64 Σ (d·q)(dₓ·x) = ${ref.toExponential(5)}</text>`;
+  $('block').setAttribute('viewBox', `0 0 ${W} ${H}`); $('block').innerHTML = s;
+  Atlas.legend($('legend'), [['--w', 'weight'], ['--x', 'negative value'], ['--hl', 'the dp4a operands'], ['--sync', 'dp4a done']]);
+  $('rowsT').innerHTML = S.use === 'ba' ? '<tr><th>rows</th><th>tensor</th><th>read by gdn_recur as</th></tr><tr><td>0–31</td><td>ssm_beta</td><td>b = σ(β), write strength</td></tr><tr><td>32–63</td><td>ssm_alpha</td><td>g = exp(softplus(α + dt)·a), decay</td></tr>'
+    : '<tr><th>rows</th><th>tensor</th><th>read by</th></tr><tr><td>0–12,287</td><td>ffn_gate</td><td>swiglu (gate half)</td></tr><tr><td>12,288–24,575</td><td>ffn_up</td><td>swiglu (up half)</td></tr>';
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`;
+  $('card').innerHTML = row('matrix', `${U.w}: ${Atlas.int(U.rows)} × ${Atlas.int(U.cols)}`) + row('input', U.in) + row('block bytes', '32 (q) + 2 (d), two arrays') + row('dₓ', at('L') ? B.dx.toFixed(5) : '–') + row('writes', U.out);
+  drawMap();
+}
+const mg = Atlas.grid($('map'), 8, 128);
+function drawMap() {
+  const U = USES[S.use], nbk = Math.ceil(U.rows / 8), cols = Math.min(nbk, 128), rr = Math.ceil(nbk / cols);
+  if (mg.rows !== rr || mg.cols !== cols) mg.resize(rr, cols);
+  $('map').style.aspectRatio = `${cols} / ${Math.max(rr * 3, 4)}`;
+  const g = mg.prep();
+  for (let b = 0; b < rr * cols; b++) { const r = Math.floor(b / cols), c = b % cols; if (b < nbk) g.cell(r, c, C.w, b === 0 ? 0.9 : 0.45, 0.12); else g.hatch(r, c); }
+  $('mapdesc').textContent = S.use === 'ba'
+    ? `The [β ‖ α] launch is ${nbk} thread blocks of 8 warps, one cell each: 8 blocks for 56 SMs, so 48 SMs have nothing to do. It does not matter: the kernel reads 278 KB and is over in microseconds.`
+    : `A large Q8_0 matrix (when the model is loaded from the BF16 or Q8_0 file): ${Atlas.int(nbk)} thread blocks${rr > 1 ? `, drawn ${cols} per line` : ''}, enough to keep every SM's memory pipeline busy, which is what decides its speed.`;
+  Atlas.legend($('maplegend'), [['--w', 'one thread block = 8 rows']]);
+  $('mapstatus').textContent = `${Atlas.int(nbk)} blocks × 8 warps = ${Atlas.int(U.rows)} rows; each warp: ${nb()} weight blocks, ${Math.ceil(nb() / 32)} rounds per lane`;
+}
+$('blk').addEventListener('input', () => { S.blk = +$('blk').value; draw(); });
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1300 });
+$('blk').max = nb() - 1;
+syncSeg(); facts();
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

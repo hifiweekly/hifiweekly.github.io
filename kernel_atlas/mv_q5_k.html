@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>mv_q5_k Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · decode: one warp per row, Q5_K super-blocks × int8 activations</div>
+    <h1>Inside <code>mv_q5_k</code></h1>
+    <p>The DeltaNet output projection (<code>ssm_out</code>, 4096 × 4096 in each of the 24 DeltaNet layers) is stored in Q5_K, one of ggml's "k-quants". Where Q4_1 gives every 32 values an f16 scale and offset, Q5_K groups 256 values into a super-block with one f16 scale d and one f16 dmin, and gives each of its 8 sub-blocks a 6-bit scale and a 6-bit min, packed into 12 bytes. Weights are 5 bits: a nibble plus one bit from a shared 32-byte array. That is 5.5 bits per weight with finer scales than Q5_0. This kernel unpacks it without a single branch.</p>
+    <div class="formula">weight = <span class="w">d</span>·sc<sub>s</sub>·q − <span class="w">dmin</span>·m<sub>s</sub> &nbsp;⇒&nbsp; block term = (d·sc<sub>s</sub>)·dₓ · Σ q·<span class="x">x</span> − (dmin·m<sub>s</sub>) · dₓΣ<span class="x">x</span> &nbsp;&nbsp;<span class="muted">// q in 0…31; sc, m in 0…63; s = sub-block 0…7</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-blk">
+    <div class="sechead">
+      <h2 id="s-blk">One lane, one sub-block of 32</h2>
+      <p>Lane b takes sub-block b of the row, so its position in the super-block is s = b mod 8: eight lanes share each super-block. Pick the sub-block and step through the 176-byte layout, the scale bits, the 5-bit values and the dot product.</p>
+    </div>
+    <div class="controls">
+      <label>super-block <input id="sb" type="range" min="0" max="15" value="3"> <span id="sbv" class="mono"></span></label>
+      <label>sub-block s <input id="ss" type="range" min="0" max="7" value="5"> <span id="ssv" class="mono"></span></label>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="w">the 176-byte super-block: the bytes this lane reads</b><span id="laysub"></span></div>
+        <div class="figure"><svg id="lay" role="img" aria-label="Layout of a Q5_K super-block"></svg></div>
+        <div class="figure"><svg id="block" role="img" aria-label="The lane's 32 values times int8 activations"></svg></div>
+        <div class="legend" id="legend"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b class="w">6-bit scale and min of sub-block s</b><span>ggml's get_scale_min_k4</span></div>
+        <div class="figure"><svg id="sc" role="img" aria-label="Scale and min bits"></svg></div>
+        <dl class="kv" id="card"></dl>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-map">
+    <div class="sechead">
+      <h2 id="s-map">Lanes over the sub-blocks of a row</h2>
+      <p>A row of 4096 values is 16 super-blocks, 128 sub-blocks. Lane l takes sub-blocks l, l + 32, l + 64, l + 96: four rounds, and in every round the warp covers 4 whole super-blocks, lanes 8k … 8k + 7 sharing one. Click a cell to inspect it above.</p>
+    </div>
+    <div class="panel">
+      <canvas id="map"></canvas>
+      <div class="legend" id="maplegend"></div>
+      <div class="status" id="mapstatus"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>The blocks stay whole, the lanes share them</h3>
+        <p>176 bytes is a multiple of 16, so unlike Q4_1 and Q8_0 the super-blocks are uploaded as stored and every load is an aligned <code>v4</code>. Each lane loads the 16-byte header, the 32 bytes of qh and the 32 bytes of qs its sub-block uses: 80 bytes for 22 bytes of its own data. The 8 lanes of a super-block read the same header and qh, and pairs read the same qs bytes (even s takes low nibbles, odd s high), so the repeats are served by L1. From DRAM each byte comes once: the kernel runs at about 445 GB/s.</p>
+      </div>
+      <div class="panel">
+        <h3>No branches on s</h3>
+        <p>The 6-bit scale and min have two encodings (s &lt; 4: the low 6 bits of bytes s and s + 4; s ≥ 4: a nibble of byte s + 4 plus the top 2 bits of bytes s − 4 and s). The kernel computes both with <code>bfe</code> (bit-field extract, with the bit position in a register) and picks one with <code>selp</code>: no divergence, since lanes of different s run side by side. The fifth bits are bit s of each qh byte: one shift by s and a mask of 0x01010101 extracts four at once.</p>
+        <p>The min enters as −dmin·m times dₓΣx, the same one-FMA trick as the offset in <a href="mv_q4_1.html">mv_q4_1</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>mv_q5_k</code>; launched by <code>mv()</code> in <code>qwen35.c</code> with 512 blocks of 256 threads for <code>ssm_out</code> (4096 × 4096), after <a href="gated_norm.html">gated_norm</a> and quant_q8; it adds the residual (x += W · input). The format is ggml's <code>block_q5_K</code> and <code>dequantize_row_q5_K</code>. Weights and activations here are generated.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('mv_q5_k');
+const COLS = 4096, NSB = COLS / 256;
+Atlas.facts($('facts'), [['512 × 256', 'blocks × threads (ssm_out)'], ['4096 × 4096', 'ssm_out (rows × cols)'], ['16 / 128', 'super-blocks / sub-blocks per row'], ['4', 'rounds per lane'], ['176 B', 'per 256 weights (5.5 bits)'], ['11 MiB', 'weights read per layer']]);
+const S = { sb: 3, s: 5 };
+// one super-block's raw bytes, built from generated q, scales and mins (ggml's packing)
+function superBlock() {
+  const r = Atlas.rng(Atlas.h32(S.sb * 131 + 17));
+  const q = Array.from({ length: 256 }, () => Math.max(0, Math.min(31, Math.round(15.5 + 6 * Atlas.gauss(r)))));
+  const sc = Array.from({ length: 8 }, () => Math.floor(20 + 43 * r())), mn = Array.from({ length: 8 }, () => Math.floor(8 + 50 * r()));
+  const sb = new Uint8Array(12);
+  for (let j = 0; j < 8; j++) {
+    if (j < 4) { sb[j] |= sc[j] & 63; sb[j + 4] |= mn[j] & 63; }
+    else { sb[j + 4] = (sc[j] & 15) | ((mn[j] & 15) << 4); sb[j - 4] |= (sc[j] >> 4) << 6; sb[j] |= (mn[j] >> 4) << 6; }
+  }
+  const qh = new Uint8Array(32), qs = new Uint8Array(128);
+  for (let s = 0; s < 8; s++) for (let l = 0; l < 32; l++) {
+    const v = q[32 * s + l];
+    qs[32 * (s >> 1) + l] |= (v & 15) << (4 * (s & 1));
+    qh[l] |= ((v >> 4) & 1) << s;
+  }
+  return { q, sc, mn, sb, qh, qs, d: Atlas.f16(0.0004 + 0.0004 * r()), dmin: Atlas.f16(0.0003 + 0.0003 * r()) };
+}
+function scaleMin(sb, s) { // the kernel's bfe/selp formulas
+  const byte = i => sb[i];
+  if (s < 4) return { sc: byte(s) & 63, m: byte(s + 4) & 63 };
+  return { sc: (byte(s + 4) & 15) | ((byte(s - 4) >> 6) << 4), m: (byte(s + 4) >> 4) | ((byte(s) >> 6) << 4) };
+}
+function act() {
+  const r = Atlas.rng(Atlas.h32(S.sb * 8 + S.s + 991)), x = [];
+  for (let j = 0; j < 32; j++) x.push(Math.max(-127, Math.min(127, Math.round(42 * Atlas.gauss(r)))));
+  const dx = fr(0.004 + 0.02 * r()), sumx = x.reduce((a, b) => a + b, 0);
+  return { x, dx, sumx, sx: fr(sumx * dx) };
+}
+const steps = [
+  { tag: 'I', short: 'which', title: 'lane b → sub-block b of the row: super-block b / 8, s = b mod 8', text: 'Per lane, once: the nibble shift 4·(s &amp; 1), the qs offset 32·(s / 2), and the bit positions for the scale extraction. Row pointer = row · 16 super-blocks · 176 bytes.' },
+  { tag: 'L', short: 'loads', title: 'four v4 loads of the super-block, two of activations, one v2', text: 'Bytes 0–15 (d, dmin and the 12 scale bytes), qh (bytes 16–47, all 32) and the 32 bytes of qs this sub-block uses (from 48 + 32·(s / 2)). Then the activations\' 32 int8 values and {dₓ, dₓΣx}.' },
+  { tag: 'C', short: 'scale, min', title: '6-bit scale and min: both encodings, then selp', text: 'For s &lt; 4 the values are the low 6 bits of bytes s and s + 4. For s ≥ 4 they are the low and high nibbles of byte s + 4, each topped with 2 bits taken from the high bits of byte s − 4 (scale) or byte s (min). <code>bfe.u32</code> with a register bit offset extracts each piece; <code>selp</code> picks.' },
+  { tag: 'Q', short: '5-bit q', title: 'q = nibble of qs | bit s of qh, four values per word', text: '(qs_word >> 4·(s &amp; 1)) &amp; 0x0F0F0F0F gives four nibbles; ((qh_word >> s) &amp; 0x01010101) << 4 puts bit s of four qh bytes at bit 4. One OR: four 5-bit q in 0…31.' },
+  { tag: 'D', short: '8 dp4a', title: 'eight dp4a.u32.s32: Σ q · x over the 32 values', text: 'Exact integer arithmetic, as in every kernel of this engine.' },
+  { tag: 'X', short: 'two FMAs', title: 'acc += Σqx · (d·sc)·dₓ − (dmin·m) · dₓΣx', text: 'The super-block\'s f16 d and dmin are multiplied by this sub-block\'s 6-bit sc and m (exact in f32), then two FMAs, as in ggml\'s dequantization d·sc·q − dmin·m.' },
+  { tag: 'R', short: 'reduce, store', title: 'warp butterfly; lane 0 adds the residual and stores', text: 'ssm_out is an output projection: resid = y = x, so the layer\'s residual add happens here.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `I|extern "C" __global__ void mv_q5_k(const uint8_t *w, const int8_t *xq, const float2 *xds,
+I|        const float *resid, float *y, unsigned rows, unsigned cols)
+I|{
+I|    unsigned lane = threadIdx.x & 31, row = blockIdx.x * 8 + (threadIdx.x >> 5);
+I|    if (row >= rows) return;
+I|    unsigned s = lane & 7, nib = 4 * (s & 1), sh = 8 * (s & 3);
+I|    const uint8_t *rw = w + (size_t)row * (cols / 256) * 176;
+X|    float acc = 0.0f;
+X|    for (unsigned b = lane; b < cols / 32; b += 32) {
+L|        const uint8_t *blk = rw + (b / 8) * 176;
+L|        uint4 hd = *(const uint4 *)blk;                         // d, dmin | scales[12]
+L|        uint4 h0 = *(const uint4 *)(blk + 16), h1 = *(const uint4 *)(blk + 32);       // qh
+L|        uint4 q0 = *(const uint4 *)(blk + 48 + 32 * (s / 2)), q1 = *(const uint4 *)(blk + 64 + 32 * (s / 2));
+C|        unsigned sc_lo = bfe(hd.y, sh, 6), m_lo = bfe(hd.z, sh, 6);                    // s < 4
+C|        unsigned sc_hi = bfe(hd.w, sh, 4) | bfe(hd.y, sh + 6, 2) << 4;                  // s >= 4
+C|        unsigned m_hi  = bfe(hd.w, sh + 4, 4) | bfe(hd.z, sh + 6, 2) << 4;
+C|        unsigned sc = s < 4 ? sc_lo : sc_hi, m = s < 4 ? m_lo : m_hi;                 // selp
+Q|        #define Q5(qw, hw) (((qw >> nib) & 0x0F0F0F0F) | (((hw >> s) & 0x01010101) << 4))
+D|        int dot = __dp4a(Q5(q0.x, h0.x), x[0], 0);  dot = __dp4a(Q5(q0.y, h0.y), x[1], dot);
+D|        ...                                                     // 8 words: values 0..31
+X|        float2 dm = __half22float2(*(const __half2 *)&hd.x);
+X|        acc = fmaf((float)dot, (dm.x * sc) * xds[b].x, acc);
+X|        acc = fmaf(-(dm.y * m), xds[b].y, acc);
+X|    }
+R|    for (int off = 16; off >= 1; off >>= 1) acc += __shfl_xor_sync(0xffffffff, acc, off);
+R|    if (lane == 0) y[row] = acc + (resid ? resid[row] : 0.0f);
+I|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    and.b32             %r16, %r4, 7;           // s
+I|    and.b32             %r17, %r16, 1;
+I|    shl.b32             %r17, %r17, 2;          // nibble shift 4 (s & 1)
+I|    shr.u32             %r18, %r16, 1;
+I|    shl.b32             %r18, %r18, 5;          // 32 (s / 2)
+I|    and.b32             %r28, %r16, 3;
+I|    shl.b32             %r28, %r28, 3;          // 8 (s % 4)
+I|    setp.lt.u32         %p3, %r16, 4;
+L|    ld.global.nc.v4.u32 {%r12, %r13, %r14, %r15}, [%rd9];      // d dmin | scales[12]
+L|    ld.global.nc.v4.u32 {%r20, %r21, %r22, %r23}, [%rd10+48];  // qs[32 (s/2) ..]
+L|    ld.global.nc.v4.u32 {%r24, %r25, %r26, %r27}, [%rd10+64];
+L|    ld.global.nc.v4.u32 {%r32, %r33, %r34, %r35}, [%rd9+16];   // qh[0..15]
+L|    ld.global.nc.v4.u32 {%r36, %r37, %r38, %r39}, [%rd9+32];   // qh[16..31]
+L|    ld.global.nc.v2.f32 {%f2, %f3}, [%rd14];    // d_x, d_x sum(x)
+C|    bfe.u32             %r48, %r13, %r28, 6;    // s < 4
+C|    bfe.u32             %r49, %r14, %r28, 6;
+C|    bfe.u32             %r50, %r15, %r28, 4;    // s >= 4
+C|    bfe.u32             %r51, %r13, %r29, 2;
+C|    shl.b32             %r51, %r51, 4;
+C|    or.b32              %r50, %r50, %r51;
+C|    bfe.u32             %r52, %r15, %r31, 4;
+C|    bfe.u32             %r53, %r14, %r29, 2;
+C|    shl.b32             %r53, %r53, 4;
+C|    or.b32              %r52, %r52, %r53;
+C|    selp.b32            %r48, %r48, %r50, %p3;  // sc
+C|    selp.b32            %r49, %r49, %r52, %p3;  // m
+Q|    shr.u32             %r54, %r20, %r17;
+Q|    and.b32             %r54, %r54, 0x0F0F0F0F;
+Q|    shr.u32             %r55, %r32, %r16;
+Q|    and.b32             %r55, %r55, 0x01010101;
+Q|    shl.b32             %r55, %r55, 4;
+Q|    or.b32              %r54, %r54, %r55;       // four 5-bit q
+D|    dp4a.u32.s32        %r60, %r54, %r40, 0;
+D|    ...                                         // words 1-7
+X|    mov.b32             {%h0, %h1}, %r12;
+X|    cvt.f32.f16         %f4, %h0;               // d
+X|    cvt.f32.f16         %f5, %h1;               // dmin
+X|    cvt.rn.f32.u32      %f6, %r48;
+X|    mul.f32             %f6, %f4, %f6;          // d sc
+X|    cvt.rn.f32.u32      %f7, %r49;
+X|    mul.f32             %f7, %f5, %f7;
+X|    neg.f32             %f7, %f7;               // -dmin m
+X|    mul.f32             %f8, %f6, %f2;
+X|    cvt.rn.f32.s32      %f9, %r60;
+X|    fma.rn.f32          %f1, %f9, %f8, %f1;
+X|    fma.rn.f32          %f1, %f7, %f3, %f1;
+R|REDUCE:
+R|    shfl.sync.bfly.b32  %f8, %f1, 16, 31, -1;
+R|    ...` },
+});
+
+const bin = (v, n) => (v >>> 0).toString(2).padStart(n, '0');
+function draw() {
+  const st = stepper.step, SB = superBlock(), A = act(), s = S.s, O = ['I', 'L', 'C', 'Q', 'D', 'X', 'R'], at = t => O.indexOf(st.tag) >= O.indexOf(t);
+  const b = S.sb * 8 + s;
+  $('sbv').textContent = S.sb; $('ssv').textContent = `${s} → sub-block ${b} of the row: lane ${b % 32}, round ${Math.floor(b / 32)}`;
+  // layout bar: 176 bytes
+  {
+    const W = 760, H = 74, x0 = 6, bw = (W - 12) / 176;
+    let t = '';
+    const seg = [['header', 0, 16, C.w], ['qh[32]', 16, 32, C.sync], ['qs[128]', 48, 128, C.x]];
+    seg.forEach(([n, a, len, col]) => { t += `<rect x="${x0 + a * bw}" y="18" width="${len * bw - 1}" height="24" fill="${col}" opacity="0.14"/><text x="${x0 + (a + len / 2) * bw}" y="12" font-size="10" text-anchor="middle" fill="${C.muted}">${n}</text>`; });
+    const reads = [[0, 16], [16, 32], [48 + 32 * (s >> 1), 32]];
+    if (at('L')) reads.forEach(([a, len]) => { t += `<rect x="${x0 + a * bw}" y="18" width="${len * bw - 1}" height="24" fill="none" stroke="${C.fg}" stroke-width="2"/>`; });
+    for (let k = 0; k < 4; k++) t += `<text x="${x0 + (48 + 32 * k + 16) * bw}" y="34" font-size="9" text-anchor="middle" fill="${C.fg}">s ${2 * k}, ${2 * k + 1}</text>`;
+    t += `<text x="${x0}" y="62" font-size="10" fill="${C.muted}">${at('L') ? `outlined: the 80 bytes lane ${b % 32} loads (header 16, qh 32, qs 32 from byte ${48 + 32 * (s >> 1)}, the ${s & 1 ? 'high' : 'low'} nibbles)` : 'header = d, dmin (f16) and the 12 scale bytes · bytes 0 … 175'}</text>`;
+    $('lay').setAttribute('viewBox', `0 0 ${W} ${H}`); $('lay').innerHTML = t;
+  }
+  // values and dot product
+  const { sc, m } = scaleMin(SB.sb, s), q = SB.q.slice(32 * s, 32 * s + 32);
+  const W = 760, H = 250, x0 = 76, cw = (W - x0 - 10) / 32;
+  let t = '';
+  const rowsL = ['nibble', 'qh bit s', 'q (0…31)', 'x (int8)'];
+  rowsL.forEach((l, k) => t += `<text x="4" y="${16 + k * 30}" font-size="10.5" fill="${C.fg}">${l}</text>`);
+  for (let j = 0; j < 32; j++) {
+    const x = x0 + j * cw, nib = (SB.qs[32 * (s >> 1) + j] >> (4 * (s & 1))) & 15, hb = (SB.qh[j] >> s) & 1;
+    [[nib.toString(16), at('Q'), C.w], [hb, at('Q'), hb ? C.w : C.muted], [q[j], at('Q'), C.w], [A.x[j], at('L'), A.x[j] < 0 ? C.x : C.fg]].forEach(([v, on, col], k) => {
+      t += `<rect x="${x + 1}" y="${2 + k * 30}" width="${cw - 2}" height="22" rx="2" fill="${st.tag === 'Q' && k < 3 && j < 4 ? C.hl : C.bg}" stroke="${C.line}"/>`;
+      if (on) t += `<text x="${x + cw / 2}" y="${17 + k * 30}" font-size="9" text-anchor="middle" fill="${col}">${v}</text>`;
+    });
+  }
+  let dot = 0; const dy = 128;
+  t += `<text x="4" y="${dy + 15}" font-size="10.5" fill="${C.fg}">dp4a</text>`;
+  for (let k = 0; k < 8; k++) {
+    for (let i = 0; i < 4; i++) dot += q[4 * k + i] * A.x[4 * k + i];
+    const x = x0 + k * ((W - x0 - 10) / 8), wd = (W - x0 - 10) / 8 - 6, done = at('D');
+    t += `<rect x="${x}" y="${dy}" width="${wd}" height="38" rx="3" fill="${done ? C.panel : C.bg}" stroke="${done ? C.sync : C.line}"/><text x="${x + wd / 2}" y="${dy + 14}" font-size="9" text-anchor="middle" fill="${C.muted}">word ${k}</text>`;
+    if (done) t += `<text x="${x + wd / 2}" y="${dy + 30}" font-size="10.5" text-anchor="middle" fill="${C.fg}">${dot}</text>`;
+  }
+  const dsc = fr(SB.d * sc), dmm = fr(-fr(SB.dmin * m)), p = fr(dsc * A.dx), t1 = fr(dot * p), term = fr(dmm * A.sx + t1);
+  let ref = 0; for (let j = 0; j < 32; j++) ref += (SB.d * sc * q[j] - SB.dmin * m) * A.dx * A.x[j];
+  t += `<text x="4" y="${H - 50}" font-size="10.5" fill="${at('X') ? C.fg : C.muted}">${at('X') ? `Σ q·x = ${dot} · (d·sc = ${dsc.toExponential(4)}) · dₓ = ${t1.toExponential(5)}` : 'then: · (d·sc) · dₓ'}</text>`;
+  t += `<text x="4" y="${H - 28}" font-size="10.5" fill="${at('X') ? C.fg : C.muted}">${at('X') ? `− dmin·m = ${dmm.toExponential(4)} times dₓΣx = ${A.sx.toFixed(4)}  →  ${term.toExponential(5)}` : 'then: − (dmin·m) · dₓΣx'}</text>`;
+  t += `<text x="4" y="${H - 6}" font-size="10.5" fill="${at('X') ? C.muted : C.bg}">float64 Σ (d·sc·q − dmin·m)(dₓ·x) = ${ref.toExponential(5)}</text>`;
+  $('block').setAttribute('viewBox', `0 0 ${W} ${H}`); $('block').innerHTML = t;
+  Atlas.legend($('legend'), [['--w', 'weight bits'], ['--sync', 'qh (shared by all 8 sub-blocks)'], ['--x', 'qs, or a negative activation'], ['--hl', 'the first word being built']]);
+  // scale bits
+  {
+    const W = 330, H = 250;
+    let u = '';
+    const used = new Map();   // byte -> [bit ranges] for sc / m
+    const mark = (byte, lo, n, kind) => { if (!used.has(byte)) used.set(byte, []); used.get(byte).push([lo, n, kind]); };
+    if (s < 4) { mark(s, 0, 6, 'sc'); mark(s + 4, 0, 6, 'm'); } else { mark(s + 4, 0, 4, 'sc'); mark(s - 4, 6, 2, 'sc'); mark(s + 4, 4, 4, 'm'); mark(s, 6, 2, 'm'); }
+    for (let k = 0; k < 12; k++) {
+      const y = 14 + k * 17, bits = bin(SB.sb[k], 8);
+      u += `<text x="4" y="${y}" font-size="10" fill="${C.muted}">scales[${k}]</text>`;
+      for (let i = 0; i < 8; i++) {
+        const bit = 7 - i, kinds = (used.get(k) || []).filter(([lo, n]) => bit >= lo && bit < lo + n).map(v => v[2]);
+        const col = !at('C') || !kinds.length ? C.muted : kinds[0] === 'sc' ? C.w : C.y;
+        u += `<text x="${100 + i * 12}" y="${y}" font-size="10.5" text-anchor="middle" fill="${col}" font-weight="${kinds.length && at('C') ? 600 : 400}">${bits[i]}</text>`;
+      }
+    }
+    u += `<text x="4" y="${H - 22}" font-size="10.5" fill="${at('C') ? C.fg : C.muted}">${at('C') ? `sc = ${sc} (${bin(sc, 6)})   m = ${m} (${bin(m, 6)})` : 'sc and m: 6 bits each'}</text>`;
+    u += `<text x="4" y="${H - 6}" font-size="9.5" fill="${C.muted}">${s < 4 ? `s < 4: low 6 bits of bytes ${s} and ${s + 4}` : `s ≥ 4: nibbles of byte ${s + 4} + top bits of bytes ${s - 4}, ${s}`}</text>`;
+    $('sc').setAttribute('viewBox', `0 0 ${W} ${H}`); $('sc').innerHTML = u;
+  }
+  const row = (a, c) => `<dt>${a}</dt><dd>${c}</dd>`;
+  $('card').innerHTML = row('lane', `${b % 32}, round ${Math.floor(b / 32)}`) + row('d, dmin (f16)', at('L') ? `${SB.d.toExponential(3)}, ${SB.dmin.toExponential(3)}` : '–') +
+    row('generated sc, m', `${SB.sc[s]}, ${SB.mn[s]} (packed, then extracted: ${at('C') ? (sc === SB.sc[s] && m === SB.mn[s] ? 'same' : 'DIFFERENT') : '…'})`) + row('dₓ, dₓΣx', at('L') ? `${A.dx.toFixed(5)}, ${A.sx.toFixed(4)}` : '–');
+  drawMap(b);
+}
+const mg = Atlas.grid($('map'), 8, 16);
+function drawMap(sel) {
+  $('map').style.aspectRatio = '16 / 3';
+  const g = mg.prep();
+  for (let sbk = 0; sbk < NSB; sbk++) for (let s = 0; s < 8; s++) {
+    const b = sbk * 8 + s, round = Math.floor(b / 32);
+    g.cell(s, sbk, b === sel ? C.y : C.w, b === sel ? 1 : 0.25 + 0.17 * round, 0.1);
+  }
+  for (let k = 4; k < 16; k += 4) g.vline(k, C.fg, 1.5);
+  Atlas.legend($('maplegend'), [['--w', 'sub-block; columns = super-blocks 0…15, rows = s; darker = later round'], ['--y', 'selected']]);
+  $('mapstatus').textContent = `rounds 0–3 cover super-blocks 0–3, 4–7, 8–11, 12–15 (lines). Sub-block ${sel}: lane ${sel % 32}, round ${Math.floor(sel / 32)}.`;
+}
+mg.hook(p => { const b = p.c * 8 + p.r; $('mapstatus').textContent = `super-block ${p.c}, s = ${p.r}: sub-block ${b}, lane ${b % 32}, round ${Math.floor(b / 32)}`; },
+  p => { S.sb = p.c; S.s = p.r; $('sb').value = S.sb; $('ss').value = S.s; draw(); }, () => draw());
+$('sb').addEventListener('input', () => { S.sb = +$('sb').value; draw(); });
+$('ss').addEventListener('input', () => { S.s = +$('ss').value; draw(); });
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1500 });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>
