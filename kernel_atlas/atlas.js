@@ -9,8 +9,10 @@ window.Atlas = A;
 // <name>.html; engine 'shared' means the PTX is identical in gptoss.ptx and gemma3.ptx.
 // emb2.ptx (EmbeddingGemma 2) copies rmsnorm, add_rmsnorm, geglu and gemm_q8 from gemma3.ptx
 // unchanged, so those kernels list 'gemma_emb2' among their models. qwen35.ptx (Qwen 3.5)
-// copies rmsnorm, argmax and compact_logits unchanged ('qwen35') and adapts qk_norm_rope
-// and attention, which therefore keep their Gemma 3 model lists.
+// copies rmsnorm, argmax and compact_logits unchanged ('qwen35') and adapts attention (a
+// section on its page). Kernels that share an .entry name but not the code get pages of their
+// own: qk_norm_rope_qwen, quant_q8_qwen and attention_oss; `entry` gives the .entry name
+// when the id differs from it.
 A.MODELS = [
   { id: 'gptoss', name: 'gpt-oss-20b', engine: 'gpt-oss' },
   { id: 'gemma3', name: 'Gemma 3 12B', engine: 'Gemma 3' },
@@ -22,6 +24,7 @@ A.KERNELS = [
   { id: 'add_rmsnorm', name: 'add_rmsnorm', engine: 'Gemma 3', models: ['gemma3', 'gemma_emb2'], family: 'Norms & activations' },
   { id: 'norm_add', name: 'norm_add', engine: 'EmbeddingGemma 2', models: ['gemma_emb2'], family: 'Norms & activations' },
   { id: 'qk_norm_rope', name: 'qk_norm_rope', engine: 'Gemma 3', models: ['gemma3'], family: 'Norms & activations' },
+  { id: 'qk_norm_rope_qwen', name: 'qk_norm_rope (Qwen)', entry: 'qk_norm_rope', engine: 'Qwen 3.5', models: ['qwen35'], family: 'Norms & activations' },
   { id: 'head_norm_rope', name: 'head_norm_rope', engine: 'EmbeddingGemma 2', models: ['gemma_emb2'], family: 'Norms & activations' },
   { id: 'swiglu_oai', name: 'swiglu_oai', engine: 'gpt-oss', models: ['gptoss'], family: 'Norms & activations' },
   { id: 'geglu', name: 'geglu', engine: 'Gemma 3', models: ['gemma3', 'gemma_emb2'], family: 'Norms & activations' },
@@ -29,6 +32,7 @@ A.KERNELS = [
   { id: 'gated_norm', name: 'gated_norm', engine: 'Qwen 3.5', models: ['qwen35'], family: 'Norms & activations' },
   { id: 'swiglu', name: 'swiglu', engine: 'Qwen 3.5', models: ['qwen35'], family: 'Norms & activations' },
   { id: 'quant_q8', name: 'quant_q8', engine: 'shared', models: ['gptoss', 'gemma3'], family: 'Matrix products' },
+  { id: 'quant_q8_qwen', name: 'quant_q8 (Qwen)', entry: 'quant_q8', engine: 'Qwen 3.5', models: ['qwen35'], family: 'Matrix products' },
   { id: 'mv_q8', name: 'mv_q8', engine: 'shared', models: ['gptoss', 'gemma3'], family: 'Matrix products' },
   { id: 'mv_q5', name: 'mv_q5', engine: 'Gemma 3', models: ['gemma3'], family: 'Matrix products' },
   { id: 'mv_mxfp4', name: 'mv_mxfp4', engine: 'gpt-oss', models: ['gptoss'], family: 'Matrix products' },
@@ -37,7 +41,8 @@ A.KERNELS = [
   { id: 'mv_q5_k', name: 'mv_q5_k', engine: 'Qwen 3.5', models: ['qwen35'], family: 'Matrix products' },
   { id: 'gemm_q8', name: 'gemm_q8', engine: 'shared', models: ['gptoss', 'gemma3', 'gemma_emb2'], family: 'Matrix products' },
   { id: 'rope_kv', name: 'rope_kv', engine: 'gpt-oss', models: ['gptoss'], family: 'Attention' },
-  { id: 'attention', name: 'attention', engine: 'Gemma 3', models: ['gemma3', 'gptoss'], family: 'Attention' },
+  { id: 'attention', name: 'attention', engine: 'Gemma 3', models: ['gemma3', 'qwen35'], family: 'Attention' },
+  { id: 'attention_oss', name: 'attention (gpt-oss)', entry: 'attention', engine: 'gpt-oss', models: ['gptoss'], family: 'Attention' },
   { id: 'attention_enc', name: 'attention_enc', engine: 'EmbeddingGemma 2', models: ['gemma_emb2'], family: 'Attention' },
   { id: 'mv_f32', name: 'mv_f32', engine: 'gpt-oss', models: ['gptoss'], family: 'Routing & sampling' },
   { id: 'router_topk', name: 'router_topk', engine: 'gpt-oss', models: ['gptoss'], family: 'Routing & sampling' },

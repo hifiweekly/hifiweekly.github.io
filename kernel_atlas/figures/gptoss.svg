@@ -17,7 +17,7 @@
 <text x="235" y="781" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">RMSNorm</text>
 </a>
 <path d="M235,766 L235,740" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
-<a class="k" href="../attention.html" target="_top"><title>attention: softmax with a sink logit per head, scale 1/8</title>
+<a class="k" href="../attention_oss.html" target="_top"><title>attention_oss: softmax with a sink logit per head, scale 1/8</title>
 <rect x="155" y="684" width="160" height="56" rx="6" fill="#fcdcb4" stroke="#000" stroke-width="1.1"/>
 <text x="235" y="703.375" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Grouped-Query</text>
 <text x="235" y="720.625" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Attention</text>
@@ -78,7 +78,7 @@
 <text x="235" y="247" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Probabilities</text>
 <path d="M235,282 L235,256" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
 <text x="235" y="968" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">(a) gpt-oss-20b</text>
-<a class="k" href="../attention.html" target="_top"><title>attention: 128 threads, head dim 64, a sink logit per head</title>
+<a class="k" href="../attention_oss.html" target="_top"><title>attention_oss: 128 threads, head dim 64, a sink logit per head</title>
 <path d="M640,600 L640,578" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
 <rect x="580" y="600" width="120" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
 <text x="640" y="614" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">MatMul</text>
@@ -114,12 +114,12 @@
 </a>
 <text x="952" y="582" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">4096 → 2880</text>
 <path d="M880,620 L880,596" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
-<a class="k" href="../attention.html" target="_top"><title>attention: one block per (head, token), sinks</title>
+<a class="k" href="../attention_oss.html" target="_top"><title>attention_oss: one block per (head, token), sinks</title>
 <rect x="820" y="620" width="120" height="28" rx="6" fill="#f2f3c1" stroke="#000" stroke-width="1.1"/>
 <text x="880" y="634" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Concat</text>
 </a>
 <path d="M880,676 L880,648" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
-<a class="k" href="../attention.html" target="_top"><title>attention: one block per (head, token), sinks</title>
+<a class="k" href="../attention_oss.html" target="_top"><title>attention_oss: one block per (head, token), sinks</title>
 <rect x="792" y="664" width="200" height="50" rx="6" fill="#d4cbe8" stroke="#000" stroke-width="1.1"/>
 <rect x="788" y="668" width="200" height="50" rx="6" fill="#d4cbe8" stroke="#000" stroke-width="1.1"/>
 <rect x="784" y="672" width="200" height="50" rx="6" fill="#d4cbe8" stroke="#000" stroke-width="1.1"/>

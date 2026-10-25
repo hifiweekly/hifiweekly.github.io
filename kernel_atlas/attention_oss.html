@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>attention gpt-oss Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.chart svg { display: block; width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">gpt-oss · gptoss.ptx · one block per query head per token</div>
+    <h1>Inside <code>attention</code>, the gpt-oss version</h1>
+    <p>gpt-oss's attention has the same job and the same name as <a href="attention.html">Gemma 3's kernel</a>, but it is a different kernel. Heads are 64 wide, so a block is only 4 warps and each lane owns 2 dims. The softmax is computed in two exact passes instead of online: the first pass scores every visible key and parks the scores in shared memory, the second turns them into weights against the true maximum and sums the values. Each head also has a learned <em>sink</em> logit, which competes in the softmax but brings no value vector, so a head can put part of its attention on nothing. Even layers see only the last 128 positions, read from a ring of cache slots (256 with the default 128-token prompt chunk).</p>
+    <div class="formula"><span class="y">out</span> = Σ<sub>j=lo…p</sub> e<sup><span class="x">q</span>·<span class="w">k</span><sub>j</sub>/8 − m</sup> · <span class="w">v</span><sub>j</sub> / ( Σ<sub>j</sub> e<sup><span class="x">q</span>·<span class="w">k</span><sub>j</sub>/8 − m</sup> + e<sup><span class="s">sink</span><sub>h</sub> − m</sup> ) &nbsp;&nbsp;<span class="muted">// m = max(scores, sink); lo = p − 127 on window layers</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">Four warps, one key each, two passes</h2>
+      <p>Each column of the grid is one loop iteration and each row one warp: warp w takes keys w, w + 4, w + 8 … of the visible range, one key per iteration, so relative key index = 4·iteration + warp. The same grid is walked twice, once to score and once to weight. Choose a position, a layer type and a head; click a key to inspect it.</p>
+    </div>
+    <div class="panel">
+      <div class="controls">
+        <label for="pos">query position p <input id="pos" type="range" min="0" max="511" value="45"> <span id="posv" class="mono"></span></label>
+        <label for="layer">layer <select id="layer"><option value="local">window (even layers: last 128, ring of 256 slots)</option><option value="full">full (odd layers: all keys 0 … p)</option></select></label>
+        <label for="hd">q head <select id="hd"></select></label>
+      </div>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="w" id="keylabel"></b><span id="keysub"></span></div>
+        <canvas id="keys"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over a key to see its position, cache slot and score.</div>
+        <div class="caption" id="caption"></div>
+        <div class="cvlabel"><b class="s">shared memory: att_scores[n], att_max[4], att_sum[4]</b><span id="smsub"></span></div>
+        <canvas id="smem"></canvas>
+        <div class="cvlabel"><b class="s" id="chartlabel"></b><span>natural-log units: q·k / 8</span></div>
+        <div class="chart"><svg id="chart" role="img" aria-label="Key scores, the maximum and the sink"></svg></div>
+      </div>
+      <div class="panel">
+        <div class="tablewrap"><table class="nums" id="warps"></table></div>
+        <dl class="kv" id="kcard"></dl>
+        <div class="cvlabel"><b class="y">out: 64 dims (lane l owns column l)</b><span id="outsub"></span></div>
+        <canvas id="out"></canvas>
+        <div class="cvlabel"><b class="s">where the weight goes</b></div>
+        <div class="chart"><svg id="share" role="img" aria-label="Share of the softmax weight on keys and on the sink"></svg></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Two passes instead of an online softmax</h3>
+        <p>Gemma 3's kernel keeps a running maximum and rescales its 256-float accumulator whenever the maximum grows. Here a score costs only 4 bytes of shared memory, and a window layer has at most 128 visible keys (512 bytes), so it is cheaper to store every score, take the exact maximum once, and exponentiate each score exactly once against it. K is still read once (pass 1) and V once (pass 2), so the memory traffic is the same as a single pass; nothing is ever rescaled.</p>
+        <p>The dynamic shared allocation is 4 bytes per key, sized by the host from the longest key range in the launch: min(pos0 + T, 128) on window layers, pos0 + T on full ones.</p>
+      </div>
+      <div class="panel">
+        <h3>The sink: attention to nothing</h3>
+        <p>Every head has one learned logit, <code>attn_sinks[h]</code>. It enters the maximum and the denominator like an extra key, but has no value vector, so the weights of the real keys sum to less than 1. A head that finds nothing relevant can send most of its weight to the sink and output a vector near zero, instead of being forced to average whatever is in the window. In the kernel it costs one load, one <code>max</code> and one extra exponential in the final denominator.</p>
+      </div>
+      <div class="panel">
+        <h3>Small heads: 4 warps, 2 dims per lane</h3>
+        <p>A 64-dim f16 key is 128 bytes, one 4-byte load per lane, and one dot product is two multiply-adds per lane plus a 5-round butterfly. Four warps keep four keys in flight per block, and 64 q heads × tokens blocks fill the GPU. Eight q heads share each kv head (64 / 8), so the other seven blocks of a group usually find its K and V rows in L2.</p>
+      </div>
+      <div class="panel">
+        <h3>A ring of 256 slots</h3>
+        <p>Window layers keep the last 128 positions plus one prompt chunk in a ring: 128 + 128 = 256 slots with the default chunk (the ring is sliding_window + batch), and key j lives in slot j % 256. The kernel computes the slot of its first key with one <code>rem</code>, then steps it by 4 and subtracts 256 when it passes the end, so the loop has no division. Full layers have one slot per position.</p>
+        <p>The final merge needs 1 KB of shared memory for the 4 partial accumulators; threads 0–63 each finish one output dim, and threads 64–127 leave.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>attention</code>; launched by <code>attention()</code> in <code>gptoss/gptoss.c</code> with grid (64 q heads, tokens), 128 threads and 4 bytes of dynamic shared memory per key. Head dim 64, scale 1/8, 8 kv heads, window 128 on even layers. Keys, values and sinks here are generated and stored as f16 like the real cache; the kernel's float32 result is compared with a float64 softmax.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('attention_oss');
+const D = 64, NH = 64, NKV = 8, WIN = 128, LSLOTS = 256, GSLOTS = 4096, SCALE = 0.125, LOG2E = fr(1.4426950408889634);
+Atlas.facts($('facts'), [['(64, tokens)', 'grid = (q heads, tokens)'], ['128', 'threads = 4 warps'], ['4 B / key', 'dynamic shared: the scores'], ['1 KB + 32 B', 'shared: merge'], ['2', 'dims per lane']]);
+$('hd').innerHTML = Array.from({ length: NH }, (_, h) => `<option value="${h}">${h} (kv head ${h >> 3})</option>`).join('');
+const S = { pos: 45, layer: 'local', h: 5, warp: 1, key: null };
+
+function vec(seed, sd) { const r = Atlas.rng(seed), v = new Float32Array(D); for (let d = 0; d < D; d++) v[d] = fr(Atlas.gauss(r) * sd); return v; }
+const sinkOf = h => fr(1.5 + 1.6 * Atlas.gauss(Atlas.rng(900 + h)));
+let Q, md;
+function kvAt(j, kvh) {
+  const k = vec(1000003 * (kvh + 1) + j * 7, 1), v = vec(77777 * (kvh + 1) + j * 13, 1);
+  const hot = Atlas.h32(j * 31 + kvh) % 19 === 0 || j === S.pos - 3;
+  for (let d = 0; d < D; d++) { if (hot) k[d] = k[d] + Q[d] * 0.35; k[d] = Atlas.f16(k[d]); v[d] = Atlas.f16(v[d]); }
+  return { k, v, hot };
+}
+function score(qs, k) {
+  const part = [];
+  for (let l = 0; l < 32; l++) part.push(fr(qs[2 * l + 1] * k[2 * l + 1] + fr(qs[2 * l] * k[2 * l])));
+  return Atlas.bflyTable(part, (a, b) => fr(a + b))[5][0];
+}
+// the kernel, in float32 and its order
+function build() {
+  const p = S.pos, local = S.layer === 'local', lo = local && p >= WIN ? p - WIN + 1 : 0, n = p - lo + 1, slots = local ? LSLOTS : GSLOTS, kvh = S.h >> 3;
+  Q = vec(4242 + S.h, 1.6);
+  const qs = Q.map(v => fr(v * SCALE)), sink = sinkOf(S.h);
+  const keys = []; for (let i = 0; i < n; i++) { const kv = kvAt(lo + i, kvh); keys.push({ ...kv, s: score(qs, kv.k) }); }
+  const iters = Math.ceil(n / 4), warps = [];
+  for (let w = 0; w < 4; w++) {
+    let mx = -Infinity; const mh = [];
+    for (let i = w; i < n; i += 4) { mx = Math.max(mx, keys[i].s); mh.push(mx); }
+    warps.push({ max: mx, mh });
+  }
+  const m = Math.max(...warps.map(w => w.max), sink);
+  for (let i = 0; i < n; i++) keys[i].p = fr(2 ** fr(fr(keys[i].s - m) * LOG2E));
+  warps.forEach((W, w) => {
+    let sum = 0; const acc = new Float32Array(2 * 32), sh = [];
+    for (let i = w; i < n; i += 4) { const k = keys[i]; sum = fr(sum + k.p); for (let d = 0; d < D; d++) acc[d] = fr(k.p * k.v[d] + acc[d]); sh.push(sum); }
+    W.sum = sum; W.acc = acc; W.sh = sh;
+  });
+  const sinkP = fr(2 ** fr(fr(sink - m) * LOG2E));
+  const den = fr(fr(fr(warps[0].sum + warps[1].sum) + fr(warps[2].sum + warps[3].sum)) + sinkP);
+  const out = new Float32Array(D);
+  for (let d = 0; d < D; d++) out[d] = fr(fr(fr(warps[0].acc[d] + warps[1].acc[d]) + fr(warps[2].acc[d] + warps[3].acc[d])) / den);
+  // float64 reference
+  const M = Math.max(...keys.map(k => k.s), sink), ex = keys.map(k => Math.exp(k.s - M)), Z = ex.reduce((a, b) => a + b, 0) + Math.exp(sink - M);
+  const ref = new Float64Array(D); keys.forEach((k, i) => { for (let d = 0; d < D; d++) ref[d] += ex[i] / Z * k.v[d]; });
+  let err = 0; for (let d = 0; d < D; d++) err = Math.max(err, Math.abs(out[d] - ref[d]));
+  md = { p, lo, n, slots, kvh, keys, iters, warps, m, sink, sinkP, den, out, err, prob: ex.map(e => e / Z), sinkShare: Math.exp(sink - M) / Z, qs };
+}
+function buildSteps() {
+  const st = [{ tag: 'A', kind: 'setup', short: 'setup', title: `key range [${md.lo}, ${md.p}]: ${md.n} keys, ${md.iters} iterations per pass`,
+    text: `${S.layer === 'local' ? (md.lo > 0 ? `Window layer: the last 128 positions are visible, so lo = p − 127 = ${md.lo}.` : 'Window layer, but p &lt; 128, so every key from 0 is visible.') + ` Key j sits in ring slot j % 256; warp w starts at slot (lo + w) % 256 = ${(md.lo + S.warp) % 256} for warp ${S.warp}.` : 'Full layer: every key from 0 to p is visible, slot = position.'} Lane l loads q[2l], q[2l+1] with one 8-byte load and multiplies them by the scale 1/8.` }];
+  for (let k = 0; k < md.iters; k++) st.push({ tag: 'S', kind: 'score', k, short: `pass 1 · ${k}`, title: `pass 1, iteration ${k}: score keys ${4 * k}–${Math.min(md.n, 4 * k + 4) - 1}`, delay: 600,
+    text: `Each warp loads its key's 2 f16 dims per lane (4 bytes; the warp reads the 128-byte row), forms 2 products, reduces them with a 5-round butterfly and updates its running max. Lane 0 writes the score to att_scores[i]. The slot then steps by 4, minus 256 at the end of the ring.` });
+  st.push({ tag: 'X', kind: 'max', short: 'max + sink', title: `m = max(4 warp maxima, sink) = ${md.m.toFixed(4)}`, text: `Lane 0 of each warp stores its maximum to att_max[w]; after <code>bar.sync</code> every thread reads the four with one float4 load and also takes the head's sink logit (${md.sink.toFixed(3)}) into the maximum. ${md.sink >= Math.max(...md.warps.map(w => w.max)) ? 'Here the sink is the largest logit.' : 'Here a real key beats the sink.'}` });
+  for (let k = 0; k < md.iters; k++) st.push({ tag: 'V', kind: 'value', k, short: `pass 2 · ${k}`, title: `pass 2, iteration ${k}: weights and values of keys ${4 * k}–${Math.min(md.n, 4 * k + 4) - 1}`, delay: 600,
+    text: 'Every lane reads its warp\'s score back from shared memory (one broadcast address), computes p = 2^((s − m)·log₂e) with one <code>ex2.approx</code>, adds p to the warp\'s sum, loads the value\'s 2 dims and accumulates p·v. No rescaling: m is already final.' });
+  st.push({ tag: 'M', kind: 'merge', short: 'merge: to shared', title: 'each warp writes its 64 accumulators and its sum, then bar.sync', text: 'Lane l stores (acc[2l], acc[2l+1]) to att_acc[warp][2l] with one 8-byte store; lane 0 stores the sum to att_sum[warp]. 1 KB + 16 bytes, one barrier.' });
+  st.push({ tag: 'O', kind: 'out', short: 'out[d]', title: 'threads 0–63: out[d] = Σ acc / (Σ sums + sink)', text: `Each of threads 0–63 adds the four sums and the sink term 2^((sink − m)·log₂e) = ${md.sinkP.toPrecision(4)} for the denominator (${md.den.toPrecision(6)}), adds the four partial accumulators of its dim and divides. Threads 64–127 exit. Largest difference from a float64 softmax: ${md.err.toExponential(2)}.` });
+  return st;
+}
+
+const kg = Atlas.grid($('keys'), 4, 8), sg = Atlas.grid($('smem'), 1, 32), og = Atlas.grid($('out'), 2, 32);
+$('out').style.aspectRatio = '32 / 2.4';
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `A|// grid (nh, tokens), 128 threads; lane owns dims 2*lane, 2*lane+1
+A|extern __shared__ float att_scores[];                         // n floats, sized by the host
+A|__shared__ float att_max[4], att_sum[4], att_acc[4][64];
+A|unsigned h = blockIdx.x, t = blockIdx.y, warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+A|unsigned kvh = h / (nh / nkv), p = pos0 + t;
+A|unsigned lo = (window && p >= window) ? p - window + 1 : 0, n = p - lo + 1;
+A|float2 q = *(float2 *)(Q + t * qstride + h * 64 + 2 * lane);
+A|q.x *= scale; q.y *= scale;
+S|float mx = -INFINITY;
+S|for (unsigned i = warp, slot = (lo + warp) % slots; i < n; i += 4) {
+S|    float2 k = __half22float2(*(__half2 *)(kc + (slot * nkv + kvh) * 64 + 2 * lane));
+S|    float s = q.x * k.x + q.y * k.y;
+S|    for (int off = 16; off >= 1; off >>= 1) s += __shfl_xor_sync(~0u, s, off);
+S|    mx = fmaxf(mx, s);
+S|    if (lane == 0) att_scores[i] = s;
+S|    if ((slot += 4) >= slots) slot -= slots;                    // ring
+S|}
+X|if (lane == 0) att_max[warp] = mx;
+X|__syncthreads();
+X|float m = fmaxf(fmaxf(fmaxf(att_max[0], att_max[1]), fmaxf(att_max[2], att_max[3])), sinks[h]);
+V|float sum = 0, a0 = 0, a1 = 0;
+V|for (unsigned i = warp, slot = (lo + warp) % slots; i < n; i += 4) {
+V|    float pr = exp2f((att_scores[i] - m) * LOG2E);
+V|    sum += pr;
+V|    float2 v = __half22float2(*(__half2 *)(vc + (slot * nkv + kvh) * 64 + 2 * lane));
+V|    a0 += pr * v.x;  a1 += pr * v.y;
+V|    if ((slot += 4) >= slots) slot -= slots;
+V|}
+M|att_acc[warp][2 * lane] = a0;  att_acc[warp][2 * lane + 1] = a1;
+M|if (lane == 0) att_sum[warp] = sum;
+M|__syncthreads();
+O|if (threadIdx.x >= 64) return;
+O|float den = att_sum[0] + att_sum[1] + att_sum[2] + att_sum[3] + exp2f((sinks[h] - m) * LOG2E);
+O|unsigned d = threadIdx.x;
+O|float o = att_acc[0][d] + att_acc[1][d] + att_acc[2][d] + att_acc[3][d];
+O|out[(t * nh + h) * 64 + d] = o / den;` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `A|    div.u32             %r9, %r4, %r8;          // kv head
+A|    selp.b32            %r37, %r36, 0, %p5;     // lo
+A|    rem.u32             %r38, %r38, %r33;       // slot of key lo + warp
+A|    ld.global.v2.f32    {%f2, %f3}, [%rd6];
+A|    mul.f32             %f2, %f2, %f1;          // q * scale
+A|    mul.f32             %f3, %f3, %f1;
+S|SCORE:
+S|    setp.ge.u32         %p1, %r16, %r1;
+S|    @%p1 bra            SCORE_DONE;
+S|    ld.global.b32       %r17, [%rd9];           // 2 x f16 of k
+S|    cvt.f32.f16         %f5, %h1;
+S|    cvt.f32.f16         %f6, %h2;
+S|    mul.f32             %f7, %f2, %f5;
+S|    fma.rn.f32          %f7, %f3, %f6, %f7;
+S|    shfl.sync.bfly.b32  %f8, %f7, 16, 31, -1;
+S|    add.f32             %f7, %f7, %f8;
+S|    ...                                         // offsets 8, 4, 2, 1
+S|    max.f32             %f4, %f4, %f7;          // running max
+S|    @!%p2 st.shared.f32 [%r18], %f7;            // lane 0: att_scores[i]
+S|    add.u32             %r16, %r16, 4;
+S|    add.u32             %r24, %r24, 4;
+S|    setp.ge.u32         %p7, %r24, %r33;
+S|    @%p7 sub.u32        %r24, %r24, %r33;       // wrap around the ring
+S|    bra.uni             SCORE;
+X|SCORE_DONE:
+X|    @!%p2 st.shared.f32 [%r21], %f4;            // att_max[warp]
+X|    bar.sync            0;
+X|    ld.global.f32       %f9, [%rd10];           // sink logit
+X|    ld.shared.v4.f32    {%f10, %f11, %f12, %f13}, [att_max];
+X|    max.f32             %f14, %f10, %f11;
+X|    ...
+X|    max.f32             %f14, %f14, %f9;        // m
+V|VALUE:
+V|    ld.shared.f32       %f19, [%r18];           // the score, broadcast
+V|    sub.f32             %f19, %f19, %f14;
+V|    mul.f32             %f19, %f19, 0f3FB8AA3B; // * log2(e)
+V|    ex2.approx.f32      %f20, %f19;             // p
+V|    add.f32             %f16, %f16, %f20;       // sum
+V|    ld.global.b32       %r17, [%rd11];          // 2 x f16 of v
+V|    fma.rn.f32          %f17, %f20, %f5, %f17;
+V|    fma.rn.f32          %f18, %f20, %f6, %f18;
+V|    ...                                         // next slot, as in pass 1
+M|VALUE_DONE:
+M|    st.shared.v2.f32    [%r23], {%f17, %f18};   // att_acc[warp][2 lane]
+M|    @!%p2 st.shared.f32 [%r26], %f16;           // att_sum[warp]
+M|    bar.sync            0;
+O|    setp.ge.u32         %p3, %r5, 64;
+O|    @%p3 bra            DONE;
+O|    ld.shared.v4.f32    {%f21, %f22, %f23, %f24}, [att_sum];
+O|    sub.f32             %f27, %f9, %f14;
+O|    mul.f32             %f27, %f27, 0f3FB8AA3B;
+O|    ex2.approx.f32      %f28, %f27;
+O|    add.f32             %f25, %f25, %f28;       // denominator incl. sink
+O|    ld.shared.f32       %f29, [%r27];           // att_acc[0..3][d]
+O|    ...
+O|    div.rn.f32          %f33, %f29, %f25;
+O|    st.global.f32       [%rd13], %f33;` },
+});
+
+let steps, hover = null;
+function rebuild(keep) { build(); steps = buildSteps(); stepper.setSteps(steps, keep); }
+// how far each pass has got: keys with index < scored are scored, < weighted are weighted
+function progress(st) {
+  const n = md.n;
+  if (st.kind === 'setup') return { scored: 0, weighted: 0, cur: -1 };
+  if (st.kind === 'score') return { scored: Math.min(n, 4 * st.k + 4), weighted: 0, cur: st.k };
+  if (st.kind === 'max') return { scored: n, weighted: 0, cur: -1 };
+  if (st.kind === 'value') return { scored: n, weighted: Math.min(n, 4 * st.k + 4), cur: st.k };
+  return { scored: n, weighted: n, cur: -1 };
+}
+function draw() {
+  const st = stepper.step, P = progress(st), cols = md.iters, n = md.n;
+  $('posv').textContent = S.pos;
+  if (kg.cols !== cols) kg.resize(4, cols);
+  $('keys').style.aspectRatio = `${Math.max(cols, 32)} / 4`;
+  const g = kg.prep(), pmax = Math.max(...md.prob);
+  for (let w = 0; w < 4; w++) for (let k = 0; k < cols; k++) {
+    const i = 4 * k + w;
+    if (i >= n) { g.hatch(w, k); continue; }
+    const wt = i < P.weighted, sc = i < P.scored;
+    g.cell(w, k, wt ? C.y : sc ? C.w : C.zero, wt ? 0.15 + 0.8 * Math.sqrt(md.prob[i] / pmax) : sc ? 0.55 : 0.35, 0.12);
+  }
+  if (P.cur >= 0) g.box(0, P.cur, 4, 1, C.sync, 2);
+  g.box(S.warp, 0, 1, cols, C.fg, 1);
+  if (S.key !== null && S.key < n) g.box(S.key % 4, Math.floor(S.key / 4), 1, 1, C.fg, 2.5);
+  if (hover) g.box(hover.r, hover.c, 1, 1, C.sync, 1.5);
+  $('keylabel').textContent = `keys ${md.lo}–${md.p} (${n}) · rows = warps, columns = iterations`;
+  $('keysub').textContent = `kv head ${md.kvh} · ${md.slots} cache slots`;
+
+  // shared memory: the scores
+  const srows = Math.ceil(n / 32);
+  if (sg.rows !== srows) sg.resize(srows, 32);
+  $('smem').style.aspectRatio = `32 / ${Math.max(srows, 1) * 1.1}`;
+  const s2 = sg.prep(), smin = Math.min(...md.keys.map(k => k.s)), smax = Math.max(...md.keys.map(k => k.s));
+  for (let i = 0; i < srows * 32; i++) {
+    const r = Math.floor(i / 32), c = i % 32;
+    if (i >= n) { s2.hatch(r, c); continue; }
+    const on = i < P.scored, rd = P.cur >= 0 && st.kind === 'value' && Math.floor(i / 4) === P.cur;
+    s2.cell(r, c, on ? C.w : C.zero, on ? 0.2 + 0.75 * (md.keys[i].s - smin) / Math.max(1e-6, smax - smin) : 0.3, 0.1);
+    if (rd) s2.box(r, c, 1, 1, C.sync, 1.5);
+  }
+  $('smsub').textContent = `${n} × 4 B = ${Atlas.int(4 * n)} B of scores` + (P.scored === n ? ` · att_max = [${md.warps.map(w => w.max.toFixed(2)).join(', ')}]` : '');
+
+  // warp table
+  const pass2 = ['value', 'merge', 'out'].includes(st.kind);
+  let h = `<caption>Per-warp state ${st.kind === 'setup' ? '(start)' : pass2 ? '(pass 2)' : '(pass 1)'}</caption><tr><th>warp</th><th>keys</th><th>running max</th><th>sum of p</th></tr>`;
+  md.warps.forEach((W, w) => {
+    const doneS = W.mh.filter((_, k) => 4 * k + w < P.scored).length, doneV = W.sh.filter((_, k) => 4 * k + w < P.weighted).length;
+    h += `<tr class="${w === S.warp ? 'on' : ''}" data-w="${w}" style="cursor:pointer"><td>${w}</td><td>${W.mh.length}</td><td>${doneS ? Atlas.fmt(W.mh[doneS - 1], 3) : '−∞'}</td><td>${doneV ? W.sh[doneV - 1].toPrecision(5) : '0'}</td></tr>`;
+  });
+  if (!['setup', 'score'].includes(st.kind)) h += `<tr><td>sink</td><td>–</td><td>${md.sink.toFixed(3)}</td><td>${st.kind === 'out' ? md.sinkP.toPrecision(5) : '–'}</td></tr>`;
+  $('warps').innerHTML = h;
+  $('warps').querySelectorAll('tr[data-w]').forEach(tr => tr.addEventListener('click', () => { S.warp = +tr.dataset.w; draw(); }));
+
+  // key card
+  if (S.key !== null && S.key < n) {
+    const k = md.keys[S.key], j = md.lo + S.key;
+    $('kcard').innerHTML = [['key', `position ${j} (relative ${S.key})`], ['owner', `warp ${S.key % 4}, iteration ${Math.floor(S.key / 4)}`], ['cache slot', `${j % md.slots}`], ['score q·k/8', k.s.toFixed(4)], ['p = 2^((s − m)·log₂e)', k.p.toPrecision(5)], ['softmax weight', md.prob[S.key].toExponential(3)]]
+      .map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  } else $('kcard').innerHTML = '<dt>key</dt><dd>click one in the grid</dd>';
+
+  // chart: every key's score, the maximum and the sink
+  const Wd = 640, H = 200, ml = 40, mr = 10, mt = 12, mb = 24;
+  const ymin = Math.min(smin, md.sink) - 0.5, ymax = Math.max(smax, md.sink) + 0.5;
+  const X = i => ml + (n > 1 ? i / (n - 1) : 0.5) * (Wd - ml - mr), Y = v => mt + (ymax - v) / (ymax - ymin) * (H - mt - mb);
+  let sv = '';
+  const stepv = Math.max(1, Math.round((ymax - ymin) / 6));
+  for (let v = Math.ceil(ymin); v <= ymax; v += stepv) sv += `<line x1="${ml}" y1="${Y(v)}" x2="${Wd - mr}" y2="${Y(v)}" stroke="${C.line}" stroke-width="0.6"/><text x="${ml - 5}" y="${Y(v) + 3}" font-size="10" text-anchor="end" fill="${C.muted}">${v}</text>`;
+  sv += `<line x1="${ml}" y1="${Y(md.sink)}" x2="${Wd - mr}" y2="${Y(md.sink)}" stroke="${C.x}" stroke-dasharray="5 4" stroke-width="1.5"/><text x="${Wd - mr}" y="${Y(md.sink) - 4}" font-size="10" text-anchor="end" fill="${C.x}">sink ${md.sink.toFixed(2)}</text>`;
+  if (P.scored === n) sv += `<line x1="${ml}" y1="${Y(md.m)}" x2="${Wd - mr}" y2="${Y(md.m)}" stroke="${C.sync}" stroke-width="1.5"/><text x="${ml + 4}" y="${Y(md.m) - 4}" font-size="10" fill="${C.sync}">m = ${md.m.toFixed(2)}</text>`;
+  for (let i = 0; i < P.scored; i++) {
+    const wt = i < P.weighted, r = wt ? 2 + 5 * Math.sqrt(md.prob[i] / pmax) : 3;
+    sv += `<circle cx="${X(i)}" cy="${Y(md.keys[i].s)}" r="${r.toFixed(2)}" fill="${wt ? C.y : C.w}" opacity="${i % 4 === S.warp ? 1 : 0.55}"/>`;
+  }
+  sv += `<text x="${ml}" y="${H - 6}" font-size="10" fill="${C.muted}">key ${md.lo}</text><text x="${Wd - mr}" y="${H - 6}" font-size="10" text-anchor="end" fill="${C.muted}">key ${md.p}</text>`;
+  $('chart').setAttribute('viewBox', `0 0 ${Wd} ${H}`); $('chart').innerHTML = sv;
+  $('chartlabel').textContent = `scores of all ${n} keys (bright: warp ${S.warp}; in pass 2 the dot size is the weight)`;
+
+  // output
+  const go = og.prep(), done = st.kind === 'out';
+  for (let r = 0; r < 2; r++) for (let l = 0; l < 32; l++) {
+    const v = md.out[2 * l + r];
+    go.cell(r, l, done ? C.y : C.zero, done ? 0.15 + 0.8 * Math.min(1, Math.abs(v) / 1.2) : 0.35, 0.1);
+  }
+  $('outsub').textContent = done ? `max |error| vs float64: ${md.err.toExponential(2)}` : 'written in the last step';
+
+  // share of the weight: keys vs sink
+  const keysShare = 1 - md.sinkShare, top = md.prob.map((p, i) => [p, i]).sort((a, b) => b[0] - a[0]).slice(0, 3);
+  const Ws = 300, Hs = 64, bx = 8, bw = Ws - 16;
+  let sh = `<rect x="${bx}" y="8" width="${bw * keysShare}" height="20" fill="${C.y}" opacity="0.8"/><rect x="${bx + bw * keysShare}" y="8" width="${bw * md.sinkShare}" height="20" fill="${C.x}" opacity="0.8"/>`;
+  sh += `<text x="${bx}" y="44" font-size="10.5" fill="${C.fg}">keys ${(100 * keysShare).toFixed(1)}%</text><text x="${Ws - 8}" y="44" font-size="10.5" text-anchor="end" fill="${C.x}">sink ${(100 * md.sinkShare).toFixed(1)}%</text>`;
+  sh += `<text x="${bx}" y="59" font-size="10" fill="${C.muted}">largest: ${top.map(([p, i]) => `key ${md.lo + i} ${(100 * p).toFixed(1)}%`).join(', ')}</text>`;
+  $('share').setAttribute('viewBox', `0 0 ${Ws} ${Hs}`); $('share').innerHTML = sh;
+
+  Atlas.legend($('legend'), [['--w', 'scored in pass 1 (score in shared memory)'], ['--y', 'weighted in pass 2 (darker = larger weight)'], ['--sync', 'current iteration'], ['--zero', 'not reached yet; hatched: past p']]);
+}
+kg.hook(p => {
+  hover = p; const i = 4 * p.c + p.r;
+  $('status').textContent = i < md.n ? `position ${md.lo + i} · slot ${(md.lo + i) % md.slots} · warp ${p.r}, iteration ${p.c} · score ${md.keys[i].s.toFixed(3)} · weight ${md.prob[i].toExponential(2)}${md.keys[i].hot ? ' · a key planted to match q' : ''}` : 'no key: past the query position';
+  draw();
+}, p => { const i = 4 * p.c + p.r; S.warp = p.r; S.key = i < md.n ? i : null; draw(); }, () => { hover = null; draw(); });
+$('pos').addEventListener('input', () => { S.pos = +$('pos').value; S.key = null; rebuild(false); });
+$('layer').addEventListener('change', () => { S.layer = $('layer').value; S.key = null; rebuild(false); });
+$('hd').addEventListener('change', () => { S.h = +$('hd').value; rebuild(true); });
+$('hd').value = S.h;
+
+build(); steps = buildSteps();
+const stepper = Atlas.stepper({ steps, code, render: draw });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

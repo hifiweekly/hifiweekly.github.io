@@ -62,6 +62,51 @@
     </div>
   </section>
 
+  <section aria-labelledby="s-qwen">
+    <div class="sechead">
+      <h2 id="s-qwen">The Qwen 3.5 version</h2>
+      <p>qwen35.ptx carries this kernel with two additions; everything stepped through above (8 warps, two keys per step, online softmax, the merge) is unchanged. Qwen 3.5's 8 attention layers have the same head size (256) and scale (1/16), with 16 q heads over 4 kv heads, so each kv head serves 4 q heads instead of 2.</p>
+    </div>
+    <div class="two">
+      <div class="panel">
+        <h3>What changes</h3>
+        <ul>
+          <li><b>A q-head stride, <code>p_qhs</code>.</b> Qwen's projection writes each q head followed by its 256-float output gate, so q head h starts at 512·h rather than 256·h. The kernel's one <code>shl</code> by 8 becomes a multiply by p_qhs; gemma3.ptx keeps the shift.</li>
+          <li><b>The output gate, <code>p_gate</code>.</b> After thread d divides by the denominator it loads gate[t][h][d], 1 KB past its q head, and divides once more: out = o / (1 + 2<sup>−g·log₂e</sup>) = o · σ(g). Gating inside the kernel saves a separate launch and a round trip of the attention output.</li>
+          <li><b>No window, plain slots.</b> The host always passes window = 0 and slots = the context length, since every Qwen attention layer is full attention: lo = 0 and the slot is the position. The ring code is still there, just never wraps.</li>
+        </ul>
+        <p class="muted">Launched from <code>attention()</code> in <code>qwen35/qwen35.c</code> with grid (16, T) and 256 threads, after <a href="qk_norm_rope_qwen.html">qk_norm_rope</a>; the gate floats it reads are the ones that kernel left untouched.</p>
+      </div>
+      <div class="panel">
+        <h3>The added PTX</h3>
+<pre class="code">    ld.param.u32        %r44, [p_qhs];
+    ld.param.u32        %r45, [p_gate];
+    ...
+    mul.lo.u32          %r20, %r7, %r44;
+    add.u32             %r19, %r19, %r20;       // token t, q head h
+    ...
+    div.rn.f32          %f79, %f78, %f68;       // o / den, as above
+    setp.eq.u32         %p7, %r45, 0;
+    @%p7 bra            NO_GATE;
+    // * sigmoid(gate[t][h][d]) (gate at q head + 256)
+    mul.lo.u32          %r38, %r8, %r1;
+    mad.lo.u32          %r38, %r7, %r44, %r38;
+    add.u32             %r38, %r38, %r9;
+    mul.wide.u32        %rd14, %r38, 4;
+    add.s64             %rd14, %rd1, %rd14;
+    ld.global.f32       %f80, [%rd14+1024];
+    mul.f32             %f80, %f80, 0fBFB8AA3B; // -log2(e)
+    ex2.approx.f32      %f80, %f80;
+    add.f32             %f80, %f80, 0f3F800000; // 1 + e^-g
+    div.rn.f32          %f79, %f79, %f80;
+NO_GATE:
+    mad.lo.u32          %r37, %r8, %r5, %r7;    // t*nh + h
+    ...
+    st.global.f32       [%rd13], %f79;          // out[t][h][d]</pre>
+      </div>
+    </div>
+  </section>
+
   <section aria-labelledby="s-why">
     <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
     <div class="two">

@@ -5,6 +5,8 @@
 'use strict';
 const A = window.Atlas, $ = A.$;
 const covered = new Set(A.KERNELS.map(k => k.id));
+// a node's walkthrough is <kernel>.html unless it names another page (two engines' kernels share an .entry name)
+const pageOf = n => n.page || n.kernel;
 
 // node kinds: io (data in or out), w (GGUF tensor), op (kernel launch or host step), blk (layer)
 function nodeText(n, hot) {
@@ -12,7 +14,7 @@ function nodeText(n, hot) {
   if (n.kind === 'io') return `${n.id}(["${n.label}${sub}"]):::io`;
   if (n.kind === 'w') return `${n.id}[/"<b>${n.label}</b>${sub}"/]:::w`;
   if (n.kind === 'blk') return `${n.id}["<b>${n.label}</b>${sub}"]:::blk`;
-  const cls = !n.kernel ? 'host' : hot ? 'hot' : covered.has(n.kernel) ? 'op' : 'opx';
+  const cls = !n.kernel ? 'host' : hot ? 'hot' : covered.has(pageOf(n)) ? 'op' : 'opx';
   const head = n.kernel ? `<span class='kn' style='font-family:IBM Plex Mono,monospace;font-weight:500;font-size:13.5px'>${n.kernel}</span>` : `<i>${n.label}</i>`;
   return `${n.id}("${head}${sub}"):::${cls}`;
 }
@@ -59,7 +61,7 @@ A.model = function (M) {
   const kinds = M.kinds || [['local', 'local layer'], ['global', 'global layer']];
   const st = { pass: passes[0][0], kind: kinds[0][0], hot: null, sel: null };
   const hm = /k=([a-z0-9_]+)/.exec(location.hash);
-  if (hm) st.hot = hm[1];
+  if (hm) { const k = A.KERNELS.find(x => x.id === hm[1]); st.hot = (k && k.entry) || hm[1]; }
 
   // controls
   const seg = (el, key, opts) => {
@@ -80,7 +82,7 @@ A.model = function (M) {
   const detail = $('detail');
   function showDetail(n) {
     st.sel = n;
-    const k = n.kernel && A.KERNELS.find(x => x.id === n.kernel);
+    const k = n.kernel && A.KERNELS.find(x => x.id === pageOf(n));
     let h = `<h3>${n.kernel ? `<code>${n.kernel}</code>` : n.label}</h3>`;
     if (n.sub) h += `<p class="muted">${n.sub}</p>`;
     const rows = [];
@@ -112,7 +114,7 @@ A.model = function (M) {
     let i = 0;
     $('launches').innerHTML = `<thead><tr><th>#</th><th>kernel</th><th>launch</th><th>buffers</th><th>does</th></tr></thead><tbody>` +
       ops.map(n => {
-        const name = n.kernel ? (covered.has(n.kernel) ? `<a href="${n.kernel}.html">${n.kernel}</a>` : n.kernel) : `<i>${n.label}</i>`;
+        const name = n.kernel ? (covered.has(pageOf(n)) ? `<a href="${pageOf(n)}.html">${n.kernel}</a>` : n.kernel) : `<i>${n.label}</i>`;
         return `<tr class="${n.kernel && n.kernel === st.hot ? 'on' : ''}"><td>${n.kernel ? ++i : ''}</td><td>${name}</td><td>${n.launch ? (n.launch[st.pass] || n.launch.any) : 'host'}</td><td>${n.io || ''}</td><td>${(n.sub || '').replace(/<br\/>/g, ' · ')}</td></tr>`;
       }).join('') + '</tbody>';
     $('launchCount').textContent = `${i} launches per layer × ${M.layersOf ? M.layersOf(st.kind) : M.nLayers} layers`;

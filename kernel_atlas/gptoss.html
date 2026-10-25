@@ -111,7 +111,7 @@ const M = {
       { id: 'rope', kind: 'op', kernel: 'rope_kv', sub: 'RoPE on q and k (YaRN ×32, base 150000)<br/>k, v → f16 cache slot', launch: { any: 'grid (11, T) · 256' }, io: 'qkv → qkv, kc, vc' },
       { id: 'kv', kind: 'io', label: 'KV cache', sub: kind === 'local' ? 'f16 ring of 128 + batch slots' : 'f16, one slot per position' },
       { id: 'snk', kind: 'w', label: 'attn_sinks.weight', sub: '64 · F32' },
-      { id: 'att', kind: 'op', kernel: 'attention', sub: `softmax with a sink logit per head<br/>64 q / 8 kv heads, scale 1/8<br/>${kind === 'local' ? 'last 128 positions' : 'all earlier positions'}`, launch: { any: 'grid (64, T) · 128 · keys × 4 B shared' }, io: 'qkv, kc, vc → att', note: 'The attention walkthrough shows Gemma 3’s version of this kernel (256 threads, head dim 256, no sinks). gpt-oss’s has 128 threads, head dim 64 and the sink logit.' },
+      { id: 'att', kind: 'op', kernel: 'attention', page: 'attention_oss', sub: `softmax with a sink logit per head<br/>64 q / 8 kv heads, scale 1/8<br/>${kind === 'local' ? 'last 128 positions' : 'all earlier positions'}`, launch: { any: 'grid (64, T) · 128 · keys × 4 B shared' }, io: 'qkv, kc, vc → att', note: 'gptoss.ptx’s own kernel, not Gemma 3’s: 128 threads, head dim 64, two exact passes with the scores in shared memory, and the sink logit.' },
       { id: 'wo', kind: 'w', label: 'attn_output.weight + .bias', t: 'attn_output.weight', sub: '2880 × 4096 · F16 → Q8_0' },
       { id: 'o', kind: 'op', kernel: mv, sub: 'x += W·att + b<br/>(residual add fused)', launch: mm(2880), io: 'att, x → x' },
       { id: 'pn', kind: 'w', label: 'post_attention_norm.weight', sub: '2880 · F32' },

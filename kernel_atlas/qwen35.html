@@ -100,7 +100,7 @@
 const GS = '≤ 448 blocks · 256 · grid-stride';
 const mm = rows => ({ decode: `${Atlas.int(rows / 8)} blocks · 256`, prefill: `grid (⌈T/64⌉, ${rows / 64}) · 256` });
 const MV = { Q4_1: 'mv_q4_1', Q8_0: 'mv_q8_0', Q5_K: 'mv_q5_k' };
-const QUANT_NOTE = 'qwen35.ptx\'s quant_q8 also stores d · Σq per block (the Q4_1 and Q5_K offsets need it) and has no in-place mode; the page shows the gpt-oss / Gemma 3 version.';
+const QUANT_NOTE = 'qwen35.ptx\'s own quant_q8: it also stores d · Σq per block (the Q4_1 and Q5_K offsets need it) and has no in-place mode.';
 const M = {
   id: 'qwen35', engine: 'Qwen 3.5', nLayers: 32,
   kinds: [['deltanet', 'DeltaNet layer'], ['attention', 'attention layer']],
@@ -118,7 +118,7 @@ const M = {
           { id: 'b3', kind: 'blk', label: 'attention layer', sub: 'full context, gated', layerKind: 'attention' }] },
         { id: 'onw', kind: 'w', label: 'output_norm.weight', sub: '4096 · F32' },
         { id: 'on', kind: 'op', kernel: 'rmsnorm', sub: 'output_norm, last token only', launch: { any: '1 block · 1024' }, io: 'x → xn' },
-        { id: 'qo', kind: 'op', kernel: 'quant_q8', sub: 'xn → int8 + scale per 32', launch: { any: GS }, io: 'xn → xq, xds', note: QUANT_NOTE },
+        { id: 'qo', kind: 'op', kernel: 'quant_q8', page: 'quant_q8_qwen', sub: 'xn → int8 + scale per 32', launch: { any: GS }, io: 'xn → xq, xds', note: QUANT_NOTE },
         { id: 'ow', kind: 'w', label: 'output.weight', sub: 'untied head · 248,320 × 4096 · Q6_K' },
         { id: 'head', kind: 'op', kernel: 'mv_q6_k', sub: 'output head → 248,320 logits', launch: { any: '31,040 blocks · 256' }, io: 'xq, xds → logits' },
         { id: 'am', kind: 'op', kernel: 'argmax', sub: 'best token (greedy result)', launch: { any: '1 block · 1024' }, io: 'logits → next' },
@@ -134,7 +134,7 @@ const M = {
   },
   layer(pass, kind) {
     const d = pass === 'decode', mk = t => d ? MV[t] : 'gemm_q', dn = kind === 'deltanet';
-    const qn = (id, what) => ({ id, kind: 'op', kernel: 'quant_q8', sub: `${what} → int8 + scale per 32`, launch: { any: GS }, io: `${what} → xq, xds`, note: QUANT_NOTE });
+    const qn = (id, what) => ({ id, kind: 'op', kernel: 'quant_q8', page: 'quant_q8_qwen', sub: `${what} → int8 + scale per 32`, launch: { any: GS }, io: `${what} → xq, xds`, note: QUANT_NOTE });
     const head = [
       { id: 'x', kind: 'io', label: 'x', sub: 'residual stream' },
       { id: 'anw', kind: 'w', label: 'attn_norm.weight', sub: '4096 · F32' },
@@ -163,9 +163,9 @@ const M = {
       { id: 'pqkv', kind: 'op', kernel: mk('Q4_1'), sub: '[q|gate per head, k, v] = W·xn<br/>16 × (256 + 256), 4 × 256, 4 × 256', launch: mm(10240), io: 'xq → big' },
       { id: 'qnw', kind: 'w', label: 'attn_q_norm.weight', sub: '256 · F32' },
       { id: 'knw', kind: 'w', label: 'attn_k_norm.weight', sub: '256 · F32' },
-      { id: 'qkr', kind: 'op', kernel: 'qk_norm_rope', sub: 'per-head RMSNorm (256) on q and k<br/>RoPE base 10⁷ on dims 0 … 63 only<br/>k, v → f16 cache', launch: { any: 'grid (24 heads, T) · 32' }, io: 'big → big, kc, vc', note: 'qwen35.ptx\'s version: q heads interleaved with their gates (stride 512), rotary pairs (i, i + 32) for i < 32, shuffles between lanes l and l ^ 4; the page shows the Gemma 3 kernel it was adapted from.' },
+      { id: 'qkr', kind: 'op', kernel: 'qk_norm_rope', page: 'qk_norm_rope_qwen', sub: 'per-head RMSNorm (256) on q and k<br/>RoPE base 10⁷ on dims 0 … 63 only<br/>k, v → f16 cache', launch: { any: 'grid (24 heads, T) · 32' }, io: 'big → big, kc, vc', note: 'qwen35.ptx\'s own version, adapted from Gemma 3\'s: q heads interleaved with their gates (stride 512), rotary pairs (i, i + 32) for i < 32, shuffles between lanes l and l ^ 4.' },
       { id: 'kv', kind: 'io', label: 'KV cache', sub: 'f16, one slot per position' },
-      { id: 'att', kind: 'op', kernel: 'attention', sub: 'softmax(q·kᵀ / 16)·v · σ(gate)<br/>16 q / 4 kv heads<br/>all earlier positions', launch: { any: 'grid (16, T) · 256' }, io: 'big, kc, vc → ro', note: 'The Gemma 3 kernel with a q-head stride parameter and the output gate fused into the final write; no sliding window.' },
+      { id: 'att', kind: 'op', kernel: 'attention', sub: 'softmax(q·kᵀ / 16)·v · σ(gate)<br/>16 q / 4 kv heads<br/>all earlier positions', launch: { any: 'grid (16, T) · 256' }, io: 'big, kc, vc → ro', note: 'The Gemma 3 kernel with a q-head stride parameter and the output gate fused into the final write; no sliding window. The walkthrough has a Qwen 3.5 section.' },
       qn('q2', 'ro'),
       { id: 'wo', kind: 'w', label: 'attn_output.weight', sub: '4096 × 4096 · Q4_1' },
       { id: 'po', kind: 'op', kernel: mk('Q4_1'), sub: 'x += W·att', launch: mm(4096), io: 'xq, x → x' },
