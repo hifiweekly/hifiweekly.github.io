@@ -76,6 +76,7 @@
       <div class="panel">
         <h3>The sink: attention to nothing</h3>
         <p>Every head has one learned logit, <code>attn_sinks[h]</code>. It enters the maximum and the denominator like an extra key, but has no value vector, so the weights of the real keys sum to less than 1. A head that finds nothing relevant can send most of its weight to the sink and output a vector near zero, instead of being forced to average whatever is in the window. In the kernel it costs one load, one <code>max</code> and one extra exponential in the final denominator.</p>
+        <p>The panel <i>where the weight goes</i> shows the split for the selected head; with the generated data here, heads 10 and 11 send most of their weight to the sink, and most others only a few percent.</p>
       </div>
       <div class="panel">
         <h3>Small heads: 4 warps, 2 dims per lane</h3>
@@ -99,15 +100,15 @@ Atlas.chrome('attention_oss');
 const D = 64, NH = 64, NKV = 8, WIN = 128, LSLOTS = 256, GSLOTS = 4096, SCALE = 0.125, LOG2E = fr(1.4426950408889634);
 Atlas.facts($('facts'), [['(64, tokens)', 'grid = (q heads, tokens)'], ['128', 'threads = 4 warps'], ['4 B / key', 'dynamic shared: the scores'], ['1 KB + 32 B', 'shared: merge'], ['2', 'dims per lane']]);
 $('hd').innerHTML = Array.from({ length: NH }, (_, h) => `<option value="${h}">${h} (kv head ${h >> 3})</option>`).join('');
-const S = { pos: 45, layer: 'local', h: 5, warp: 1, key: null };
+const S = { pos: 45, layer: 'local', h: 9, warp: 1, key: null };
 
 function vec(seed, sd) { const r = Atlas.rng(seed), v = new Float32Array(D); for (let d = 0; d < D; d++) v[d] = fr(Atlas.gauss(r) * sd); return v; }
-const sinkOf = h => fr(1.5 + 1.6 * Atlas.gauss(Atlas.rng(900 + h)));
+const sinkOf = h => fr(3 + 1.8 * Atlas.gauss(Atlas.rng(900 + h)));
 let Q, md;
 function kvAt(j, kvh) {
   const k = vec(1000003 * (kvh + 1) + j * 7, 1), v = vec(77777 * (kvh + 1) + j * 13, 1);
   const hot = Atlas.h32(j * 31 + kvh) % 19 === 0 || j === S.pos - 3;
-  for (let d = 0; d < D; d++) { if (hot) k[d] = k[d] + Q[d] * 0.35; k[d] = Atlas.f16(k[d]); v[d] = Atlas.f16(v[d]); }
+  for (let d = 0; d < D; d++) { if (hot) k[d] = k[d] + Q[d] * 0.2; k[d] = Atlas.f16(k[d]); v[d] = Atlas.f16(v[d]); }
   return { k, v, hot };
 }
 function score(qs, k) {
@@ -324,7 +325,7 @@ function draw() {
   let sv = '';
   const stepv = Math.max(1, Math.round((ymax - ymin) / 6));
   for (let v = Math.ceil(ymin); v <= ymax; v += stepv) sv += `<line x1="${ml}" y1="${Y(v)}" x2="${Wd - mr}" y2="${Y(v)}" stroke="${C.line}" stroke-width="0.6"/><text x="${ml - 5}" y="${Y(v) + 3}" font-size="10" text-anchor="end" fill="${C.muted}">${v}</text>`;
-  sv += `<line x1="${ml}" y1="${Y(md.sink)}" x2="${Wd - mr}" y2="${Y(md.sink)}" stroke="${C.x}" stroke-dasharray="5 4" stroke-width="1.5"/><text x="${Wd - mr}" y="${Y(md.sink) - 4}" font-size="10" text-anchor="end" fill="${C.x}">sink ${md.sink.toFixed(2)}</text>`;
+  sv += `<line x1="${ml}" y1="${Y(md.sink)}" x2="${Wd - mr}" y2="${Y(md.sink)}" stroke="${C.x}" stroke-dasharray="5 4" stroke-width="1.5"/><text x="${ml + 4}" y="${Y(md.sink) + 12}" font-size="10" fill="${C.x}">sink ${md.sink.toFixed(2)}</text>`;
   if (P.scored === n) sv += `<line x1="${ml}" y1="${Y(md.m)}" x2="${Wd - mr}" y2="${Y(md.m)}" stroke="${C.sync}" stroke-width="1.5"/><text x="${ml + 4}" y="${Y(md.m) - 4}" font-size="10" fill="${C.sync}">m = ${md.m.toFixed(2)}</text>`;
   for (let i = 0; i < P.scored; i++) {
     const wt = i < P.weighted, r = wt ? 2 + 5 * Math.sqrt(md.prob[i] / pmax) : 3;

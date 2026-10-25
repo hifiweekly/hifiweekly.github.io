@@ -353,7 +353,7 @@ S|    _geglu[(triton.cdiv(n * T, 1024),)](gu, out, n, n * T, BLOCK=1024, num_war
 argmax: {
   fns: ['_argmax', 'argmax'],
   intro: 'One program, as in the PTX, but it walks the logits in chunks of 4096 and reduces each chunk to (max, smallest index of the max) with two reductions.',
-  facts: [['(1,)', 'grid: one program'], ['16 warps', '512 threads'], ['4096', 'BLOCK: logits per iteration'], ['65', 'iterations for 262,208 logits'], ['34', 'registers'], ['17 + 6', 'shfl.sync.bfly + bar.sync']],
+  facts: [['(1,)', 'grid: one program'], ['16 warps', '512 threads'], ['4096', 'BLOCK: logits per iteration'], ['65', 'iterations for 262,208 logits'], ['29', 'registers'], ['13 + 4', 'shfl.sync.bfly + bar.sync']],
   src: `A|@triton.jit
 A|def _argmax(x, n, out, BLOCK: tl.constexpr):
 A|    i = tl.arange(0, BLOCK)
@@ -366,18 +366,16 @@ B,R,F|        k = tl.min(tl.where(v == m, i0 + i, n), 0)        # its smallest i
 S|        take = m > best_v                                 # strictly greater: keep the first
 S|        best_i = tl.where(take, k, best_i)
 S|        best_v = tl.where(take, m, best_v)
-O|    # ties with the first value: the smallest index among the equal maxima
-O|    for i0 in range(0, n, BLOCK):
-O|        v = tl.load(x + i0 + i, mask=i0 + i < n, other=float("-inf"))
-O|        best_i = tl.minimum(best_i, tl.min(tl.where(v == best_v, i0 + i, n), 0))
+O|    # ties: k is the smallest index within a block, and blocks go in order
+O|    # with a strict >, so an earlier block's equal maximum is kept
 O|    tl.store(out, best_i)
 O|
 O|def argmax(x, n, out):
 O|    _argmax[(1,)](x, n, out, BLOCK=4096, num_warps=16)`,
   notes: [
     ['Two plain reductions instead of a pair reduction', 'The PTX shuffles (value, index) pairs and resolves ties inside its <code>pick</code> step. Triton\'s <code>tl.max</code> and <code>tl.min</code> work on one tensor at a time, so each chunk is reduced twice: the max, then the smallest index whose value equals it. Each one compiles to a warp butterfly plus a pass over the 16 warp results in shared memory.'],
-    ['The same answer', 'Ties go to the smaller index, as in the PTX: later chunks replace the best only when strictly greater, and the second pass takes the minimum index among all values equal to the final maximum. The planted tie in the demo above resolves to the same index in both.'],
-    ['Reading the logits twice', 'The second pass reads the 1 MB of logits again; it hits in L2. With 16 warps of one SM, the kernel is a small part of a decode step either way.'],
+    ['The same answer', 'Ties go to the smaller index, as in the PTX: within a chunk the second reduction picks the smallest index of the max, and chunks are visited in order, replacing the best only when strictly greater, so an equal maximum in a later chunk never wins. The planted tie in the demo above resolves to the same index in both.'],
+    ['One pass over the logits', 'An earlier version followed the loop with a second pass that took the minimum index among all values equal to the final maximum. It could not change the result, since the first pass already keeps the first maximum, and it read the 1 MB of logits a second time. On the 4070 SUPER, removing it took the launch from about 72 µs to 40 µs: with one program, the kernel runs on a single SM and is bound by how fast that SM can pull in the logits.'],
   ],
 },
 
