@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qwen 3.5 9B Graph</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script src="atlas.js"></script>
+<script src="model.js"></script>
+
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Model graph · qwen35/Qwen3.5-9B-Q4_1.gguf · engine qwen35.ptx</div>
+    <h1>Qwen 3.5 9B</h1>
+    <p>A hybrid model: three of every four layers replace attention with a Gated DeltaNet, a linear-attention layer that keeps a 128 × 128 matrix per head instead of a growing KV cache; the fourth is a gated full-attention layer. This page draws the dataflow of the GGUF file with the kernel the engine launches at each step. Weight shapes and types come from the file header; each operation is named after its PTX kernel. Click any box for details.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="h-fig">
+    <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017), Figures 1 and 2. Panels: (a) the whole model, 8 blocks of three DeltaNet layers and one attention layer, (b) the Gated DeltaNet, (c) gated attention with head norms and partial RoPE, (d) the SwiGLU feed-forward. Boxes whose kernel has a page link to it: hover one to see the kernel, click to open it.</p></div>
+    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/qwen35.svg" width="1660" height="1288" style="aspect-ratio: 1660 / 1288" id="qfig" aria-label="Qwen 3.5 9B architecture: token embedding; 8 blocks, each three Gated DeltaNet layers and one gated attention layer, every layer RMSNorm, mixer, residual add, RMSNorm, SwiGLU feed-forward, residual add; final RMSNorm, linear head and softmax."><img src="figures/qwen35.svg" width="1660" height="1288" alt="Qwen 3.5 9B architecture."></object><figcaption class="muted"><a href="figures/qwen35.svg">Open the figure full size</a></figcaption></figure>
+  </section>
+
+  <section aria-labelledby="h-ov">
+    <div class="sechead"><h2 id="h-ov">Whole model</h2><p class="muted">32 layers in 8 groups of three DeltaNet layers and one full-attention layer (layers 3, 7, … 31). Click a layer box to show it below. Each layer is pre-norm only: RMSNorm, mixer, residual add, RMSNorm, feed-forward, residual add; the residual adds are folded into the output projections.</p></div>
+    <div class="mgrid">
+      <div class="panel graph" id="ovGraph" aria-label="Whole-model graph"></div>
+      <div class="panel side" aria-live="polite"><div id="detail"><h3>Details</h3><p class="muted">Click a box in either graph.</p></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-ly">
+    <div class="sechead"><h2 id="h-ly">One layer</h2><p class="muted" id="lyTitle"></p></div>
+    <div class="controls">
+      <span class="seg" id="passSeg" role="group" aria-label="Pass"></span>
+      <span class="seg" id="kindSeg" role="group" aria-label="Layer kind"></span>
+      <label>Highlight kernel <select id="hotSel"></select></label>
+    </div>
+    <div class="key">
+      <span><i style="border-color:var(--sync)"></i>kernel with a walkthrough</span>
+      <span><i style="border-color:var(--muted);border-style:dashed"></i>kernel, no page yet</span>
+      <span><i style="border-color:var(--w)"></i>GGUF tensor</span>
+      <span><i style="border-color:var(--x);border-radius:8px"></i>activations or state</span>
+      <span><i style="border-color:var(--line)"></i>host (CPU) step</span>
+    </div>
+    <div class="panel graph" id="lyGraph" aria-label="Layer graph"></div>
+  </section>
+
+  <section aria-labelledby="h-ln">
+    <div class="sechead"><h2 id="h-ln">Launch order</h2><p class="muted" id="launchCount"></p></div>
+    <div class="panel tablewrap"><table class="list" id="launches"></table></div>
+  </section>
+
+  <section aria-labelledby="h-dn">
+    <div class="sechead"><h2 id="h-dn">The Gated DeltaNet</h2><p class="muted">What the three new kernels compute, per token t and value head h (32 heads of 128; queries and keys come from head h mod 16, llama.cpp's mapping).</p></div>
+    <div class="formula">q, k, v = silu(conv1d₄(W<sub>qkv</sub>·x)) &nbsp;·&nbsp; q, k ← q/‖q‖, k/‖k‖ &nbsp;·&nbsp; β = σ(W<sub>β</sub>·x) &nbsp;·&nbsp; g = exp(softplus(W<sub>α</sub>·x + dt) · a)</div>
+    <div class="formula">S ← g·S + k·((v − g·Sᵀk) β)ᵀ &nbsp;·&nbsp; o = Sᵀq / √128 &nbsp;·&nbsp; y = W<sub>out</sub>·(rmsnorm(o) · w · silu(W<sub>z</sub>·x))</div>
+    <div class="two">
+      <div class="panel">
+        <h3>The kernels</h3>
+        <div class="tablewrap"><table class="list" id="dnKernels"></table></div>
+      </div>
+      <div class="panel">
+        <h3>State instead of a cache</h3>
+        <p>A DeltaNet layer carries a fixed 2 MB (32 heads × 128 × 128 f32) plus its conv state (the last 3 inputs, 96 KB), whatever the context length. Decoding a token reads and writes it once: 96 MB per token over the 24 layers, about 2% of the 5 GB of weights. Only the 8 attention layers keep an f16 KV cache: 32 KB per position, a quarter of what 32 attention layers would need.</p>
+        <p>The state can't be rewound. A KV cache is valid for any common prefix of a new prompt, but S holds exactly the tokens it has seen. So a chat copies all 24 states (50 MB, GPU to GPU) at the end of <code>&lt;|im_start|&gt;assistant\n</code>, where the next turn's prompt will diverge (earlier replies are re-rendered without their thinking block), and the next turn restores the copy and recomputes from there. <code>qwen35_demo cache-test</code> checks that extending, restoring and recomputing give bit-identical logits.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-t">
+    <div class="sechead"><h2 id="h-t">Tensors of one layer, plus the shared ones</h2><p class="muted">Shapes are rows × cols, that is output × input, the way the kernels index them (the GGUF header lists them the other way round). The Unsloth Q4_1 file mixes four quantized types; the engine keeps each as stored, with the fields of the 32-value types in separate arrays. A BF16 file is converted to Q8_0 while loading.</p></div>
+    <div class="panel tablewrap"><table class="list" id="tensors"></table></div>
+  </section>
+
+  <section aria-labelledby="h-m">
+    <div class="sechead"><h2 id="h-m">Measured</h2><p class="muted">RTX 4070 SUPER, 1,282-token prompt, greedy decoding, both engines on the same Q4_1 file.</p></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Speed</h3>
+        <div class="tablewrap"><table class="list" id="perf"></table></div>
+        <p class="muted">Decode reads 5.0 GB of weights per token; mv_q4_1 and mv_q6_k run at 460 and 470 GB/s of the card's 504. Prefill time goes to the GEMM (73%), the token-by-token recurrence (12%) and attention (8%); llama.cpp's matrix kernels use larger tiles, and its recurrence and attention run on the tensor cores.</p>
+      </div>
+      <div class="panel">
+        <h3>Checked against llama.cpp</h3>
+        <div class="tablewrap"><table class="list" id="checks"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Sources: <code>forward()</code> in <code>qwen35/qwen35.c</code> (kernels, buffers, launch shapes) and <code>qwen35/qwen35.ptx</code>; tensor shapes and types from <code>Qwen3.5-9B-Q4_1.gguf</code>; the layer semantics follow llama.cpp's <code>src/models/qwen35.cpp</code> and its fused <code>gated_delta_net.cu</code>. Kernels without a page yet: mv_q4_1, mv_q8_0, mv_q5_k, mv_q6_k, gemm_q, gdn_conv, conv_save, gated_norm, swiglu. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.</footer>
+</div>
+
+<script>
+const GS = '≤ 448 blocks · 256 · grid-stride';
+const mm = rows => ({ decode: `${Atlas.int(rows / 8)} blocks · 256`, prefill: `grid (⌈T/64⌉, ${rows / 64}) · 256` });
+const MV = { Q4_1: 'mv_q4_1', Q8_0: 'mv_q8_0', Q5_K: 'mv_q5_k' };
+const QUANT_NOTE = 'qwen35.ptx\'s quant_q8 also stores d · Σq per block (the Q4_1 and Q5_K offsets need it) and has no in-place mode; the page shows the gpt-oss / Gemma 3 version.';
+const M = {
+  id: 'qwen35', engine: 'Qwen 3.5', nLayers: 32,
+  kinds: [['deltanet', 'DeltaNet layer'], ['attention', 'attention layer']],
+  layersOf: k => k === 'deltanet' ? 24 : 8,
+  facts: [['32', 'layers (24 DeltaNet + 8 attention)'], ['4096', 'n_embd'], ['32 / 16', 'DeltaNet v / qk heads × 128'], ['16 / 4', 'attention q / kv heads × 256'], ['12288', 'n_ff (SwiGLU)'], ['248,320', 'vocabulary'], ['10⁷ · 64 of 256', 'RoPE base · rotated dims'], ['1/16', 'attention scale'], ['4', 'conv1d taps'], ['1e-6', 'RMSNorm ε']],
+  layerTitle: (p, k) => `${k === 'deltanet' ? 'DeltaNet layers (all but 3, 7, … 31): linear attention with a recurrent state' : 'Attention layers 3, 7, 11, … 31: gated attention over every earlier position'}; ${p === 'decode' ? 'decode, T = 1: matrix × vector kernels' : 'prefill, a chunk of T ≤ 512 tokens: the int8 tensor-core GEMM'}.`,
+  overview() {
+    const dn = i => ({ id: 'b' + i, kind: 'blk', label: 'DeltaNet layer', sub: 'state 32 × 128²', layerKind: 'deltanet' });
+    return {
+      nodes: [
+        { id: 'tok', kind: 'io', label: 'tokens' },
+        { id: 'emb', kind: 'w', label: 'token_embd.weight', sub: '248,320 × 4096 · Q4_1' },
+        { id: 'look', kind: 'op', label: 'embedding lookup', sub: 'CPU: row → f32 (no scale), copied to x', io: 'tokens → x' },
+        { group: 'rep', label: '× 8', nodes: [dn(0), dn(1), dn(2),
+          { id: 'b3', kind: 'blk', label: 'attention layer', sub: 'full context, gated', layerKind: 'attention' }] },
+        { id: 'onw', kind: 'w', label: 'output_norm.weight', sub: '4096 · F32' },
+        { id: 'on', kind: 'op', kernel: 'rmsnorm', sub: 'output_norm, last token only', launch: { any: '1 block · 1024' }, io: 'x → xn' },
+        { id: 'qo', kind: 'op', kernel: 'quant_q8', sub: 'xn → int8 + scale per 32', launch: { any: GS }, io: 'xn → xq, xds', note: QUANT_NOTE },
+        { id: 'ow', kind: 'w', label: 'output.weight', sub: 'untied head · 248,320 × 4096 · Q6_K' },
+        { id: 'head', kind: 'op', kernel: 'mv_q6_k', sub: 'output head → 248,320 logits', launch: { any: '31,040 blocks · 256' }, io: 'xq, xds → logits' },
+        { id: 'am', kind: 'op', kernel: 'argmax', sub: 'best token (greedy result)', launch: { any: '1 block · 1024' }, io: 'logits → next' },
+        { id: 'sm', kind: 'op', kernel: 'sample_logits', sub: 'temperature sampling, min-p', launch: { any: '1 block · 1024' }, io: 'logits, next → draw' },
+        { id: 'cl', kind: 'op', kernel: 'compact_logits', sub: 'candidates near the max', launch: { any: GS }, io: 'logits, next → cand' },
+        { id: 'hs', kind: 'op', label: 'host sampler', sub: 'sort, top-k / top-p, draw' },
+        { id: 'nt', kind: 'io', label: 'next token' },
+      ],
+      edges: [['tok', 'look'], ['emb', 'look'], ['look', 'b0', 'x'], ['b0', 'b1'], ['b1', 'b2'], ['b2', 'b3'],
+        ['b3', 'on', 'x'], ['onw', 'on'], ['on', 'qo', 'xn'], ['qo', 'head'], ['ow', 'head'],
+        ['head', 'am', 'logits'], ['am', 'nt', 'temperature 0'], ['am', 'sm'], ['sm', 'nt', 'no top-k / top-p'], ['sm', 'cl', 'top-k / top-p'], ['cl', 'hs'], ['hs', 'nt']],
+    };
+  },
+  layer(pass, kind) {
+    const d = pass === 'decode', mk = t => d ? MV[t] : 'gemm_q', dn = kind === 'deltanet';
+    const qn = (id, what) => ({ id, kind: 'op', kernel: 'quant_q8', sub: `${what} → int8 + scale per 32`, launch: { any: GS }, io: `${what} → xq, xds`, note: QUANT_NOTE });
+    const head = [
+      { id: 'x', kind: 'io', label: 'x', sub: 'residual stream' },
+      { id: 'anw', kind: 'w', label: 'attn_norm.weight', sub: '4096 · F32' },
+      { id: 'n1', kind: 'op', kernel: 'rmsnorm', sub: 'xn = attn_norm(x)', launch: { decode: '1 block · 1024', prefill: 'T blocks · 1024' }, io: 'x → xn' },
+      qn('q1', 'xn'),
+    ];
+    const mixer = dn ? [
+      { id: 'wqz', kind: 'w', label: 'attn_qkv.weight ‖ attn_gate.weight', t: 'attn_qkv.weight', sub: 'stacked: 12288 × 4096 · Q4_1' },
+      { id: 'pqz', kind: 'op', kernel: mk('Q4_1'), sub: '[qkv | z] = W·xn<br/>8192 + 4096 values', launch: mm(12288), io: 'xq → big' },
+      { id: 'wba', kind: 'w', label: 'ssm_beta.weight ‖ ssm_alpha.weight', t: 'ssm_beta.weight', sub: 'stacked: 64 × 4096 · Q8_0' },
+      { id: 'pba', kind: 'op', kernel: mk('Q8_0'), sub: '[β | α] = W·xn, 32 + 32', launch: mm(64), io: 'xq → ba' },
+      { id: 'cw', kind: 'w', label: 'ssm_conv1d.weight', sub: '8192 × 4 · F32' },
+      { id: 'cs', kind: 'io', label: 'conv state', sub: 'f32 [3][8192]: the last 3 inputs' },
+      { id: 'conv', kind: 'op', kernel: 'gdn_conv', sub: 'causal conv1d over 4 tokens, silu<br/>L2 norm of the 16 q and 16 k heads', launch: { any: 'grid (64, T) · 128' }, io: 'big[qkv], conv state → cv' },
+      { id: 'save', kind: 'op', kernel: 'conv_save', sub: 'conv state ← last 3 inputs', launch: { any: '32 blocks · 256 · grid-stride' }, io: 'big[qkv] → conv state' },
+      { id: 'dtw', kind: 'w', label: 'ssm_dt.bias ‖ ssm_a', t: 'ssm_dt.bias', sub: '32 + 32 · F32' },
+      { id: 'ss', kind: 'io', label: 'recurrent state S', sub: 'f32 32 × 128 × 128 (2 MB)' },
+      { id: 'rec', kind: 'op', kernel: 'gdn_recur', sub: 'g = exp(softplus(α + dt)·a), b = σ(β)<br/>S = gS + k((v − gSᵀk)b)ᵀ<br/>o = Sᵀq / √128, token by token', launch: { any: 'grid (32 heads, 4) · 32' }, io: 'cv, ba, S → ro, S' },
+      { id: 'snw', kind: 'w', label: 'ssm_norm.weight', sub: '128 · F32' },
+      { id: 'gn', kind: 'op', kernel: 'gated_norm', sub: 'rmsnorm(o) per head · w · silu(z)', launch: { any: 'grid (32, T) · 128' }, io: 'ro, big[z] → xn' },
+      qn('q2', 'xn'),
+      { id: 'wout', kind: 'w', label: 'ssm_out.weight', sub: '4096 × 4096 · Q5_K' },
+      { id: 'po', kind: 'op', kernel: mk('Q5_K'), sub: 'x += W·xn', launch: mm(4096), io: 'xq, x → x' },
+    ] : [
+      { id: 'wqkv', kind: 'w', label: 'attn_q ‖ attn_k ‖ attn_v', t: 'attn_q.weight', sub: 'stacked: 10240 × 4096 · Q4_1' },
+      { id: 'pqkv', kind: 'op', kernel: mk('Q4_1'), sub: '[q|gate per head, k, v] = W·xn<br/>16 × (256 + 256), 4 × 256, 4 × 256', launch: mm(10240), io: 'xq → big' },
+      { id: 'qnw', kind: 'w', label: 'attn_q_norm.weight', sub: '256 · F32' },
+      { id: 'knw', kind: 'w', label: 'attn_k_norm.weight', sub: '256 · F32' },
+      { id: 'qkr', kind: 'op', kernel: 'qk_norm_rope', sub: 'per-head RMSNorm (256) on q and k<br/>RoPE base 10⁷ on dims 0 … 63 only<br/>k, v → f16 cache', launch: { any: 'grid (24 heads, T) · 32' }, io: 'big → big, kc, vc', note: 'qwen35.ptx\'s version: q heads interleaved with their gates (stride 512), rotary pairs (i, i + 32) for i < 32, shuffles between lanes l and l ^ 4; the page shows the Gemma 3 kernel it was adapted from.' },
+      { id: 'kv', kind: 'io', label: 'KV cache', sub: 'f16, one slot per position' },
+      { id: 'att', kind: 'op', kernel: 'attention', sub: 'softmax(q·kᵀ / 16)·v · σ(gate)<br/>16 q / 4 kv heads<br/>all earlier positions', launch: { any: 'grid (16, T) · 256' }, io: 'big, kc, vc → ro', note: 'The Gemma 3 kernel with a q-head stride parameter and the output gate fused into the final write; no sliding window.' },
+      qn('q2', 'ro'),
+      { id: 'wo', kind: 'w', label: 'attn_output.weight', sub: '4096 × 4096 · Q4_1' },
+      { id: 'po', kind: 'op', kernel: mk('Q4_1'), sub: 'x += W·att', launch: mm(4096), io: 'xq, x → x' },
+    ];
+    const ffn = [
+      { id: 'pnw', kind: 'w', label: 'post_attention_norm.weight', sub: '4096 · F32' },
+      { id: 'n2', kind: 'op', kernel: 'rmsnorm', sub: 'xn = post_attention_norm(x)', launch: { decode: '1 block · 1024', prefill: 'T blocks · 1024' }, io: 'x → xn' },
+      qn('q3', 'xn'),
+      { id: 'wgu', kind: 'w', label: 'ffn_gate.weight ‖ ffn_up.weight', t: 'ffn_gate.weight', sub: 'stacked: 24576 × 4096 · Q4_1' },
+      { id: 'gu', kind: 'op', kernel: mk('Q4_1'), sub: 'gate and up in one product', launch: mm(24576), io: 'xq → big' },
+      { id: 'act', kind: 'op', kernel: 'swiglu', sub: 'h = silu(gate) · up', launch: { any: GS }, io: 'big → xn' },
+      qn('q4', 'h'),
+      { id: 'wd', kind: 'w', label: 'ffn_down.weight', sub: '4096 × 12288 · Q4_1' },
+      { id: 'dn', kind: 'op', kernel: mk('Q4_1'), sub: 'x += W·h', launch: mm(4096), io: 'xq, x → x' },
+      { id: 'y', kind: 'io', label: 'x', sub: 'to the next layer' },
+    ];
+    const nodes = head.concat(mixer, ffn);
+    const edges = [['x', 'n1', 'x'], ['anw', 'n1'], ['n1', 'q1', 'xn']].concat(dn ? [
+      ['q1', 'pqz'], ['wqz', 'pqz'], ['q1', 'pba'], ['wba', 'pba'],
+      ['pqz', 'conv', 'qkv'], ['cw', 'conv'], ['cs', 'conv'], ['conv', 'save'], ['save', 'cs'],
+      ['conv', 'rec', 'q, k, v'], ['pba', 'rec', 'β, α'], ['dtw', 'rec'], ['ss', 'rec'], ['rec', 'ss'],
+      ['rec', 'gn', 'o'], ['pqz', 'gn', 'z'], ['snw', 'gn'], ['gn', 'q2'], ['q2', 'po'], ['wout', 'po'], ['x', 'po', 'x'],
+    ] : [
+      ['q1', 'pqkv'], ['wqkv', 'pqkv'], ['pqkv', 'qkr'], ['qnw', 'qkr'], ['knw', 'qkr'], ['qkr', 'kv', 'k, v'], ['qkr', 'att', 'q, gate'], ['kv', 'att'],
+      ['att', 'q2', 'att'], ['q2', 'po'], ['wo', 'po'], ['x', 'po', 'x'],
+    ], [['po', 'n2', 'x'], ['pnw', 'n2'], ['n2', 'q3', 'xn'], ['q3', 'gu'], ['wgu', 'gu'], ['gu', 'act', 'gate, up'], ['act', 'q4', 'h'],
+      ['q4', 'dn'], ['wd', 'dn'], ['po', 'dn', 'x'], ['dn', 'y']]);
+    return { nodes, edges };
+  },
+  tensors: [
+    { name: 'token_embd.weight', file: '248,320 × 4096 · Q4_1', engine: 'stays on the host: one row dequantized per token', by: 'embedding lookup on the CPU' },
+    { name: 'attn_norm.weight', file: '4096 · F32', engine: 'F32', by: 'rmsnorm' },
+    { name: 'attn_qkv.weight', file: '8192 × 4096 · Q4_1', engine: 'Q4_1 (qs | f16 d, m), rows 0 … 8191 of the stacked qkvz matrix; DeltaNet layers', by: 'mv_q4_1 · gemm_q' },
+    { name: 'attn_gate.weight', file: '4096 × 4096 · Q4_1', engine: 'Q4_1, rows 8192 … 12287 of qkvz (z)', by: 'mv_q4_1 · gemm_q' },
+    { name: 'ssm_beta.weight', file: '32 × 4096 · Q8_0', engine: 'Q8_0, rows 0 … 31 of the stacked ba matrix', by: 'mv_q8_0 · gemm_q' },
+    { name: 'ssm_alpha.weight', file: '32 × 4096 · Q8_0', engine: 'Q8_0, rows 32 … 63 of ba', by: 'mv_q8_0 · gemm_q' },
+    { name: 'ssm_conv1d.weight', file: '8192 × 4 · F32', engine: 'F32, 4 taps per channel', by: 'gdn_conv' },
+    { name: 'ssm_dt.bias', file: '32 · F32', engine: 'F32', by: 'gdn_recur' },
+    { name: 'ssm_a', file: '32 · F32', engine: 'F32 (stored as −exp(A_log))', by: 'gdn_recur' },
+    { name: 'ssm_norm.weight', file: '128 · F32', engine: 'F32, shared by the 32 heads', by: 'gated_norm' },
+    { name: 'ssm_out.weight', file: '4096 × 4096 · Q5_K', engine: 'Q5_K, the 176-byte blocks as stored', by: 'mv_q5_k · gemm_q' },
+    { name: 'attn_q.weight', file: '8192 × 4096 · Q4_1', engine: 'Q4_1, rows 0 … 8191 of the stacked qkv matrix: per head 256 q then 256 gate rows; attention layers', by: 'mv_q4_1 · gemm_q' },
+    { name: 'attn_k.weight', file: '1024 × 4096 · Q4_1', engine: 'Q4_1, rows 8192 … 9215', by: 'mv_q4_1 · gemm_q' },
+    { name: 'attn_v.weight', file: '1024 × 4096 · Q4_1', engine: 'Q4_1, rows 9216 … 10239', by: 'mv_q4_1 · gemm_q' },
+    { name: 'attn_q_norm.weight', file: '256 · F32', engine: 'F32', by: 'qk_norm_rope' },
+    { name: 'attn_k_norm.weight', file: '256 · F32', engine: 'F32', by: 'qk_norm_rope' },
+    { name: 'attn_output.weight', file: '4096 × 4096 · Q4_1', engine: 'Q4_1', by: 'mv_q4_1 · gemm_q' },
+    { name: 'post_attention_norm.weight', file: '4096 · F32', engine: 'F32', by: 'rmsnorm' },
+    { name: 'ffn_gate.weight', file: '12288 × 4096 · Q4_1', engine: 'Q4_1, rows 0 … 12287 of the stacked gate_up matrix', by: 'mv_q4_1 · gemm_q' },
+    { name: 'ffn_up.weight', file: '12288 × 4096 · Q4_1', engine: 'Q4_1, rows 12288 … 24575 of gate_up', by: 'mv_q4_1 · gemm_q' },
+    { name: 'ffn_down.weight', file: '4096 × 12288 · Q4_1', engine: 'Q4_1', by: 'mv_q4_1 · gemm_q' },
+    { name: 'output_norm.weight', file: '4096 · F32', engine: 'F32', by: 'rmsnorm' },
+    { name: 'output.weight', file: '248,320 × 4096 · Q6_K', engine: 'Q6_K: ql | qh | scales (208 bytes) per 256 values, f16 d apart', by: 'mv_q6_k' },
+  ],
+};
+Atlas.model(M);
+
+(() => {
+  const $ = Atlas.$, row = r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`;
+  $('dnKernels').innerHTML = '<thead><tr><th>kernel</th><th>launch</th><th>does</th></tr></thead><tbody>' + [
+    ['gdn_conv', 'grid (64, T) · 128', 'one thread per channel and token: 4 taps reaching back into the conv state, silu, then a block reduction for the L2 norm of a q or k head'],
+    ['conv_save', 'grid-stride over 8192 channels', 'keeps the last 3 inputs; with T < 3 it shifts the old rows down first'],
+    ['gdn_recur', 'grid (32 heads, 4) · 32', 'a warp owns 32 columns of one head\'s S, held in shared memory for the whole chunk; per token two passes over 128 rows (Sᵀk, then the update and Sᵀq), k and q broadcast from shared memory'],
+    ['gated_norm', 'grid (32, T) · 128', 'per-head RMSNorm of o times ssm_norm and silu(z)'],
+  ].map(row).join('') + '</tbody>';
+  $('perf').innerHTML = '<thead><tr><th></th><th>llama.cpp (CUDA)</th><th>qwen35_demo</th></tr></thead><tbody>' +
+    [['prompt', '4,745 tok/s', '2,911 tok/s'], ['decode', '77.4 tok/s', '79.6 tok/s']].map(row).join('') + '</tbody>';
+  $('checks').innerHTML = '<thead><tr><th>check</th><th>result</th></tr></thead><tbody>' + [
+    ['logits, 3 prompts (5 … 1,282 tokens)', 'KL 2e-3 … 2e-2 vs CUDA, the size of llama.cpp\'s own CPU-vs-CUDA difference; same top-1'],
+    ['logits, Q8_0 file from <code>quantize</code>', 'KL 1.2e-3 and 7.5e-4'],
+    ['tokenizer', '3,115 fuzzed lines, identical ids'],
+    ['chat template', '14 conversations, with and without thinking: identical ids'],
+    ['kernels', '39 self-tests vs CPU references'],
+    ['cache reuse', 'extend, restore the snapshot, recompute: bit-identical; prompt chunks of 128 and 512: bit-identical'],
+  ].map(row).join('') + '</tbody>';
+})();
+</script>

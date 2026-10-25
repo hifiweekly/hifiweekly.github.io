@@ -56,7 +56,8 @@ async function draw(host, g, hotKernel, onPick) {
 
 A.model = function (M) {
   const passes = M.passes || [['decode', 'decode · 1 token'], ['prefill', 'prefill · T tokens']];
-  const st = { pass: passes[0][0], kind: 'local', hot: null, sel: null };
+  const kinds = M.kinds || [['local', 'local layer'], ['global', 'global layer']];
+  const st = { pass: passes[0][0], kind: kinds[0][0], hot: null, sel: null };
   const hm = /k=([a-z0-9_]+)/.exec(location.hash);
   if (hm) st.hot = hm[1];
 
@@ -68,9 +69,9 @@ A.model = function (M) {
     sync();
   };
   seg($('passSeg'), 'pass', passes);
-  seg($('kindSeg'), 'kind', [['local', 'local layer'], ['global', 'global layer']]);
+  seg($('kindSeg'), 'kind', kinds);
 
-  const usedKernels = () => [...new Set([...flat(M.overview()), ...passes.flatMap(([p]) => ['local', 'global'].flatMap(k => flat(M.layer(p, k))))].map(n => n.kernel).filter(Boolean))];
+  const usedKernels = () => [...new Set([...flat(M.overview()), ...passes.flatMap(([p]) => kinds.flatMap(([k]) => flat(M.layer(p, k))))].map(n => n.kernel).filter(Boolean))];
   const hotSel = $('hotSel');
   hotSel.innerHTML = '<option value="">none</option>' + usedKernels().sort().map(k => `<option>${k}</option>`).join('');
   hotSel.value = st.hot || '';
@@ -114,7 +115,7 @@ A.model = function (M) {
         const name = n.kernel ? (covered.has(n.kernel) ? `<a href="${n.kernel}.html">${n.kernel}</a>` : n.kernel) : `<i>${n.label}</i>`;
         return `<tr class="${n.kernel && n.kernel === st.hot ? 'on' : ''}"><td>${n.kernel ? ++i : ''}</td><td>${name}</td><td>${n.launch ? (n.launch[st.pass] || n.launch.any) : 'host'}</td><td>${n.io || ''}</td><td>${(n.sub || '').replace(/<br\/>/g, ' · ')}</td></tr>`;
       }).join('') + '</tbody>';
-    $('launchCount').textContent = `${i} launches per layer × ${M.nLayers} layers`;
+    $('launchCount').textContent = `${i} launches per layer × ${M.layersOf ? M.layersOf(st.kind) : M.nLayers} layers`;
   }
   function renderTensors() {
     $('tensors').innerHTML = `<thead><tr><th>GGUF tensor</th><th>file (rows × cols · type)</th><th>engine format on the GPU</th><th>read by</th></tr></thead><tbody>` +

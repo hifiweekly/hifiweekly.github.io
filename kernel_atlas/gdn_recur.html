@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>gdn_recur Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.chart svg { display: block; width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · one warp per 32 columns of one head's state</div>
+    <h1>Inside <code>gdn_recur</code></h1>
+    <p>The heart of a Gated DeltaNet layer. Instead of keeping every past key and value, each of the 32 heads keeps one 128 × 128 matrix <span class="w">S</span> that maps keys to values. For every token it decays S by a learned gate g, corrects it toward the new pair (k, v) with the <em>delta rule</em> (write only what S does not already predict, scaled by b), and reads the output as Sᵀq. The tokens of a chunk must go in order, so the kernel loops over them; the parallelism is across heads and value columns. A block keeps its 128 × 32 slice of S in shared memory for the whole chunk.</p>
+    <div class="formula"><span class="x">kv</span> = Sᵀ<span class="x">k</span> &nbsp;·&nbsp; δ = (<span class="x">v</span> − g·kv)·b &nbsp;·&nbsp; <span class="w">S</span> ← g·<span class="w">S</span> + <span class="x">k</span>·δᵀ &nbsp;·&nbsp; <span class="y">o</span> = Sᵀ<span class="x">q</span> / √128 &nbsp;&nbsp;<span class="muted">// g = exp(softplus(α + dt)·a), b = σ(β); q, k L2-normalized by gdn_conv</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">One block, one chunk of tokens</h2>
+      <p>The large grid is the block's slice of S as it sits in shared memory: column i is key dim i (0 … 127), row j is the value column owned by lane j. Above it are this token's k and q (key dims, shared by every lane, read as broadcasts); at the right, per lane, v, kv = (Sᵀk)ⱼ, δ and o. Choose the head, which 32 columns this block owns, and how many tokens the chunk has; click a row to follow one lane.</p>
+    </div>
+    <div class="panel">
+      <div class="controls">
+        <label for="hd">v head h <select id="hd"></select></label>
+        <label for="cg">columns <select id="cg"><option value="0">0–31 (blockIdx.y 0)</option><option value="1">32–63 (1)</option><option value="2">64–95 (2)</option><option value="3">96–127 (3)</option></select></label>
+        <label for="nt">tokens in the chunk <input id="nt" type="range" min="1" max="8" value="3"> <span id="ntv" class="mono"></span></label>
+        <label for="df"><input id="df" type="checkbox" checked> in the update step, show what the token writes (k·δᵀ)</label>
+      </div>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="w" id="slabel"></b><span id="ssub"></span></div>
+        <canvas id="grid"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over a cell to see what it is and where it lives.</div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="tablewrap"><table class="nums" id="toks"></table></div>
+        <dl class="kv" id="lcard"></dl>
+        <div class="cvlabel"><b class="s">‖S‖ of this slice after each token</b><span>decay pulls it down, writes push it up</span></div>
+        <div class="chart"><svg id="chart" role="img" aria-label="Frobenius norm of the state slice per token"></svg></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Columns are independent, rows are not</h3>
+        <p>Everything a value column j needs is its own column of S plus the shared k, q and the head's two gates: kv<sub>j</sub>, δ<sub>j</sub> and o<sub>j</sub> never mix columns. So one thread per column needs no reduction at all, unlike the attention kernels' butterflies. What does not split is the key dimension inside a column: δ<sub>j</sub> needs all 128 rows of Sᵀk before any row can be updated, hence two passes over the column per token.</p>
+        <p>32 heads × 4 column groups = 128 blocks of one warp. With one warp per block, the only synchronisation is <code>bar.warp.sync</code> around the k and q stores.</p>
+      </div>
+      <div class="panel">
+        <h3>Shared memory, laid out [i][lane]</h3>
+        <p>A thread walks its column 128 times per pass. Kept as S[i][lane], the 32 lanes read 32 consecutive floats for every i: 32 different banks, no conflicts, and k[i], q[i] are single broadcast reads. The same layout makes the load and the final store coalesced: global S is [h][i][j], so row i of the block's slice is 128 contiguous bytes.</p>
+        <p>Registers would be faster still (128 floats per thread fit), but they cannot be indexed by a loop counter: the kernel would have to be fully unrolled. Shared memory keeps the PTX a short loop; this kernel is not where decoding spends its time.</p>
+      </div>
+    </div>
+    <div class="two">
+      <div class="panel">
+        <h3>Decode: a fixed cost per token</h3>
+        <p>Decoding runs it with T = 1: the 24 layers read and write 2 MB of state each, 96 MB per token, about 2% of the 5 GB of weights the matrix kernels read. Unlike attention, the cost does not grow with the context: token 100,000 costs the same as token 10.</p>
+      </div>
+      <div class="panel">
+        <h3>Prefill: the sequential part</h3>
+        <p>For a 1,282-token prompt the 72 launches (24 layers × 3 chunks of up to 512) take 51 ms, 12% of the prompt time, because each block walks its tokens one by one with only 128 warps in flight. llama.cpp's version (14 ms) rewrites the recurrence in chunked form, as small matrix products that run on the tensor cores. The arithmetic per token here is fixed, though: a chunk boundary changes nothing, which is what makes this engine's cache reuse bit-exact.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>gdn_recur</code>; launched from <code>forward()</code> in <code>qwen35.c</code> with grid (32 v heads, 4) and 32 threads, after <code>gdn_conv</code> (which produces q, k, v) and before <code>gated_norm</code>. Semantics follow llama.cpp's fused <code>gated_delta_net.cu</code>: k and q of v head h come from head h mod 16. Here q, k, v, the gates and the initial state are generated; the page re-runs the kernel's float32 arithmetic and compares it with a float64 recurrence.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('gdn_recur');
+const D = 128, NV = 32, NK = 16, LOG2E = 1.4426950408889634, LN2 = 0.6931471805599453, SCALE = Math.fround(1 / Math.sqrt(128));
+Atlas.facts($('facts'), [['(32, 4)', 'grid = (v heads, column groups)'], ['32', 'threads: lane = value column'], ['17 KB', 'shared: S slice 16 KB + k, q'], ['2', 'passes over the column per token'], ['2 MB', 'state per layer (f32)']]);
+$('hd').innerHTML = Array.from({ length: NV }, (_, h) => `<option value="${h}">${h} (k, q head ${h % NK})</option>`).join('');
+const S = { h: 5, cg: 0, T: 3, lane: 7, diff: true };
+
+// generated inputs; the kernel's float32 recurrence and a float64 one
+function build() {
+  const r = Atlas.rng(9001 + S.h * 31 + S.cg), kh = S.h % NK;
+  const dt = fr(Atlas.gauss(r) * 2), a = fr(-(0.01 + 0.14 * r()));
+  const unit = () => { const v = new Float32Array(D); let ss = 0; for (let i = 0; i < D; i++) { v[i] = fr(Atlas.gauss(r)); ss += v[i] * v[i]; } const n = Math.sqrt(ss); for (let i = 0; i < D; i++) v[i] = fr(v[i] / n); return v; };
+  const S0 = new Float32Array(D * 32); for (let i = 0; i < D * 32; i++) S0[i] = fr(Atlas.gauss(r) * 0.12);
+  const toks = [];
+  for (let t = 0; t < S.T; t++) {
+    const q = unit(), k = unit(), v = new Float32Array(32);
+    for (let j = 0; j < 32; j++) v[j] = fr(Atlas.gauss(r) * 0.6);
+    const beta = fr(Atlas.gauss(r) * 1.5), alpha = fr(Atlas.gauss(r) * 2 - 1 + (t === 1 ? 4 : 0));
+    // gates, as the PTX computes them (ex2 / lg2 approximations taken as exact here)
+    const b = fr(1 / fr(1 + fr(2 ** fr(beta * -LOG2E))));
+    const x = fr(alpha + dt), spl = fr(fr(Math.log2(fr(fr(2 ** fr(x * LOG2E)) + 1))) * LN2), sp = x > 20 ? x : spl;
+    const g = fr(2 ** fr(fr(sp * a) * LOG2E));
+    toks.push({ q, k, v, beta, alpha, x, sp, b, g });
+  }
+  // float32, the kernel's order: kv over i = 0..127, then the update and o over i = 0..127
+  const states = [S0], per = [];
+  let cur = S0.slice();
+  for (const tk of toks) {
+    const kv = new Float32Array(32), del = new Float32Array(32), o = new Float32Array(32), out = new Float32Array(32);
+    for (let j = 0; j < 32; j++) {
+      let acc = 0; for (let i = 0; i < D; i++) acc = fr(cur[i * 32 + j] * tk.k[i] + acc);
+      kv[j] = acc;
+      del[j] = fr(fr(tk.v[j] - fr(tk.g * acc)) * tk.b);
+      let oo = 0;
+      for (let i = 0; i < D; i++) { const s = fr(tk.k[i] * del[j] + fr(cur[i * 32 + j] * tk.g)); cur[i * 32 + j] = s; oo = fr(s * tk.q[i] + oo); }
+      o[j] = oo; out[j] = fr(oo * SCALE);
+    }
+    states.push(cur.slice());
+    let n2 = 0; for (let i = 0; i < D * 32; i++) n2 += cur[i] * cur[i];
+    per.push({ kv, del, o, out, norm: Math.sqrt(n2) });
+  }
+  // float64 reference
+  const R = Float64Array.from(S0); let err = 0, errS = 0;
+  toks.forEach((tk, t) => {
+    for (let j = 0; j < 32; j++) {
+      let kv = 0; for (let i = 0; i < D; i++) kv += R[i * 32 + j] * tk.k[i];
+      const g = Math.exp((tk.x > 20 ? tk.x : Math.log1p(Math.exp(tk.x))) * a), b = 1 / (1 + Math.exp(-tk.beta));
+      const del = (tk.v[j] - g * kv) * b; let o = 0;
+      for (let i = 0; i < D; i++) { R[i * 32 + j] = g * R[i * 32 + j] + tk.k[i] * del; o += R[i * 32 + j] * tk.q[i]; }
+      err = Math.max(err, Math.abs(o / Math.sqrt(D) - per[t].out[j]));
+    }
+  });
+  const last = states[states.length - 1]; for (let i = 0; i < D * 32; i++) errS = Math.max(errS, Math.abs(last[i] - R[i]));
+  let sMax = 0; states.forEach(st => st.forEach(v => { sMax = Math.max(sMax, Math.abs(v)); }));
+  const vMax = (f) => Math.max(1e-9, ...per.flatMap(p => Array.from(p[f]).map(Math.abs)));
+  model = { kh, dt, a, toks, states, per, err, errS, sMax, kqMax: Math.max(...toks.flatMap(t => [...t.k, ...t.q].map(Math.abs))),
+    vMax: Math.max(...toks.flatMap(t => Array.from(t.v).map(Math.abs))), kvMax: vMax('kv'), dMax: vMax('del'), oMax: vMax('out') };
+}
+let model;
+
+function buildSteps() {
+  const md = model, st = [{ tag: 'A', kind: 'load', short: 'load S', title: `load this block's 128 × 32 slice of S into shared memory`,
+    text: `Each lane copies its column j = ${S.cg * 32} + lane, one row at a time: 128 loads of 4 bytes, but in every round the 32 lanes read 128 contiguous bytes of row i, so each round is one memory transaction. The head's dt = ${md.dt.toFixed(3)} and a = ${md.a.toFixed(4)} go into registers.` }];
+  md.toks.forEach((tk, t) => {
+    st.push({ tag: 'L', kind: 'tok', t, short: `t${t}: load, gates`, title: `token ${t}: k, q into shared memory; v, β, α; the gates`,
+      text: `Lane l stores k and q dims 4l … 4l + 3 (one float4 each) into shared memory, between two <code>bar.warp.sync</code>s; every lane loads its own v<sub>j</sub>. All lanes compute the same gates: b = σ(${tk.beta.toFixed(3)}) = <b>${tk.b.toFixed(4)}</b>, and from α + dt = ${tk.x.toFixed(3)}, softplus = ${tk.sp.toFixed(4)}, g = exp(softplus · a) = <b>${tk.g.toFixed(5)}</b>${tk.g < 0.9 ? ' - a strong decay: this token makes the head forget' : ''}.` });
+    st.push({ tag: 'K', kind: 'kv', t, short: `t${t}: Sᵀk`, title: `token ${t}: pass 1, kv = Sᵀk, what S currently predicts for k`,
+      text: 'Each lane walks its column: 128 FMAs, S[i][lane] from its own bank, k[i] as a broadcast, 4 rows per loop iteration (one ld.shared.v4 for k). No lane waits for another.' });
+    st.push({ tag: 'D', kind: 'delta', t, short: `t${t}: δ`, title: `token ${t}: δ = (v − g·kv)·b, the part of v that S does not already store`,
+      text: `If the decayed S already maps k to v, δ is zero and S keeps its contents; b = ${tk.b.toFixed(3)} sets how much of the error to write. Lane ${S.lane}: v = ${tk.v[S.lane].toFixed(4)}, g·kv = ${(tk.g * md.per[t].kv[S.lane]).toFixed(4)}, δ = ${md.per[t].del[S.lane].toFixed(4)}.` });
+    st.push({ tag: 'U', kind: 'upd', t, short: `t${t}: update, Sᵀq`, title: `token ${t}: pass 2, S ← g·S + k·δᵀ, and o = Sᵀq`,
+      text: `Every element of the slice changes: the column is decayed and gets k scaled by its δ (a rank-one update of the 128 × 32 slice). The same pass dots the new column with q, so S is read and written once. o<sub>j</sub> · 1/√128 goes to out[t][h][j]: lane ${S.lane} writes ${md.per[t].out[S.lane].toFixed(5)}.` });
+  });
+  st.push({ tag: 'S', kind: 'save', short: 'save S', title: 'write the slice back: the state for the next chunk or token',
+    text: `128 coalesced rounds, as the load. Over the ${md.toks.length} token${md.toks.length > 1 ? 's' : ''}, the largest difference from a float64 recurrence is ${md.err.toExponential(2)} in the outputs and ${md.errS.toExponential(2)} in S.` });
+  return st;
+}
+
+// grid: rows 0-1 k, 2-3 q, 4 gap, 5.. lanes; cols 0..127 key dims, 128 gap, then v, kv, δ, o, 4 cells each
+const ROWS = 37, COLS = 145, R0 = 5, VC = 129, VW = 4;
+const g = Atlas.grid($('grid'), ROWS, COLS);
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `A|// grid (32 v heads, 4 column groups), 32 threads: thread j owns column j of S
+A|unsigned h = blockIdx.x, lane = threadIdx.x, j = blockIdx.y * 32 + lane, kh = h % 16;
+A|__shared__ float Ss[128][32], ks[128], qs[128];
+A|for (int i = 0; i < 128; i++) Ss[i][lane] = state[(h * 128 + i) * 128 + j];  // 128 B per row
+L|for (unsigned t = 0; t < T; t++) {
+L|    __syncwarp();                                     // the last token is done with ks, qs
+L|    *(float4 *)&qs[4 * lane] = *(const float4 *)&qkv[t * 8192 + kh * 128 + 4 * lane];
+L|    *(float4 *)&ks[4 * lane] = *(const float4 *)&qkv[t * 8192 + 2048 + kh * 128 + 4 * lane];
+L|    float v = qkv[t * 8192 + 4096 + h * 128 + j];
+L|    float b = 1 / (1 + exp2f(-ba[t * 64 + h] * LOG2E));               // sigmoid(beta)
+L|    float x = ba[t * 64 + 32 + h] + dt[h];
+L|    float sp = x > 20 ? x : log2f(1 + exp2f(x * LOG2E)) * LN2;        // softplus
+L|    float g = exp2f(sp * a[h] * LOG2E);                                // a < 0: 0 < g <= 1
+L|    __syncwarp();
+K|    float kv = 0;
+K|    for (int i = 0; i < 128; i++) kv = fmaf(Ss[i][lane], ks[i], kv);  // (S^T k)_j
+D|    float delta = (v - g * kv) * b;
+U|    float o = 0;
+U|    for (int i = 0; i < 128; i++) {
+U|        float s = fmaf(ks[i], delta, Ss[i][lane] * g);                 // g S + k delta^T
+U|        Ss[i][lane] = s;
+U|        o = fmaf(s, qs[i], o);                                         // (S^T q)_j
+U|    }
+U|    out[t * 4096 + h * 128 + j] = o * scale;                           // scale = 1/sqrt(128)
+L|}
+S|for (int i = 0; i < 128; i++) state[(h * 128 + i) * 128 + j] = Ss[i][lane];` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `A|    shl.b32             %r7, %r2, 14;           // h * 128 * 128
+A|    add.u32             %r7, %r7, %r5;          // + j
+A|LOAD_S:
+A|    ld.global.f32       %f4, [%rd10];           // S[h][i][j]
+A|    st.shared.f32       [%r11], %f4;            // Ss[i][lane]
+A|    add.s64             %rd10, %rd10, 512;      // next row of S
+A|    add.u32             %r11, %r11, 128;        // next row of the slice
+L|TOKEN:
+L|    bar.warp.sync       -1;                     // previous token done with k, q
+L|    ld.global.v4.f32    {%f4, %f5, %f6, %f7}, [%rd11];         // q[4 lane ..]
+L|    ld.global.v4.f32    {%f8, %f9, %f10, %f11}, [%rd11+8192];  // k[4 lane ..]
+L|    st.shared.v4.f32    [%r19], {%f4, %f5, %f6, %f7};
+L|    st.shared.v4.f32    [%r17], {%f8, %f9, %f10, %f11};
+L|    ld.global.f32       %f12, [%rd12];          // v_j
+L|    ex2.approx.f32      %f15, %f15;             // b = 1 / (1 + 2^(-beta log2 e))
+L|    rcp.rn.f32          %f15, %f15;
+L|    lg2.approx.f32      %f17, %f17;             // softplus = ln2 * lg2(1 + e^x)
+L|    setp.gt.f32         %p2, %f16, 0f41A00000;  // x > 20: softplus = x
+L|    ex2.approx.f32      %f17, %f17;             // g
+L|    bar.warp.sync       -1;
+K|KV:
+K|    ld.shared.v4.f32    {%f20, %f21, %f22, %f23}, [%r22];      // k[i .. i+3]
+K|    ld.shared.f32       %f24, [%r21];           // Ss[i][lane]
+K|    ld.shared.f32       %f25, [%r21+128];       // Ss[i+1][lane]
+K|    fma.rn.f32          %f18, %f24, %f20, %f18; // kv += S k
+K|    fma.rn.f32          %f18, %f25, %f21, %f18;
+K|    add.u32             %r21, %r21, 512;        // 4 rows on
+D|    mul.f32             %f19, %f17, %f18;       // g kv
+D|    sub.f32             %f19, %f12, %f19;       // v - g kv
+D|    mul.f32             %f19, %f19, %f15;       // delta
+U|UPD:
+U|    ld.shared.v4.f32    {%f30, %f31, %f32, %f33}, [%r13];      // q[i .. i+3]
+U|    mul.f32             %f24, %f24, %f17;       // g S
+U|    fma.rn.f32          %f24, %f20, %f19, %f24; // + k delta
+U|    st.shared.f32       [%r21], %f24;
+U|    fma.rn.f32          %f28, %f24, %f30, %f28; // o += S q
+U|    mul.f32             %f28, %f28, %f1;        // * 1/sqrt(128)
+U|    st.global.f32       [%rd13], %f28;          // out[t][h][j]
+S|SAVE_S:
+S|    ld.shared.f32       %f4, [%r11];
+S|    st.global.f32       [%rd10], %f4;           // back to S[h][i][j]` },
+});
+
+let steps;
+const stepper = Atlas.stepper({ steps: [{ tag: '', title: '', text: '' }], code, render: () => draw() });
+function rebuild(keep) { build(); steps = buildSteps(); stepper.setSteps(steps, keep); }
+
+// which state the grid shows, and what is active, at a step
+function view(st) {
+  const md = model, n = md.toks.length;
+  if (st.kind === 'load') return { si: 0, t: -1, act: { S: 1 } };
+  if (st.kind === 'save') return { si: n, t: n - 1, act: { S: 1 }, done: n, shown: ['kv', 'd', 'o'] };
+  const t = st.t, base = { si: t, t, done: t };
+  if (st.kind === 'tok') return { ...base, act: { k: 1, q: 1, v: 1 } };
+  if (st.kind === 'kv') return { ...base, act: { S: 1, k: 1, kv: 1 }, shown: ['kv'] };
+  if (st.kind === 'delta') return { ...base, act: { v: 1, kv: 1, d: 1 }, shown: ['kv', 'd'] };
+  return { ...base, si: t + 1, act: { S: 1, k: 1, q: 1, d: 1, o: 1 }, shown: ['kv', 'd', 'o'], done: t + 1 };
+}
+function cellColor(v, scale) { return { c: v >= 0 ? C.y : C.x, a: 0.08 + 0.92 * Math.min(1, Math.sqrt(Math.abs(v) / scale)) }; }
+let hover = null;
+function draw() {
+  if (!model) return;
+  const md = model, st = stepper.step, vw = view(st), tk = vw.t >= 0 ? md.toks[vw.t] : null, pp = vw.t >= 0 ? md.per[vw.t] : null;
+  const gg = g.prep(), Sg = md.states[vw.si];
+  const dim = 0.25;
+  // S slice; in the update step optionally what this token writes, k δᵀ = S_new − g S_old
+  const diff = st.kind === 'upd' && S.diff, prev = md.states[vw.si - 1], gt = tk ? tk.g : 1;
+  const wr = i => Sg[i] - gt * prev[i];
+  let dmax = 1e-12; if (diff) for (let i = 0; i < D * 32; i++) dmax = Math.max(dmax, Math.abs(wr(i)));
+  for (let j = 0; j < 32; j++) for (let i = 0; i < D; i++) {
+    const v = diff ? wr(i * 32 + j) : Sg[i * 32 + j];
+    const { c, a } = cellColor(v, diff ? dmax : md.sMax * 0.6);
+    gg.cell(R0 + j, i, c, vw.act.S ? a : a * dim, 0.06);
+  }
+  // k, q rows
+  [['k', 0], ['q', 2]].forEach(([n, row]) => {
+    for (let i = 0; i < D; i++) for (let r = row; r < row + 2; r++) {
+      if (!tk) { gg.cell(r, i, C.zero, 0.3, 0.06); continue; }
+      const { c, a } = cellColor(tk[n][i], md.kqMax); gg.cell(r, i, c, vw.act[n] ? a : a * dim, 0.06);
+    }
+  });
+  // per-lane columns
+  const colv = (col, key, vals, scale) => {
+    for (let j = 0; j < 32; j++) {
+      const have = vals && (key === 'v' || (vw.shown || []).includes(key));
+      const { c, a } = have ? cellColor(vals[j], scale) : { c: C.zero, a: 0.3 };
+      for (let x = 0; x < VW; x++) gg.cell(R0 + j, col + x, c, have && !vw.act[key] ? a * dim : a, 0.06);
+    }
+  };
+  colv(VC, 'v', tk && tk.v, md.vMax); colv(VC + VW, 'kv', pp && pp.kv, md.kvMax); colv(VC + 2 * VW, 'd', pp && pp.del, md.dMax); colv(VC + 3 * VW, 'o', pp && pp.out, md.oMax);
+  gg.box(R0 + S.lane, 0, 1, COLS, C.fg, 1.2);
+  if (vw.act.S) gg.box(R0, 0, 32, D, C.sync, 2);
+  if (hover) gg.box(hover.r, hover.c, 1, 1, C.sync, 1.5);
+  $('slabel').textContent = diff ? `what token ${vw.t} writes: k·δᵀ = S_new − g·S_old, one δ per column (rank one)` : `S slice, columns ${S.cg * 32}–${S.cg * 32 + 31} of v head ${S.h} · ${vw.si === 0 ? 'as loaded' : `after token ${vw.si - 1}`}`;
+  $('ssub').textContent = 'top: k, q · rows: lanes 0–31 · right: v | kv | δ | o';
+  Atlas.legend($('legend'), [['--y', 'positive'], ['--x', 'negative (stronger = larger |value|)'], ['--sync', 'what this step reads or writes'], ['--zero', 'not computed yet']]);
+
+  // token table
+  let h = `<caption>Gates per token (all lanes compute the same)</caption><tr><th>t</th><th>β</th><th>b = σ(β)</th><th>α + dt</th><th>g</th><th>‖S‖ after</th></tr>`;
+  md.toks.forEach((t, i) => {
+    const seen = vw.done !== undefined && i < vw.done, on = i === vw.t;
+    h += `<tr class="${on ? 'on' : ''}"><td>${i}</td><td>${t.beta.toFixed(3)}</td><td>${t.b.toFixed(4)}</td><td>${t.x.toFixed(3)}</td><td>${t.g.toFixed(5)}</td><td>${seen ? md.per[i].norm.toFixed(4) : '–'}</td></tr>`;
+  });
+  $('toks').innerHTML = h;
+
+  // lane card
+  const j = S.lane, J = S.cg * 32 + j, rows = [['lane', `${j}: column j = ${J} of head ${S.h}`], ['in shared memory', `Ss[i][${j}] at byte 128·i + ${4 * j}: always bank ${j}`], ['in global memory', `state[${S.h}][i][${J}], row stride 512 B`]];
+  if (tk) rows.push(['v', tk.v[j].toFixed(5)]);
+  if (pp && (vw.shown || []).includes('kv')) rows.push(['kv = (Sᵀk)ⱼ', pp.kv[j].toFixed(5)]);
+  if (pp && (vw.shown || []).includes('d')) rows.push(['δ', pp.del[j].toFixed(5)]);
+  if (pp && (vw.shown || []).includes('o')) rows.push(['out = o / √128', `${pp.out[j].toFixed(6)} → out[${vw.t}][${S.h}][${J}]`]);
+  $('lcard').innerHTML = rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+
+  // norm chart
+  const W = 480, H = 150, ml = 40, mr = 12, mt = 12, mb = 24, n = md.toks.length;
+  const vals = [Math.sqrt(md.states[0].reduce((a, v) => a + v * v, 0)), ...md.per.map(p => p.norm)];
+  const lo = Math.min(...vals), hi = Math.max(...vals), pad = Math.max((hi - lo) * 0.15, hi * 0.01);
+  const y0 = lo - pad, y1 = hi + pad, X = i => ml + (n ? i / n : 0) * (W - ml - mr), Y = v => mt + (y1 - v) / (y1 - y0) * (H - mt - mb);
+  let sv = `<line x1="${ml}" y1="${H - mb}" x2="${W - mr}" y2="${H - mb}" stroke="${C.line}"/>`;
+  const upto = vw.done === undefined ? 0 : vw.done;
+  let path = ''; for (let i = 0; i <= upto; i++) path += (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(vals[i]).toFixed(1);
+  sv += `<path d="${path}" fill="none" stroke="${C.sync}" stroke-width="2"/>`;
+  for (let i = 0; i <= upto; i++) sv += `<circle cx="${X(i)}" cy="${Y(vals[i])}" r="3.5" fill="${C.w}"/>`;
+  for (let i = 0; i <= n; i++) sv += `<text x="${X(i)}" y="${H - 6}" font-size="10" text-anchor="middle" fill="${C.muted}">${i ? 't' + (i - 1) : 'start'}</text>`;
+  [lo, hi].forEach(v => { sv += `<text x="${ml - 5}" y="${Y(v) + 3}" font-size="10" text-anchor="end" fill="${C.muted}">${v.toFixed(2)}</text>`; });
+  $('chart').setAttribute('viewBox', `0 0 ${W} ${H}`); $('chart').innerHTML = sv;
+}
+g.hook(p => {
+  hover = p; const md = model, vw = view(stepper.step), tk = vw.t >= 0 ? md.toks[vw.t] : null, pp = vw.t >= 0 ? md.per[vw.t] : null;
+  let s = '';
+  if (p.r >= R0 && p.c < D) { const j = p.r - R0; s = `S[i = ${p.c}][j = ${S.cg * 32 + j}] = ${md.states[vw.si][p.c * 32 + j].toFixed(5)} · lane ${j} · shared byte ${128 * p.c + 4 * j}, bank ${j}`; }
+  else if (p.r < 4 && p.c < D) { const n = p.r < 2 ? 'k' : 'q'; s = tk ? `${n}[${p.c}] = ${tk[n][p.c].toFixed(5)} · stored by lane ${p.c >> 2}, read by all 32 (broadcast)` : 'k and q of the current token'; }
+  else if (p.r >= R0 && p.c >= VC) {
+    const j = p.r - R0, x = Math.floor((p.c - VC) / VW), names = ['v', 'kv', 'δ', 'o / √128'], arr = [tk && tk.v, pp && pp.kv, pp && pp.del, pp && pp.out][x];
+    s = `lane ${j}: ${names[x]}${arr ? ' = ' + arr[j].toFixed(5) : ''}`;
+  } else s = '';
+  $('status').textContent = s || 'Hover over a cell to see what it is and where it lives.';
+  draw();
+}, p => { if (p.r >= R0) { S.lane = p.r - R0; stepper.refresh(); } }, () => { hover = null; draw(); });
+$('hd').value = S.h;
+$('hd').addEventListener('change', () => { S.h = +$('hd').value; rebuild(true); });
+$('cg').addEventListener('change', () => { S.cg = +$('cg').value; rebuild(true); });
+$('nt').addEventListener('input', () => { S.T = +$('nt').value; $('ntv').textContent = S.T; rebuild(false); });
+$('df').addEventListener('change', () => { S.diff = $('df').checked; draw(); });
+$('ntv').textContent = S.T;
+rebuild(false);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>
