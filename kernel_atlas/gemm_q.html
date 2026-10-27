@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>gemm_q Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.overview { overflow-x: auto; }
+.overview svg { display: block; min-width: 560px; width: 100%; height: auto; }
+.triad { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px 12px; }
+.triad .cv { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.bits { display: grid; grid-template-columns: 8.5em repeat(8, minmax(0, 1fr)); gap: 3px; font-family: var(--font-mono); font-size: 12px; align-items: center; margin: 8px 0; }
+.bits .b { text-align: center; padding: 3px 0; border-radius: 3px; background: var(--bg); }
+.bits .hd { text-align: center; color: var(--muted); font-size: 11px; }
+.bits .role { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bits .sg { text-align: center; border-radius: 3px; padding: 3px 0; font-size: 11.5px; color: var(--panel); }
+#th { max-width: 340px; }
+@media (max-width: 760px) { .triad { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Llama 3.1 · llama31.ptx (an older version in qwen35.ptx) · prefill: int8 tensor cores, 64 rows × 64 tokens per block</div>
+    <h1>Inside <code>gemm_q</code></h1>
+    <p>When a prompt is processed, up to 512 tokens go through each matrix at once, and this kernel does the product. Each block computes a 64-row × 64-token tile of the output. It walks the inner dimension 64 values at a time: the 256 threads decode the weight slice with <code>unpack16</code> (any of the 9 formats of <a href="mv_q.html">mv_q</a>) into int8 in shared memory, copy the int8 activations next to it, and then every warp runs <code>mma.sync.m16n8k16</code> on the tensor cores: exact int32 dot products of 16 values, which the kernel scales into float sums. Every token's result is computed in the same order whatever its neighbours, so splitting a prompt into different chunks gives bit-identical logits.</p>
+    <div class="formula"><span class="y">Y</span>[t][r] = Σ<sub>b</sub> dₓ[t][b] · (<span class="w">s₀</span>[r][b] · dot₀ + <span class="w">s₁</span>[r][b] · dot₁) + <span class="w">m</span>[r][b] · dₓΣx[t][b] + resid[t][r] &nbsp;&nbsp;<span class="muted">// dot_h = Σ over 16 values of q·x, int32 from one mma</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-grid">
+    <div class="sechead">
+      <h2 id="s-grid">The grid: one block per 64 × 64 tile</h2>
+      <p>Columns of tiles are 64 tokens, rows 64 weight rows. blockIdx.x runs over the token tiles, so the blocks launched back to back share one weight tile and its bytes come from L2 after the first: each weight is read from memory about once per launch, and decoded once per token tile. Choose a matrix of Llama 3.1 and a chunk length; click a tile.</p>
+    </div>
+    <div class="controls">
+      <label>matrix <select id="mat"></select></label>
+      <label>tokens T <input id="T" type="range" min="1" max="512" value="200"> <span id="Tv" class="mono"></span></label>
+    </div>
+    <div class="panel overview"><svg id="overview" role="img" aria-label="Output tiles of the launch"></svg></div>
+  </section>
+
+  <section aria-labelledby="s-block">
+    <div class="sechead">
+      <h2 id="s-block">Inside one block</h2>
+      <p>The demo uses 256 columns, 4 k-steps of 64 (a real launch has 64 or 224). Weights are shown as <code>unpack16</code> returns them: int8 q, a scale per 16 values and an offset per 32; pick which of those vary. In every k-step the block loads, synchronizes, runs two 32-value blocks of mma and scaling, and synchronizes again. Click a thread (or a cell of any panel) to follow it.</p>
+    </div>
+    <div class="controls">
+      <label>weights like <select id="wfmt"><option value="Q8_0">Q8_0 (s₀ = s₁, m = 0)</option><option value="Q4_K">Q4_K (s₀ = s₁, m ≠ 0)</option><option value="Q6_K">Q6_K (s₀ ≠ s₁, m = 0)</option></select></label>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="triad">
+          <div class="cv"><div class="cvlabel"><b class="w">Ws [64 rows][64 k]</b><span>int8, rows padded to 80 B</span></div><canvas id="ws"></canvas></div>
+          <div class="cv"><div class="cvlabel"><b class="x">Xs [64 tokens][64 k]</b><span>int8, padded to 80 B</span></div><canvas id="xs"></canvas></div>
+          <div class="cv"><div class="cvlabel"><b class="y">Y tile [64 rows][64 tokens]</b><span>registers → global</span></div><canvas id="yt"></canvas></div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over a cell to see which thread loads or accumulates it.</div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b>256 threads = 8 warps</b><span id="thlabel"></span></div>
+        <canvas id="th"></canvas>
+        <div class="bits" id="bits"></div>
+        <div class="tablewrap"><table class="nums" id="acc"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-mma">
+    <div class="sechead"><h2 id="s-mma">Two mma per 32-value block</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Why not one m16n8k32</h3>
+        <p>The int8 tensor-core instruction also exists as m16n8k32, which takes a whole 32-value block in one go, and Qwen 3.5's version of this kernel uses it. But Q3_K and Q6_K have a different scale for each 16 values, and a scale can only be applied after the integer sum. So the kernel issues two m16n8k16, one per half, with A fragments {a0, a1} (values 0–15 of rows g and g + 8) and {a2, a3} (values 16–31), and B fragments b0 and b1. The two int32 results c and e get their own scales: acc += c·(s₀dₓ) + e·(s₁dₓ) + m·(dₓΣx).</p>
+        <p>A warp owns 16 rows × 32 tokens: one A fragment pair per block, four n-tiles of 8 tokens, so 8 mma and 48 FMAs per 32 values, and 16 float accumulators per lane (c0–c3 of 4 n-tiles).</p>
+      </div>
+      <div class="panel">
+        <h3>Bank-conflict padding</h3>
+        <p>A fragment load reads 4 bytes at row g (0–7) and column 4·t4 (t4 = 0–3) of the tile, for the 32 lanes at once. With 64-byte rows, rows g and g + 2 would start in the same bank. With 80-byte rows (20 words), the 32 lanes hit banks (20g + t4) mod 32: 0–3, 20–23, 8–11, 28–31, 16–19, 4–7, 24–27, 12–15, all different. The 16 padding bytes per row cost 2 KB of the block's 12.5 KB of shared memory.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-qwen">
+    <div class="sechead">
+      <h2 id="s-qwen">The Qwen 3.5 version</h2>
+      <p>qwen35.ptx has the first version of this kernel, with the same tiles, loader roles and padding; the Qwen 3.8 engine (and llama31.ptx after it) generalized the weight side.</p>
+    </div>
+    <div class="two">
+      <div class="panel"><div class="tablewrap"><table class="list" id="qdiff"></table></div></div>
+      <div class="panel">
+        <h3>Where the time goes</h3>
+        <p>Llama 3.1's prompt runs at 2,260–2,490 tokens/s against llama.cpp's 5,300–5,500 on the same file. The kernel loads a k-step, waits, computes, waits: nothing overlaps the global loads with the mma (no double buffering, no <code>cp.async</code>). The 64 × 64 tile is small for a 28,672-row matrix, and the weights are decoded again for every token tile. The scaling (7 float instructions per accumulator per 32 values) also competes with the tensor cores for issue slots. These are the obvious next steps; the kernel's job here is to be exact and format-agnostic.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <code>llama31/llama31.ptx</code>, kernel <code>gemm_q</code> and <code>.func gm_out</code> (identical in <code>qwen38/qwen38.ptx</code>); launched by <code>gemm()</code> in <code>llama31.c</code> with grid (⌈T / 64⌉, ⌈rows / 64⌉) and 256 threads, once per part of a stacked product. qwen35.ptx's version is described in its own section. Data here is generated; every accumulator is computed with the kernel's operation order in float32 and compared with float64.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('gemm_q');
+const MATS = {
+  qkv: { label: 'q ‖ k ‖ v (6144 × 4096)', rows: 6144, cols: 4096 },
+  wo: { label: 'attn_output (4096 × 4096)', rows: 4096, cols: 4096 },
+  gu: { label: 'gate ‖ up (28672 × 4096)', rows: 28672, cols: 4096 },
+  dn: { label: 'ffn_down (4096 × 14336)', rows: 4096, cols: 14336 },
+};
+$('mat').innerHTML = Object.entries(MATS).map(([k, m]) => `<option value="${k}">${m.label}</option>`).join('');
+const K = 256, KS = K / 64, NB = K / 32;
+const S = { mat: 'qkv', T: 200, rt: 3, tt: 1, wfmt: 'Q8_0', tid: 37 };
+
+// ---------- data and the kernel's arithmetic ----------
+let D;
+function build() {
+  const r = Atlas.rng(Atlas.h32(S.rt * 131 + S.tt * 7 + S.wfmt.length * 17)), nt = Math.min(64, S.T - 64 * S.tt);
+  const q = new Int8Array(64 * K), x = new Int8Array(64 * K), s0 = new Float32Array(64 * NB), s1 = new Float32Array(64 * NB), m = new Float32Array(64 * NB);
+  const dx = new Float32Array(64 * NB), dxs = new Float32Array(64 * NB);
+  for (let i = 0; i < 64 * K; i++) { q[i] = Math.max(-127, Math.min(127, Math.round(38 * Atlas.gauss(r)))); x[i] = Math.max(-127, Math.min(127, Math.round(45 * Atlas.gauss(r)))); }
+  for (let i = 0; i < 64 * NB; i++) {
+    s0[i] = fr(0.0008 + 0.0008 * r()); s1[i] = S.wfmt === 'Q6_K' ? fr(0.0008 + 0.0008 * r()) : s0[i]; m[i] = S.wfmt === 'Q4_K' ? fr(-0.02 - 0.03 * r()) : 0;
+  }
+  for (let t = 0; t < 64; t++) for (let b = 0; b < NB; b++) {
+    const d = t < nt ? fr(0.01 + 0.02 * r()) : 0; let sum = 0;
+    for (let j = 0; j < 32; j++) { if (t >= nt) x[t * K + 32 * b + j] = 0; sum += x[t * K + 32 * b + j]; }
+    dx[t * NB + b] = d; dxs[t * NB + b] = fr(d * sum);
+  }
+  // acc[ks][row][tok] after k-step ks, in the PTX's order; float64 reference
+  const acc = Array.from({ length: KS }, () => new Float32Array(64 * 64)), ref = new Float64Array(64 * 64), cur = new Float32Array(64 * 64);
+  for (let b = 0; b < NB; b++) {
+    for (let row = 0; row < 64; row++) for (let t = 0; t < 64; t++) {
+      let c = 0, e = 0; const qo = row * K + 32 * b, xo = t * K + 32 * b;
+      for (let j = 0; j < 16; j++) { c += q[qo + j] * x[xo + j]; e += q[qo + 16 + j] * x[xo + 16 + j]; }
+      const ri = row * NB + b, ti = t * NB + b, i = row * 64 + t;
+      let a = cur[i];
+      a = fr(c * fr(s0[ri] * dx[ti]) + a); a = fr(e * fr(s1[ri] * dx[ti]) + a); a = fr(m[ri] * dxs[ti] + a);
+      cur[i] = a;
+      for (let j = 0; j < 32; j++) ref[i] += ((j < 16 ? s0[ri] : s1[ri]) * q[qo + j] + m[ri]) * (dx[ti] * x[xo + j]);
+    }
+    if (b % 2 === 1) acc[b >> 1].set(cur);
+  }
+  D = { q, x, s0, s1, m, dx, dxs, acc, ref, nt };
+}
+
+// ---------- thread roles ----------
+const roles = tid => {
+  const warp = tid >> 5, lane = tid & 31;
+  return { lr: tid >> 2, lb: (tid >> 1) & 1, lh: tid & 1, lt: tid >> 2, lq: tid & 3, warp, lane, mt: warp & 3, nh: warp >> 2, g: lane >> 2, t4: lane & 3 };
+};
+// the 16 accumulators of a lane: n-tile n, register c (0..3) -> row, token
+const accCells = R => { const out = []; for (let n = 0; n < 4; n++) for (let c = 0; c < 4; c++) out.push({ n, c, row: 16 * R.mt + R.g + (c >> 1) * 8, tok: 32 * R.nh + 8 * n + 2 * R.t4 + (c & 1) }); return out; };
+
+const steps = [];
+for (let ks = 0; ks < KS; ks++) {
+  steps.push({ tag: 'L', ks, short: `k${ks}: load`, title: `k-step ${ks}: every thread decodes 16 weights and copies 16 activations`, delay: 1400,
+    text: `Thread i takes weight row i / 4, block (i / 2) & 1, half i & 1 of k-step ${ks} and calls unpack16 for it: 16 int8 into Ws, the half's scale into ws[block][half][row], and (half 0 only) the block offset into wm. It also copies token i / 4's int8 activations ${64 * ks + 16 * 0}+16·(i & 3)…+15 into Xs; threads with i & 3 even store dₓ and dₓΣx of block (i & 3) / 2. Then bar.sync.` });
+  for (let blk = 0; blk < 2; blk++) steps.push({ tag: 'M', ks, blk, short: `k${ks}: mma b${blk}`, title: `k-step ${ks}, block ${blk}: 8 mma.m16n8k16 per warp, then the scales`, delay: 1400,
+    text: `Each lane loads its A fragment from Ws (rows g and g + 8 of its warp's 16, bytes ${32 * blk}+4·t4 and +16) and, per n-tile of 8 tokens, a B fragment from Xs. Two mma per n-tile give the int32 sums of values 0–15 and 16–31; three FMAs fold them into the accumulators with s₀·dₓ, s₁·dₓ and m·dₓΣx.${blk ? ' Then bar.sync, so the next k-step may overwrite the tiles.' : ''}` });
+}
+steps.push({ tag: 'E', short: 'epilogue', title: 'gm_out: 16 stores per lane, with bounds and the residual', text: 'Each accumulator c0–c3 of n-tile n is row 16·mt + g (+8 for c2, c3), token 32·nh + 8n + 2·t4 (+1). gm_out skips tokens ≥ T and rows ≥ rows (partial tiles), adds resid[t][row] when the call has one (the in-place residual of the output and down projections) and stores Y[t][row] with row stride ldy.' });
+
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (condensed)', lang: 'cpp', src: `L|// grid (ceil(T/64), ceil(rows/64)), 256 threads; tile rows r0.., tokens t0..
+L|__shared__ int8_t Ws[64][80], Xs[64][80];        // 64 k-values + 16 B padding per row
+L|__shared__ float ws[2][2][64], wm[2][64], xd[2][64], xs[2][64];
+L|unsigned i = threadIdx.x, lr = i >> 2, lb = (i >> 1) & 1, lh = i & 1, lq = i & 3;
+M|unsigned warp = i >> 5, mt = warp & 3, nh = warp >> 2, g = (i & 31) >> 2, t4 = i & 3;
+M|float acc[4][4] = {};                            // 4 n-tiles x {c0, c1, c2, c3}
+L|for (unsigned k0 = 0; k0 < cols; k0 += 64) {
+L|    int4 w = {}; float s = 0, m = 0;
+L|    if (r0 + lr < rows) unpack16(type, Wrow(r0 + lr), Srow(r0 + lr), k0 / 32 + lb, lh, &w, &s, &m);
+L|    *(int4 *)&Ws[lr][32 * lb + 16 * lh] = w;  ws[lb][lh][lr] = s;  if (!lh) wm[lb][lr] = m;
+L|    *(int4 *)&Xs[lr][16 * lq] = t0 + lr < T ? load16(X, t0 + lr, k0 + 16 * lq) : int4{};
+L|    if (!(lq & 1)) { float2 d = Xds[t0 + lr][k0 / 32 + lq / 2]; xd[lq / 2][lr] = d.x; xs[lq / 2][lr] = d.y; }
+L|    __syncthreads();
+M|    for (int blk = 0; blk < 2; blk++) {
+M|        uint32_t a0 = Ws[16*mt+g][32*blk+4*t4], a1 = Ws[16*mt+g+8][...], a2 = (+16 B), a3 = (+16 B);
+M|        for (int n = 0; n < 4; n++) {                // 8 tokens per n-tile
+M|            uint32_t b0 = Xs[32*nh+8*n+g][32*blk+4*t4], b1 = (+16 B);
+M|            int c[4] = mma_m16n8k16_s8({a0, a1}, b0);   // values 0..15 of the block
+M|            int e[4] = mma_m16n8k16_s8({a2, a3}, b1);   // values 16..31
+M|            for (int r = 0; r < 4; r++) {             // row g + 8(r/2), token 2 t4 + r%2
+M|                float s0 = ws[blk][0][row(r)], s1 = ws[blk][1][row(r)], d = xd[blk][tok(r)];
+M|                acc[n][r] = fmaf(c[r], s0 * d, acc[n][r]);
+M|                acc[n][r] = fmaf(e[r], s1 * d, acc[n][r]);
+M|                acc[n][r] = fmaf(wm[blk][row(r)], xs[blk][tok(r)], acc[n][r]);
+M|            }
+M|        }
+M|    }
+M|    __syncthreads();
+L|}
+E|for (int n = 0; n < 4; n++) for (int r = 0; r < 4; r++)
+E|    gm_out(Y, resid, acc[n][r], t0 + 32*nh + 8*n + 2*t4 + r%2, r0 + 16*mt + g + 8*(r/2), T, ldy, rows);` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `L|    shr.u32             %r11, %r6, 2;           // lr = lt
+L|    shr.u32             %r12, %r6, 1;
+L|    and.b32             %r12, %r12, 1;          // lb
+L|    and.b32             %r13, %r6, 1;           // lh
+L|    setp.lt.u32         %p10, %r14, %r1;        // valid row
+L|KSTEP:
+L|    @!%p10 bra          STORE_W;
+L|    call                (%r53, %r54, %r55, %r56, %f1, %f2), unpack16, (%r5, %rd7, %rd8, %r50, %r13);
+L|STORE_W:
+L|    st.shared.v4.u32    [%r22], {%r53, %r54, %r55, %r56};   // Ws[lr][32 lb + 16 lh]
+L|    st.shared.f32       [%r25], %f1;            // ws[lb][lh][lr]
+L|    @%p2 st.shared.f32  [%r26], %f2;            // wm[lb][lr] (lh == 0)
+L|    @%p1 ld.global.nc.v4.u32 {%r53, %r54, %r55, %r56}, [%rd15];
+L|    st.shared.v4.u32    [%r28], {%r53, %r54, %r55, %r56};   // Xs[lt][16 lq]
+L|    @%p1 ld.global.nc.v2.f32 {%f5, %f6}, [%rd16];
+L|    bar.sync            0;
+M|BLK:
+M|    ld.shared.u32       %a0, [%r52];            // Ws[16 mt + g][32 blk + 4 t4]
+M|    ld.shared.u32       %a1, [%r52+640];        // row + 8 (8 x 80 bytes)
+M|    ld.shared.u32       %a2, [%r52+16];         // values 16..31
+M|    ld.shared.u32       %a3, [%r52+656];
+M|    ld.shared.f32       %f10, [%r58];           // s_0 row g
+M|    ld.shared.f32       %f18, [%r58+256];       // s_1 row g
+M|    ld.shared.u32       %b0, [%r59+0];          // Xs[32 nh + g][32 blk + 4 t4]
+M|    ld.shared.u32       %b1, [%r59+16];
+M|    mma.sync.aligned.m16n8k16.row.col.s32.s8.s8.s32 {%c0, %c1, %c2, %c3}, {%a0, %a1}, {%b0}, {%z, %z, %z, %z};
+M|    mma.sync.aligned.m16n8k16.row.col.s32.s8.s8.s32 {%e0, %e1, %e2, %e3}, {%a2, %a3}, {%b1}, {%z, %z, %z, %z};
+M|    cvt.rn.f32.s32      %f20, %c0;
+M|    mul.f32             %f24, %f10, %f14;       // s_0 * d_x
+M|    fma.rn.f32          %acc0, %f20, %f24, %acc0;
+M|    fma.rn.f32          %acc0, %f28, %f32, %acc0;   // + e0 * s_1 d_x
+M|    fma.rn.f32          %acc0, %f12, %f16, %acc0;   // + m * d_x sum
+M|    ...                                         // n-tiles 1..3: Xs rows + 8, 16, 24
+M|    @%p7 bra            BLK;
+M|    bar.sync            0;
+E|EPILOGUE:
+E|    call.uni            gm_out, (%rd6, %rd5, %hasr, %acc0, %r66, %r62, %r3, %r4, %r1);
+E|    ...                                         // 16 calls per lane
+E|// gm_out: if (tok < T && row < rows) Y[tok * ldy + row] = v (+ resid)` },
+});
+
+// ---------- overview ----------
+function overview() {
+  const M = MATS[S.mat], nr = Math.ceil(M.rows / 64), nc = Math.ceil(S.T / 64);
+  if (S.rt >= nr) S.rt = Math.min(3, nr - 1);
+  if (S.tt >= nc) S.tt = nc - 1;
+  $('Tv').textContent = S.T;
+  const W = 760, H = 230, ox = 70, oy = 26, gw = W - ox - 10, gh = H - oy - 30;
+  const show = Math.min(nr, 64), rh = gh / show, cw = Math.min(60, gw / nc);
+  let s = `<text x="${ox}" y="14" font-size="11" fill="${C.muted}">${nc} token tile${nc > 1 ? 's' : ''} × ${nr} row tiles = ${Atlas.int(nc * nr)} blocks${nr > show ? ` (first ${show} row tiles drawn)` : ''}</text>`;
+  for (let c = 0; c < nc; c++) {
+    const full = Math.min(64, S.T - 64 * c) / 64;
+    s += `<text x="${ox + c * cw + cw / 2}" y="${H - 14}" font-size="10" text-anchor="middle" fill="${C.muted}">t ${64 * c}</text>`;
+    for (let r = 0; r < show; r++) {
+      const sel = r === S.rt && c === S.tt;
+      s += `<g class="tile" data-r="${r}" data-c="${c}" style="cursor:pointer"><rect x="${ox + c * cw + 1}" y="${oy + r * rh + 0.5}" width="${(cw - 2) * full}" height="${Math.max(rh - 1, 0.8)}" fill="${sel ? C.y : C.w}" opacity="${sel ? 0.95 : 0.35 + 0.25 * ((r + c) % 2)}"/>${full < 1 ? `<rect x="${ox + c * cw + 1 + (cw - 2) * full}" y="${oy + r * rh + 0.5}" width="${(cw - 2) * (1 - full)}" height="${Math.max(rh - 1, 0.8)}" fill="${C.zero}" opacity="0.25"/>` : ''}</g>`;
+    }
+  }
+  s += `<text x="${ox - 6}" y="${oy + 10}" font-size="10" text-anchor="end" fill="${C.muted}">row 0</text><text x="${ox - 6}" y="${oy + gh}" font-size="10" text-anchor="end" fill="${C.muted}">${Atlas.int(64 * show)}</text>`;
+  $('overview').setAttribute('viewBox', `0 0 ${W} ${H}`); $('overview').innerHTML = s;
+  $('overview').querySelectorAll('.tile').forEach(g => g.addEventListener('click', () => { S.rt = +g.dataset.r; S.tt = +g.dataset.c; build(); overview(); draw(); }));
+  Atlas.facts($('facts'), [[`(${nc}, ${nr})`, 'grid for this matrix and T'], ['256', 'threads = 8 warps'], ['12.5 KB', 'shared memory'], ['8 mma', 'per warp per 32 values'], ['16', 'f32 accumulators per lane'], ['2,260–2,490', 'tokens/s, Llama 3.1 prompt']]);
+}
+
+// ---------- block view ----------
+const wsG = Atlas.grid($('ws'), 64, 64), xsG = Atlas.grid($('xs'), 64, 64), yG = Atlas.grid($('yt'), 64, 64), thG = Atlas.grid($('th'), 16, 16);
+let hover = null;
+function draw() {
+  const st = stepper.step, R = roles(S.tid), ks = st.tag === 'E' ? KS - 1 : st.ks, blk = st.blk;
+  const rows0 = 64 * S.rt, tok0 = 64 * S.tt;
+  // Ws
+  let g = wsG.prep();
+  for (let r = 0; r < 64; r++) for (let k = 0; k < 64; k++) { const v = D.q[r * K + 64 * ks + k]; g.cell(r, k, v >= 0 ? C.w : C.x, 0.12 + 0.5 * Math.abs(v) / 127, 0); }
+  g.vline(32, C.line, 1); g.vline(16, C.line, 0.5); g.vline(48, C.line, 0.5);
+  if (st.tag === 'L') g.box(R.lr, 32 * R.lb + 16 * R.lh, 1, 16, C.fg, 2);
+  if (st.tag === 'M') for (const dr of [0, 8]) for (const dk of [0, 16]) g.box(16 * R.mt + R.g + dr, 32 * blk + dk + 4 * R.t4, 1, 4, C.fg, 2);
+  if (st.tag === 'M') g.box(16 * R.mt, 32 * blk, 16, 32, C.sync, 1.5);
+  // Xs
+  g = xsG.prep();
+  for (let t = 0; t < 64; t++) for (let k = 0; k < 64; k++) { if (t >= D.nt) { g.hatch(t, k); continue; } const v = D.x[t * K + 64 * ks + k]; g.cell(t, k, v >= 0 ? C.x : C.w, 0.12 + 0.5 * Math.abs(v) / 127, 0); }
+  g.vline(32, C.line, 1);
+  if (st.tag === 'L') g.box(R.lt, 16 * R.lq, 1, 16, C.fg, 2);
+  if (st.tag === 'M') { g.box(32 * R.nh, 32 * blk, 32, 32, C.sync, 1.5); for (let n = 0; n < 4; n++) for (const dk of [0, 16]) g.box(32 * R.nh + 8 * n + R.g, 32 * blk + dk + 4 * R.t4, 1, 4, C.fg, 2); }
+  // Y tile (rows down, tokens across)
+  g = yG.prep();
+  const shown = st.tag === 'L' ? ks - 1 : ks, A = shown >= 0 ? D.acc[shown] : null;
+  let amax = 1e-9; if (A) for (const v of D.acc[KS - 1]) amax = Math.max(amax, Math.abs(v));
+  for (let r = 0; r < 64; r++) for (let t = 0; t < 64; t++) {
+    if (t >= D.nt) { g.hatch(r, t); continue; }
+    const w = (r >> 4) + 4 * (t >> 5), v = A ? A[r * 64 + t] : 0;
+    g.cell(r, t, A ? (v >= 0 ? C.y : C.x) : C.zero, A ? 0.1 + 0.75 * Math.min(1, Math.abs(v) / amax) : 0.12 + 0.06 * (w % 2), 0);
+  }
+  for (let k = 1; k < 4; k++) g.hline(16 * k, C.line, 1); g.vline(32, C.line, 1);
+  g.box(16 * R.mt, 32 * R.nh, 16, 32, C.sync, 1.5);
+  accCells(R).forEach(a => g.box(a.row, a.tok, 1, 1, C.fg, 1.5));
+  // threads
+  g = thG.prep();
+  for (let i = 0; i < 256; i++) g.cell(i >> 4, i & 15, (i >> 5) % 2 ? C.sync : C.x, i === S.tid ? 1 : 0.3, 0.12);
+  g.box(S.tid >> 4, S.tid & 15, 1, 1, C.fg, 2);
+  $('thlabel').textContent = `thread ${S.tid}: warp ${R.warp}, lane ${R.lane}`;
+  // index bits
+  const bit = n => (S.tid >> n) & 1, seg = (txt, span, col) => `<div class="sg" style="grid-column: span ${span}; background: var(${col})">${txt}</div>`;
+  $('bits').innerHTML = `<div class="role">bit</div>${[7, 6, 5, 4, 3, 2, 1, 0].map(n => `<div class="hd">${n}</div>`).join('')}` +
+    `<div class="role">thread ${S.tid}</div>${[7, 6, 5, 4, 3, 2, 1, 0].map(n => `<div class="b">${bit(n)}</div>`).join('')}` +
+    `<div class="role">weight loader</div>${seg(`row lr = ${R.lr}`, 6, '--w')}${seg(`b ${R.lb}`, 1, '--w')}${seg(`h ${R.lh}`, 1, '--w')}` +
+    `<div class="role">act loader</div>${seg(`token lt = ${R.lt}`, 6, '--x')}${seg(`quarter ${R.lq}`, 2, '--x')}` +
+    `<div class="role">mma</div>${seg(`nh ${R.nh}`, 1, '--sync')}${seg(`mt ${R.mt}`, 2, '--sync')}${seg(`g ${R.g}`, 3, '--y')}${seg(`t4 ${R.t4}`, 2, '--y')}`;
+  // accumulators
+  const cells = accCells(R);
+  let h = `<caption>lane's 16 accumulators ${A ? `after k-step ${shown}` : '(zero)'}${st.tag === 'E' ? ' · final vs float64' : ''}</caption><tr><th>n</th><th>reg</th><th>row</th><th>token</th><th>acc</th>${st.tag === 'E' ? '<th>float64</th>' : ''}</tr>`;
+  cells.forEach(a => {
+    const live = a.tok < D.nt, v = A && live ? A[a.row * 64 + a.tok] : null;
+    h += `<tr><td>${a.n}</td><td>c${a.c}</td><td>${rows0 + a.row}</td><td>${tok0 + a.tok}${live ? '' : ' (≥ T)'}</td><td>${v === null ? (live ? '0' : '–') : v.toFixed(5)}</td>${st.tag === 'E' ? `<td>${live ? D.ref[a.row * 64 + a.tok].toFixed(5) : 'skipped'}</td>` : ''}</tr>`;
+  });
+  $('acc').innerHTML = h;
+  Atlas.legend($('legend'), [['--w', 'weights (int8)'], ['--x', 'activations / negative'], ['--y', 'output'], ['--sync', "the selected thread's warp tile"], ['--zero', 'hatched: tokens past T']]);
+  if (st.tag === 'E') {
+    let err = 0, mx = 0; for (let r = 0; r < 64; r++) for (let t = 0; t < D.nt; t++) { err = Math.max(err, Math.abs(D.acc[KS - 1][r * 64 + t] - D.ref[r * 64 + t])); mx = Math.max(mx, Math.abs(D.ref[r * 64 + t])); }
+    $('status').textContent = `whole tile: max |float32 − float64| = ${err.toExponential(2)} (${(err / mx).toExponential(2)} of the largest output); ${64 - D.nt} token columns skipped by gm_out`;
+  }
+}
+function pick(tid) { S.tid = tid; draw(); }
+thG.hook(p => { const i = p.r * 16 + p.c, R = roles(i); $('status').textContent = `thread ${i}: loads row ${R.lr} (block ${R.lb}, half ${R.lh}) and token ${R.lt} (quarter ${R.lq}); mma warp ${R.warp}: rows ${16 * R.mt}…, tokens ${32 * R.nh}…`; }, p => pick(p.r * 16 + p.c), () => {});
+wsG.hook(p => { const t = 4 * p.r + 2 * (p.c >> 5) + ((p.c >> 4) & 1); $('status').textContent = `Ws[${p.r}][${p.c}]: loaded by thread ${t} (unpack16 of row ${64 * S.rt + p.r}, block ${p.c >> 5}, half ${(p.c >> 4) & 1})`; }, p => pick(4 * p.r + 2 * (p.c >> 5) + ((p.c >> 4) & 1)), () => {});
+xsG.hook(p => { $('status').textContent = `Xs[${p.r}][${p.c}]: token ${64 * S.tt + p.r}, copied by thread ${4 * p.r + (p.c >> 4)}`; }, p => pick(4 * p.r + (p.c >> 4)), () => {});
+yG.hook(p => { const mt = p.r >> 4, nh = p.c >> 5, g = p.r & 7, t4 = (p.c & 7) >> 1, tid = 32 * (mt + 4 * nh) + 4 * g + t4; $('status').textContent = `row ${64 * S.rt + p.r}, token ${64 * S.tt + p.c}: warp ${mt + 4 * nh}, lane ${4 * g + t4} (thread ${tid}), n-tile ${(p.c & 31) >> 3}, c${((p.r >> 3) & 1) * 2 + (p.c & 1)}`; },
+  p => { const mt = p.r >> 4, nh = p.c >> 5, g = p.r & 7, t4 = (p.c & 7) >> 1; pick(32 * (mt + 4 * nh) + 4 * g + t4); }, () => {});
+$('mat').addEventListener('change', () => { S.mat = $('mat').value; overview(); });
+$('T').addEventListener('input', () => { S.T = +$('T').value; overview(); build(); draw(); });
+$('wfmt').addEventListener('change', () => { S.wfmt = $('wfmt').value; build(); draw(); });
+
+$('qdiff').innerHTML = '<thead><tr><th></th><th>qwen35.ptx</th><th>llama31.ptx / qwen38.ptx</th></tr></thead><tbody>' + [
+  ['weight formats', 'Q8_0, Q4_1, Q5_K, decoded inline (p_type 0, 1, 2)', 'any of 9, through unpack16 (p_type = ggml number)'],
+  ['row strides', 'derived from the type and cols', 'p_qrow, p_srow parameters'],
+  ['weight scales', 'one per 32 values: gm_ws[2][64]', 'one per 16: gm_ws[2][2][64], s₀ and s₁ in the FMAs'],
+  ['mma per block and n-tile', 'one m16n8k32: A {a0 … a3}, B {b0, b1}', 'two m16n8k16, one per 16-value half'],
+  ['rows', 'a multiple of 64', 'any: a row-valid predicate in the loader, a rows bound in gm_out'],
+  ['everything else', 'tiles, loader roles, padding, warp tiles, fragment addresses, the epilogue', 'the same'],
+].map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') + '</tbody>';
+
+build(); overview();
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1400 });
+stepper.go(0);
+Atlas.onResize(() => { overview(); draw(); });
+})();
+</script>
+</body>
+</html>

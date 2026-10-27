@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Llama 3.1 8B Graph</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script src="atlas.js"></script>
+<script src="model.js"></script>
+
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Model graph · llama31/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf · engine llama31.ptx</div>
+    <h1>Llama 3.1 8B</h1>
+    <p>The plain pre-norm decoder that the other models in this atlas vary: 32 identical layers, each an RMSNorm, grouped-query attention with rotary position embedding, a residual add, an RMSNorm, a SwiGLU feed-forward and a residual add. No sliding windows, no sandwich norms, no head norms, no gates, no experts. This page draws the dataflow of the GGUF file with the kernel the engine launches at each step; weight shapes and types come from the file header. Click any box for details.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="h-fig">
+    <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017), Figures 1 and 2. Panels: (a) the whole model, (b) scaled dot-product attention, (c) grouped-query attention with RoPE on q and k, (d) the SwiGLU feed-forward. Boxes whose kernel has a page link to it: hover one to see the kernel, click to open it.</p></div>
+    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/llama31.svg" width="1370" height="872" style="aspect-ratio: 1370 / 872" aria-label="Llama 3.1 8B architecture: token embedding; 32 layers, each RMSNorm, grouped-query attention, residual add, RMSNorm, SwiGLU feed-forward, residual add; final RMSNorm, linear head and softmax."><img src="figures/llama31.svg" width="1370" height="872" alt="Llama 3.1 8B architecture."></object><figcaption class="muted"><a href="figures/llama31.svg">Open the figure full size</a></figcaption></figure>
+  </section>
+
+  <section aria-labelledby="h-ov">
+    <div class="sechead"><h2 id="h-ov">Whole model</h2><p class="muted">32 layers, all alike. Click the layer box to show it below. The residual adds are folded into the output and down projections, which add their result to x in place.</p></div>
+    <div class="mgrid">
+      <div class="panel graph" id="ovGraph" aria-label="Whole-model graph"></div>
+      <div class="panel side" aria-live="polite"><div id="detail"><h3>Details</h3><p class="muted">Click a box in either graph.</p></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-ly">
+    <div class="sechead"><h2 id="h-ly">One layer</h2><p class="muted" id="lyTitle"></p></div>
+    <div class="controls">
+      <span class="seg" id="passSeg" role="group" aria-label="Pass"></span>
+      <span class="seg" id="kindSeg" role="group" aria-label="Layer kind"></span>
+      <label>Highlight kernel <select id="hotSel"></select></label>
+    </div>
+    <div class="key">
+      <span><i style="border-color:var(--sync)"></i>kernel with a walkthrough</span>
+      <span><i style="border-color:var(--muted);border-style:dashed"></i>kernel, no page yet</span>
+      <span><i style="border-color:var(--w)"></i>GGUF tensor</span>
+      <span><i style="border-color:var(--x);border-radius:8px"></i>activations or cache</span>
+      <span><i style="border-color:var(--line)"></i>host (CPU) step</span>
+    </div>
+    <div class="panel graph" id="lyGraph" aria-label="Layer graph"></div>
+  </section>
+
+  <section aria-labelledby="h-ln">
+    <div class="sechead"><h2 id="h-ln">Launch order</h2><p class="muted" id="launchCount"></p></div>
+    <div class="panel tablewrap"><table class="list" id="launches"></table></div>
+  </section>
+
+  <section aria-labelledby="h-new">
+    <div class="sechead"><h2 id="h-new">What is new in llama31.ptx</h2><p class="muted">The engine started as a copy of the Qwen 3.8 engine (qwen35.ptx generalized to every weight format of a 27B Unsloth file) with the DeltaNet kernels removed. Of its 10 kernels, 6 are byte-identical to qwen35.ptx's (after stripping comments) and have their pages already; 4 are new to the atlas.</p></div>
+    <div class="two">
+      <div class="panel">
+        <h3>The kernels</h3>
+        <div class="tablewrap"><table class="list" id="newKernels"></table></div>
+      </div>
+      <div class="panel">
+        <h3>Llama 3's RoPE scaling</h3>
+        <p>Llama 3.1 was trained at 8,192 tokens and extended to 131,072 by slowing down only its slowest rotations. Each of the 64 rotary pairs has a fixed divisor, stored in the file as <code>rope_freqs.weight</code>: pairs 0–28 (wavelengths under 2,048 tokens) keep their frequency, pairs 35–63 (wavelengths over 8,192) turn 8 times slower, and pairs 29–34 blend the two. The host divides each angle by its factor while it builds the cos/sin table, so the kernel never sees the scaling; <a href="rope_kv_llama.html">rope_kv</a> plots the factors.</p>
+        <h3>One cache, reused</h3>
+        <p>Every layer keeps an f16 KV cache, 128 KiB per position over the 32 layers: 1 GiB at the default 8,192. With no recurrent state, any prefix the cache shares with a new prompt is still valid, so a chat turn only computes its new tokens (17 of 78 in a two-turn test) and editing earlier text recomputes from the first changed token. <code>llama31_demo cache-test</code> checks that extending, rewinding and single steps give bit-identical logits.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-t">
+    <div class="sechead"><h2 id="h-t">Tensors of one layer, plus the shared ones</h2><p class="muted">Shapes are rows × cols, that is output × input, the way the kernels index them (the GGUF header lists them the other way round). Everything is Q8_0, embeddings and head included; the engine splits each 34-byte block into a q array (32 int8) and a d array (one f16), and stacks matrices that read the same input into one product.</p></div>
+    <div class="panel tablewrap"><table class="list" id="tensors"></table></div>
+  </section>
+
+  <section aria-labelledby="h-m">
+    <div class="sechead"><h2 id="h-m">Measured</h2><p class="muted">RTX 4070 SUPER, both engines on the same Q8_0 file.</p></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Speed</h3>
+        <div class="tablewrap"><table class="list" id="perf"></table></div>
+        <p class="muted">Decode reads all 7.95 GB of weights per token: at 55 tokens/s that is 440 GB/s of the card's 504, the same as llama.cpp. Prompt processing is 2.2× slower than llama.cpp's: the same <a href="gemm_q.html">gemm_q</a> gap as in the Qwen engines (no double buffering, 64 × 64 tiles).</p>
+      </div>
+      <div class="panel">
+        <h3>Checked against llama.cpp</h3>
+        <div class="tablewrap"><table class="list" id="checks"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Sources: <code>forward()</code> in <code>llama31/llama31.c</code> (kernels, buffers, launch shapes) and <code>llama31/llama31.ptx</code>; tensor shapes and types from <code>Meta-Llama-3.1-8B-Instruct-Q8_0.gguf</code>; the layer semantics follow llama.cpp's <code>src/models/llama.cpp</code>. Every kernel of this engine has a page; sample_logits is shared with the other generators and has none yet. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.</footer>
+</div>
+
+<script>
+const GS = '≤ 448 blocks · 256 · grid-stride';
+const mm = rows => ({ decode: `${Atlas.int(rows / 8)} blocks · 256`, prefill: `grid (⌈T/64⌉, ${Atlas.int(Math.ceil(rows / 64))}) · 256` });
+const MVN = 'mv_q with type 8 (Q8_0): unpack16 loads 16 int8 and the f16 scale per half block; gemm_q in prefill.';
+const QUANT_NOTE = 'qwen35.ptx\'s quant_q8, copied unchanged: int8 blocks of 32 with {d, d · Σq}; the Q8_0 weights do not need the second number, other formats (Q4_1, Q4_K, …) do.';
+const M = {
+  id: 'llama31', engine: 'Llama 3.1', nLayers: 32,
+  kinds: [['layer', 'every layer']],
+  layersOf: () => 32,
+  facts: [['32', 'layers'], ['4096', 'n_embd'], ['32 / 8', 'q / kv heads × 128'], ['14336', 'n_ff (SwiGLU)'], ['128,256', 'vocabulary'], ['5·10⁵ · ÷1 … ÷8', 'RoPE base · Llama 3 factors'], ['1/√128', 'attention scale'], ['1e-5', 'RMSNorm ε'], ['7.95 GB', 'weights read per token']],
+  layerTitle: p => `All 32 layers: grouped-query attention over every earlier position, then SwiGLU; ${p === 'decode' ? 'decode, T = 1: mv_q, one warp per weight row' : 'prefill, a chunk of T ≤ 512 tokens: gemm_q on the int8 tensor cores'}.`,
+  overview() {
+    return {
+      nodes: [
+        { id: 'tok', kind: 'io', label: 'tokens', sub: '<|begin_of_text|> first' },
+        { id: 'emb', kind: 'w', label: 'token_embd.weight', sub: '128,256 × 4096 · Q8_0' },
+        { id: 'look', kind: 'op', label: 'embedding lookup', sub: 'CPU: row → f32 (no scale), copied to x', io: 'tokens → x' },
+        { id: 'b0', kind: 'blk', label: 'layer × 32', sub: 'attention + SwiGLU, KV cache', layerKind: 'layer' },
+        { id: 'onw', kind: 'w', label: 'output_norm.weight', sub: '4096 · F32' },
+        { id: 'on', kind: 'op', kernel: 'rmsnorm', sub: 'output_norm, last token only', launch: { any: '1 block · 1024' }, io: 'x → xn' },
+        { id: 'qo', kind: 'op', kernel: 'quant_q8', page: 'quant_q8_qwen', sub: 'xn → int8 + scale per 32', launch: { any: GS }, io: 'xn → xq, xds', note: QUANT_NOTE },
+        { id: 'ow', kind: 'w', label: 'output.weight', sub: 'untied head · 128,256 × 4096 · Q8_0' },
+        { id: 'head', kind: 'op', kernel: 'mv_q', sub: 'output head → 128,256 logits', launch: { any: '16,032 blocks · 256' }, io: 'xq, xds → logits', note: MVN.replace('; gemm_q in prefill', '; always one token') },
+        { id: 'am', kind: 'op', kernel: 'argmax', sub: 'best token (greedy result)', launch: { any: '1 block · 1024' }, io: 'logits → next' },
+        { id: 'sm', kind: 'op', kernel: 'sample_logits', sub: 'temperature sampling, min-p', launch: { any: '1 block · 1024' }, io: 'logits, next → draw' },
+        { id: 'cl', kind: 'op', kernel: 'compact_logits', sub: 'candidates near the max (top-p 0.9)', launch: { any: GS }, io: 'logits, next → cand' },
+        { id: 'hs', kind: 'op', label: 'host sampler', sub: 'sort, top-k / top-p, draw' },
+        { id: 'nt', kind: 'io', label: 'next token', sub: 'stops at <|eot_id|>' },
+      ],
+      edges: [['tok', 'look'], ['emb', 'look'], ['look', 'b0', 'x'],
+        ['b0', 'on', 'x'], ['onw', 'on'], ['on', 'qo', 'xn'], ['qo', 'head'], ['ow', 'head'],
+        ['head', 'am', 'logits'], ['am', 'nt', 'temperature 0'], ['am', 'sm'], ['sm', 'nt', 'no top-k / top-p'], ['sm', 'cl', 'top-k / top-p'], ['cl', 'hs'], ['hs', 'nt']],
+    };
+  },
+  layer(pass) {
+    const qn = (id, what) => ({ id, kind: 'op', kernel: 'quant_q8', page: 'quant_q8_qwen', sub: `${what} → int8 + scale per 32`, launch: { any: GS }, io: `${what} → xq, xds`, note: QUANT_NOTE });
+    const mv = (id, sub, rows, io) => ({ id, kind: 'op', kernel: pass === 'decode' ? 'mv_q' : 'gemm_q', sub, launch: mm(rows), io, note: MVN });
+    const nodes = [
+      { id: 'x', kind: 'io', label: 'x', sub: 'residual stream' },
+      { id: 'anw', kind: 'w', label: 'attn_norm.weight', sub: '4096 · F32' },
+      { id: 'n1', kind: 'op', kernel: 'rmsnorm', sub: 'xn = attn_norm(x)', launch: { decode: '1 block · 1024', prefill: 'T blocks · 1024' }, io: 'x → xn' },
+      qn('q1', 'xn'),
+      { id: 'wqkv', kind: 'w', label: 'attn_q ‖ attn_k ‖ attn_v', t: 'attn_q.weight', sub: 'stacked: 6144 × 4096 · Q8_0' },
+      mv('pqkv', '[q | k | v] = W·xn<br/>32 × 128, 8 × 128, 8 × 128', 6144, 'xq → big'),
+      { id: 'rf', kind: 'w', label: 'rope_freqs.weight', sub: '64 · F32, folded into the cos/sin table' },
+      { id: 'rope', kind: 'op', kernel: 'rope_kv', page: 'rope_kv_llama', sub: 'RoPE on pairs (2i, 2i+1), base 5·10⁵<br/>q in place · k, v → f16 cache', launch: { any: 'grid (48 heads, T) · 32' }, io: 'big, cs → big, kc, vc', note: 'llama31.ptx\'s own rope_kv (gpt-oss has a different one): a warp per head, lane l rotates dims 4l … 4l+3, i.e. pairs 2l and 2l+1, with no shuffles; v heads are only converted to f16.' },
+      { id: 'kv', kind: 'io', label: 'KV cache', sub: 'f16 [ctx][8][128] each, slot = position' },
+      { id: 'att', kind: 'op', kernel: 'attention', page: 'attention_llama', sub: 'softmax(q·kᵀ / √128)·v<br/>32 q / 8 kv heads<br/>all earlier positions', launch: { any: 'grid (32, T) · 256' }, io: 'big, kc, vc → ro', note: 'Gemma 3\'s attention cut to 128-dim heads: lane l owns dims 4l … 4l+3, 8 warps × 2 keys per step, online softmax, threads 0 … 127 write the output.' },
+      qn('q2', 'ro'),
+      { id: 'wo', kind: 'w', label: 'attn_output.weight', sub: '4096 × 4096 · Q8_0' },
+      mv('po', 'x += W·att', 4096, 'xq, x → x'),
+      { id: 'fnw', kind: 'w', label: 'ffn_norm.weight', sub: '4096 · F32' },
+      { id: 'n2', kind: 'op', kernel: 'rmsnorm', sub: 'xn = ffn_norm(x)', launch: { decode: '1 block · 1024', prefill: 'T blocks · 1024' }, io: 'x → xn' },
+      qn('q3', 'xn'),
+      { id: 'wgu', kind: 'w', label: 'ffn_gate.weight ‖ ffn_up.weight', t: 'ffn_gate.weight', sub: 'stacked: 28672 × 4096 · Q8_0' },
+      mv('gu', 'gate and up in one product', 28672, 'xq → big'),
+      { id: 'act', kind: 'op', kernel: 'swiglu', sub: 'h = silu(gate) · up', launch: { any: GS }, io: 'big → xn' },
+      qn('q4', 'h'),
+      { id: 'wd', kind: 'w', label: 'ffn_down.weight', sub: '4096 × 14336 · Q8_0' },
+      mv('dn', 'x += W·h', 4096, 'xq, x → x'),
+      { id: 'y', kind: 'io', label: 'x', sub: 'to the next layer' },
+    ];
+    const edges = [['x', 'n1', 'x'], ['anw', 'n1'], ['n1', 'q1', 'xn'], ['q1', 'pqkv'], ['wqkv', 'pqkv'],
+      ['pqkv', 'rope', 'q, k, v'], ['rf', 'rope'], ['rope', 'kv', 'k, v'], ['rope', 'att', 'q'], ['kv', 'att'],
+      ['att', 'q2', 'att'], ['q2', 'po'], ['wo', 'po'], ['x', 'po', 'x'],
+      ['po', 'n2', 'x'], ['fnw', 'n2'], ['n2', 'q3', 'xn'], ['q3', 'gu'], ['wgu', 'gu'], ['gu', 'act', 'gate, up'], ['act', 'q4', 'h'],
+      ['q4', 'dn'], ['wd', 'dn'], ['po', 'dn', 'x'], ['dn', 'y']];
+    return { nodes, edges };
+  },
+  tensors: [
+    { name: 'token_embd.weight', file: '128,256 × 4096 · Q8_0', engine: 'stays on the host: one row dequantized per token', by: 'embedding lookup on the CPU' },
+    { name: 'rope_freqs.weight', file: '64 · F32', engine: 'host only: divides the angle of each rotary pair in the cos/sin table', by: 'rope_table() → rope_kv' },
+    { name: 'attn_norm.weight', file: '4096 · F32', engine: 'F32', by: 'rmsnorm' },
+    { name: 'attn_q.weight', file: '4096 × 4096 · Q8_0', engine: 'Q8_0 (q int8 | d f16), rows 0 … 4095 of the stacked qkv matrix', by: 'mv_q · gemm_q' },
+    { name: 'attn_k.weight', file: '1024 × 4096 · Q8_0', engine: 'Q8_0, rows 4096 … 5119', by: 'mv_q · gemm_q' },
+    { name: 'attn_v.weight', file: '1024 × 4096 · Q8_0', engine: 'Q8_0, rows 5120 … 6143', by: 'mv_q · gemm_q' },
+    { name: 'attn_output.weight', file: '4096 × 4096 · Q8_0', engine: 'Q8_0', by: 'mv_q · gemm_q' },
+    { name: 'ffn_norm.weight', file: '4096 · F32', engine: 'F32', by: 'rmsnorm' },
+    { name: 'ffn_gate.weight', file: '14336 × 4096 · Q8_0', engine: 'Q8_0, rows 0 … 14335 of the stacked gate_up matrix', by: 'mv_q · gemm_q' },
+    { name: 'ffn_up.weight', file: '14336 × 4096 · Q8_0', engine: 'Q8_0, rows 14336 … 28671 of gate_up', by: 'mv_q · gemm_q' },
+    { name: 'ffn_down.weight', file: '4096 × 14336 · Q8_0', engine: 'Q8_0', by: 'mv_q · gemm_q' },
+    { name: 'output_norm.weight', file: '4096 · F32', engine: 'F32', by: 'rmsnorm' },
+    { name: 'output.weight', file: '128,256 × 4096 · Q8_0', engine: 'Q8_0, untied from the embedding', by: 'mv_q' },
+  ],
+};
+Atlas.model(M);
+
+(() => {
+  const $ = Atlas.$, row = r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`;
+  $('newKernels').innerHTML = '<thead><tr><th>kernel</th><th>new because</th></tr></thead><tbody>' + [
+    ['<a href="mv_q.html">mv_q</a>', 'one decode kernel for 9 ggml formats, through the <code>unpack16</code> decoder; qwen35.ptx had one kernel per format'],
+    ['<a href="gemm_q.html">gemm_q</a>', 'the prompt GEMM, same tiles as qwen35.ptx\'s but decoding through <code>unpack16</code>, with a scale per 16 values and partial row tiles'],
+    ['<a href="rope_kv_llama.html">rope_kv</a>', 'RoPE on adjacent pairs, no head norm; gpt-oss\'s kernel of the same name rotates NeoX pairs with YaRN'],
+    ['<a href="attention_llama.html">attention</a>', '128-dim heads (4 dims per lane), no gate, no window; the Gemma 3 / Qwen 3.5 kernel has 256'],
+    ['rmsnorm, quant_q8, swiglu, argmax, compact_logits, sample_logits', 'byte-identical to qwen35.ptx'],
+  ].map(row).join('') + '</tbody>';
+  $('perf').innerHTML = '<thead><tr><th></th><th>llama.cpp (CUDA)</th><th>llama31_demo</th></tr></thead><tbody>' +
+    [['prompt, 586 / 1,286 tokens', '5,260 / 5,480 tok/s', '2,490 / 2,260 tok/s'], ['decode', '56 tok/s', '55 tok/s'], ['load (page cache)', '', '2.9 s']].map(row).join('') + '</tbody>';
+  $('checks').innerHTML = '<thead><tr><th>check</th><th>result</th></tr></thead><tbody>' + [
+    ['logits, 6 / 46 / 1,286-token prompts', 'KL 2.7e-4 / 1.9e-4 / 9.5e-4 vs CUDA, below llama.cpp\'s own CPU-vs-CUDA spread (3.7e-4, 3.5e-4); same top-1, 10/10 of the top 10'],
+    ['tokenizer (llama-bpe)', '3,115 fuzzed lines, identical ids'],
+    ['chat template', '14 conversations, default and set date: identical ids'],
+    ['kernels', '45 self-tests vs CPU references'],
+    ['cache reuse', 'extend, rewind to a common prefix, single steps: bit-identical'],
+  ].map(row).join('') + '</tbody>';
+})();
+</script>

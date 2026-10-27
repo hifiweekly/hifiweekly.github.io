@@ -93,7 +93,7 @@
     </div>
   </section>
 
-  <footer>Sources: <code>forward()</code> in <code>qwen35/qwen35.c</code> (kernels, buffers, launch shapes) and <code>qwen35/qwen35.ptx</code>; tensor shapes and types from <code>Qwen3.5-9B-Q4_1.gguf</code>; the layer semantics follow llama.cpp's <code>src/models/qwen35.cpp</code> and its fused <code>gated_delta_net.cu</code>. Kernels without a page yet: mv_q6_k (the output head), gemm_q (the prompt GEMM); conv_save is described on the gdn_conv page. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.</footer>
+  <footer>Sources: <code>forward()</code> in <code>qwen35/qwen35.c</code> (kernels, buffers, launch shapes) and <code>qwen35/qwen35.ptx</code>; tensor shapes and types from <code>Qwen3.5-9B-Q4_1.gguf</code>; the layer semantics follow llama.cpp's <code>src/models/qwen35.cpp</code> and its fused <code>gated_delta_net.cu</code>. Kernel without a page yet: mv_q6_k (the output head); the prompt GEMM, gemm_q, is described in the Qwen 3.5 section of the <a href="gemm_q.html">gemm_q</a> page; conv_save is described on the gdn_conv page. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.</footer>
 </div>
 
 <script>
