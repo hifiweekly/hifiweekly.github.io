@@ -86,7 +86,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>gdn_recur</code>; launched from <code>forward()</code> in <code>qwen35.c</code> with grid (32 v heads, 4) and 32 threads, after <code>gdn_conv</code> (which produces q, k, v) and before <code>gated_norm</code>. Semantics follow llama.cpp's fused <code>gated_delta_net.cu</code>: k and q of v head h come from head h mod 16. Here q, k, v, the gates and the initial state are generated; the page re-runs the kernel's float32 arithmetic and compares it with a float64 recurrence.</footer>
+  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>gdn_recur</code>; launched from <code>forward()</code> in <code>qwen35.c</code> with grid (32 v heads, 4) and 32 threads, after <code>gdn_conv</code> (which produces q, k, v) and before <code>gated_norm</code>. Semantics follow llama.cpp's fused <code>gated_delta_net.cu</code>: k and q of v head h come from head h mod 16. Here q, k, v, the gates and the initial state are generated; the page re-runs the kernel's float32 arithmetic and compares it with a float64 recurrence.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1460" height="1304" viewBox="0 -242 1460 1304" font-family="Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1460" height="1328" viewBox="0 -242 1460 1328" font-family="Helvetica, Arial, sans-serif">
 <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#000"/></marker></defs>
 <style>a.k { cursor: pointer; } a.k:hover rect, a.k:hover circle, a.k:focus rect, a.k:focus circle { stroke: #c0392b; stroke-width: 2.4; } a.k:hover text, a.k:focus text { fill: #c0392b; }</style>
-<rect y="-242" width="1460" height="1304" fill="#fff"/>
+<rect y="-242" width="1460" height="1328" fill="#fff"/>
 <rect x="185" y="60" width="230" height="732" rx="12" fill="#ededed" stroke="#000" stroke-width="1.1"/>
 <text x="300" y="931" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Input tokens</text>
 <path d="M300,922 L300,896" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
@@ -289,4 +289,5 @@
 <text x="1270" y="968" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">(d) Per-layer input</text>
 <text x="730" y="1012" font-size="16" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">Figure 3: The EmbeddingGemma 2 text encoder, in the style of Vaswani et al. (2017): bidirectional, Gemma's sandwich norms, a per-layer input in every layer, and a 768-dim mean-pooled output instead of next-token</text>
 <text x="730" y="1032" font-size="16" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">probabilities.</text>
+<text x="730" y="1064" font-size="12" text-anchor="middle" fill="#555" dominant-baseline="middle" font-family="Times New Roman, Times, serif">Copyright (c) 2026 Edward Jiang, all rights reserved.</text>
 </svg>
