@@ -23,7 +23,7 @@
 
   <section aria-labelledby="h-fig">
     <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017), Figures 1 and 2. Panels: (a) the whole model, (b) scaled dot-product attention, (c) grouped-query attention with RoPE on q and k, (d) the SwiGLU feed-forward. Boxes whose kernel has a page link to it: hover one to see the kernel, click to open it.</p></div>
-    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/llama31.svg" width="1370" height="872" style="aspect-ratio: 1370 / 872" aria-label="Llama 3.1 8B architecture: token embedding; 32 layers, each RMSNorm, grouped-query attention, residual add, RMSNorm, SwiGLU feed-forward, residual add; final RMSNorm, linear head and softmax."><img src="figures/llama31.svg" width="1370" height="872" alt="Llama 3.1 8B architecture."></object><figcaption class="muted"><a href="figures/llama31.svg">Open the figure full size</a></figcaption></figure>
+    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/llama31.svg" width="1370" height="896" style="aspect-ratio: 1370 / 896" aria-label="Llama 3.1 8B architecture: token embedding; 32 layers, each RMSNorm, grouped-query attention, residual add, RMSNorm, SwiGLU feed-forward, residual add; final RMSNorm, linear head and softmax."><img src="figures/llama31.svg" width="1370" height="896" alt="Llama 3.1 8B architecture."></object><figcaption class="muted"><a href="figures/llama31.svg">Open the figure full size</a></figcaption></figure>
   </section>
 
   <section aria-labelledby="h-ov">
@@ -57,7 +57,7 @@
   </section>
 
   <section aria-labelledby="h-new">
-    <div class="sechead"><h2 id="h-new">What is new in llama31.ptx</h2><p class="muted">The engine started as a copy of the Qwen 3.8 engine (qwen35.ptx generalized to every weight format of a 27B Unsloth file) with the DeltaNet kernels removed. Of its 10 kernels, 6 are byte-identical to qwen35.ptx's (after stripping comments) and have their pages already; 4 are new to the atlas.</p></div>
+    <div class="sechead"><h2 id="h-new">What is new in llama31.ptx</h2><p class="muted">The engine started as a copy of the Qwen 3.8 engine (qwen35.ptx generalized to every weight format of a 27B Unsloth file) with the DeltaNet kernels removed. Of its 10 kernels, 6 are byte-identical to qwen35.ptx's (after stripping comments) and have their pages already; 4 are new to the atlas. <a href="mistral03.html">Mistral 7B v0.3</a> runs all 10 unchanged.</p></div>
     <div class="two">
       <div class="panel">
         <h3>The kernels</h3>
