@@ -19,7 +19,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Llama 3.1 · llama31.ptx · one warp per head, four dims per lane</div>
+    <div class="eyebrow">Llama 3.1 · <a href="src/llama31.html#rope_kv">llama31.ptx</a> · one warp per head, four dims per lane</div>
     <h1>Inside <code>rope_kv</code> (Llama)</h1>
     <p>Right after the stacked q, k, v projection, Llama 3.1 rotates every query and key head by angles that depend on the token's position (rotary position embedding, RoPE), and the token's keys and values go into the f16 KV cache. This kernel does both. Unlike gpt-oss's <a href="rope_kv.html">rope_kv</a>, it rotates <em>adjacent</em> dimensions (2i with 2i + 1), and the angles carry Llama 3's long-context scaling: the slowest pairs turn up to 8 times slower. The scaling lives in the host's cos/sin table, so the kernel is four multiplies and two stores per pair.</p>
     <div class="formula">(<span class="y">x'</span><sub>2i</sub>, <span class="y">x'</span><sub>2i+1</sub>) = (<span class="x">x</span><sub>2i</sub> cos θ<sub>i</sub> − <span class="x">x</span><sub>2i+1</sub> sin θ<sub>i</sub>, &nbsp;<span class="x">x</span><sub>2i</sub> sin θ<sub>i</sub> + <span class="x">x</span><sub>2i+1</sub> cos θ<sub>i</sub>) &nbsp;&nbsp;<span class="muted">// θ<sub>i</sub> = pos · 500000<sup>−i/64</sup> / f<sub>i</sub>, f<sub>i</sub> from rope_freqs.weight</span></div>
@@ -83,7 +83,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>llama31/llama31.ptx</code>, kernel <code>rope_kv</code>; launched by <code>rope_kv()</code> in <code>llama31.c</code> with grid (48, tokens) and 32 threads; <code>rope_table()</code> builds cs with base 500,000 and the file's factors. The factors here are recomputed from Llama 3's rule (factor 8, low 1, high 4, original context 8192), which matches rope_freqs.weight to 7e-7; q, k, v are generated.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/llama31.html"><code>llama31/llama31.ptx</code></a>, kernel <a href="src/llama31.html#rope_kv"><code>rope_kv</code></a>; launched by <code>rope_kv()</code> in <code>llama31.c</code> with grid (48, tokens) and 32 threads; <code>rope_table()</code> builds cs with base 500,000 and the file's factors. The factors here are recomputed from Llama 3's rule (factor 8, low 1, high 4, original context 8192), which matches rope_freqs.weight to 7e-7; q, k, v are generated.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

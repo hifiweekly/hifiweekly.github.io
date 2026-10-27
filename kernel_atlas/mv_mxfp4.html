@@ -19,7 +19,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">gpt-oss · gptoss.ptx · decode: 4 experts per token, one warp per row</div>
+    <div class="eyebrow">gpt-oss · <a href="src/gptoss.html#mv_mxfp4">gptoss.ptx</a> · decode: 4 experts per token, one warp per row</div>
     <h1>Inside <code>mv_mxfp4</code></h1>
     <p>Each gpt-oss layer has 32 experts, and each expert has three 2880 × 2880 matrices (gate, up, down) stored in MXFP4: 4-bit floating-point codes with one shared power-of-two scale per 32 values. In decode a token uses only 4 experts, so <code>mv_mxfp4</code> multiplies the token by just those 4 matrices: the grid's y index is the expert slot, and the expert id comes from <code>router_topk</code>. It runs three times per layer; pick which one below.</p>
     <div class="formula"><span class="y">y</span>[s][r] = Σ<sub>b</sub> 2<sup>e[b] − 128</sup> · xd<sub>s</sub>[b] · Σ<sub>j&lt;32</sub> <span class="w">fp4×2</span>(code[r][32b+j]) · <span class="x">xq<sub>s</sub></span>[32b+j] + bias<sub>E</sub>[r] &nbsp;&nbsp;<span class="muted">// E = ids[s]</span></div>
@@ -79,7 +79,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>mv_mxfp4</code> and its helper <code>fp4x4</code>; launched by <code>mv_mxfp4()</code> in <code>gptoss.c</code> with grid (⌈2880 / 8⌉, 4 slots) and 256 threads. In prefill, <code>gemm_mxfp4</code> does this work per expert bucket. Codes, scales and activations here are generated.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gptoss.html"><code>gptoss/gptoss.ptx</code></a>, kernel <a href="src/gptoss.html#mv_mxfp4"><code>mv_mxfp4</code></a> and its helper <a href="src/gptoss.html#fp4x4"><code>fp4x4</code></a>; launched by <code>mv_mxfp4()</code> in <code>gptoss.c</code> with grid (⌈2880 / 8⌉, 4 slots) and 256 threads. In prefill, <a href="src/gptoss.html#gemm_mxfp4"><code>gemm_mxfp4</code></a> does this work per expert bucket. Codes, scales and activations here are generated.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

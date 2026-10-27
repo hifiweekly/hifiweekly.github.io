@@ -18,7 +18,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Llama 3.1 · llama31.ptx · one block per query head per token, 128-dim heads</div>
+    <div class="eyebrow">Llama 3.1 · <a href="src/llama31.html#attention">llama31.ptx</a> · one block per query head per token, 128-dim heads</div>
     <h1>Inside <code>attention</code> (Llama)</h1>
     <p>For one query head of one token, this kernel scores every cached key from position 0 to the token's own, turns the scores into softmax weights and sums the value vectors with them. It is Gemma 3's <a href="attention.html">attention</a> cut down to Llama's shape: heads of 128 dims instead of 256, so each lane owns 4 dims instead of 8; 32 query heads sharing 8 key/value heads; no sliding window and no output gate. The scores are never stored: each of the 8 warps walks its share of the keys with an <em>online softmax</em>, and the 8 partial results are merged at the end.</p>
     <div class="formula"><span class="y">out</span> = Σ<sub>j=0…p</sub> softmax<sub>j</sub>(<span class="x">q</span> · <span class="w">k</span><sub>j</sub> / √128) · <span class="w">v</span><sub>j</sub> &nbsp;&nbsp;<span class="muted">// kv head = q head / 4; scores kept in log₂ units</span></div>
@@ -92,7 +92,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>llama31/llama31.ptx</code>, kernel <code>attention</code>; launched by <code>attention()</code> in <code>llama31.c</code> with grid (32 q heads, tokens) and 256 threads, after <a href="rope_kv_llama.html">rope_kv</a>. Head dim 128, scale 1/√128, 8 kv heads. Keys and values here are generated and stored as f16 like the real cache; the kernel's float32 result is compared with a float64 softmax.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/llama31.html"><code>llama31/llama31.ptx</code></a>, kernel <a href="src/llama31.html#attention"><code>attention</code></a>; launched by <code>attention()</code> in <code>llama31.c</code> with grid (32 q heads, tokens) and 256 threads, after <a href="rope_kv_llama.html">rope_kv</a>. Head dim 128, scale 1/√128, 8 kv heads. Keys and values here are generated and stored as f16 like the real cache; the kernel's float32 result is compared with a float64 softmax.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

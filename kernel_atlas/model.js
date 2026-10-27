@@ -7,6 +7,9 @@ const A = window.Atlas, $ = A.$;
 const covered = new Set(A.KERNELS.map(k => k.id));
 // a node's walkthrough is <kernel>.html unless it names another page (two engines' kernels share an .entry name)
 const pageOf = n => n.page || n.kernel;
+// the engine's PTX listing in src/, and whether a kernel is defined there
+const SRC_FILE = { gptoss: 'gptoss', gemma3: 'gemma3', gemma_emb2: 'emb2', qwen35: 'qwen35', llama31: 'llama31', mistral03: 'mistral03' };
+const srcOf = (M, kernel) => { const f = SRC_FILE[M.id]; return f && kernel && (A.SRC_FILES[f] || []).includes(kernel) ? A.srcHref(f, kernel) : null; };
 
 // node kinds: io (data in or out), w (GGUF tensor), op (kernel launch or host step), blk (layer)
 function nodeText(n, hot) {
@@ -90,6 +93,8 @@ A.model = function (M) {
     if (n.launch) rows.push(['launch', n.launch[st.pass] || n.launch.any]);
     if (n.io) rows.push(['buffers', n.io]);
     if (n.note) rows.push(['note', n.note]);
+    const src = srcOf(M, n.kernel);
+    if (src) rows.push(['PTX', `<a href="${src}">${n.kernel} in ${SRC_FILE[M.id]}.ptx</a>`]);
     const tri = M.id === 'gemma3' && n.kernel && A.TRITON && (A.TRITON[n.kernel] || A.TRITON_EXTRA[n.kernel]);
     if (tri) rows.push(['Triton', A.TRITON[n.kernel] ? A.TRITON[n.kernel].fns.filter(f => f[0] === '_').map(f => `<code>${f}</code>`).join(' + ') : `<code>${tri.label}</code>`]);
     if (rows.length) h += `<dl class="kv">${rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>`;
@@ -112,10 +117,10 @@ A.model = function (M) {
   function renderLaunches() {
     const ops = flat(M.layer(st.pass, st.kind)).filter(n => n.kind === 'op');
     let i = 0;
-    $('launches').innerHTML = `<thead><tr><th>#</th><th>kernel</th><th>launch</th><th>buffers</th><th>does</th></tr></thead><tbody>` +
+    $('launches').innerHTML = `<thead><tr><th>#</th><th>kernel</th><th>launch</th><th>buffers</th><th>does</th><th>PTX</th></tr></thead><tbody>` +
       ops.map(n => {
         const name = n.kernel ? (covered.has(pageOf(n)) ? `<a href="${pageOf(n)}.html">${n.kernel}</a>` : n.kernel) : `<i>${n.label}</i>`;
-        return `<tr class="${n.kernel && n.kernel === st.hot ? 'on' : ''}"><td>${n.kernel ? ++i : ''}</td><td>${name}</td><td>${n.launch ? (n.launch[st.pass] || n.launch.any) : 'host'}</td><td>${n.io || ''}</td><td>${(n.sub || '').replace(/<br\/>/g, ' · ')}</td></tr>`;
+        return `<tr class="${n.kernel && n.kernel === st.hot ? 'on' : ''}"><td>${n.kernel ? ++i : ''}</td><td>${name}</td><td>${n.launch ? (n.launch[st.pass] || n.launch.any) : 'host'}</td><td>${n.io || ''}</td><td>${(n.sub || '').replace(/<br\/>/g, ' · ')}</td><td>${srcOf(M, n.kernel) ? `<a href="${srcOf(M, n.kernel)}">source</a>` : ''}</td></tr>`;
       }).join('') + '</tbody>';
     $('launchCount').textContent = `${i} launches per layer × ${M.layersOf ? M.layersOf(st.kind) : M.nLayers} layers`;
   }
@@ -139,7 +144,8 @@ A.model = function (M) {
   renderAll().catch(e => { console.error(e); $('ovGraph').textContent = 'Graph failed to render: ' + e.message; });
   A.onTheme(() => { init(); renderAll(); });
   const k = A.MODELS.find(m => m.id === M.id);
-  $('crumbs').innerHTML = `<a href="index.html" class="brand">kernel<i>_</i>atlas</a><span class="muted">/</span><span class="muted">Models</span><span style="margin-left:auto"></span>` +
+  $('crumbs').innerHTML = `<a href="index.html" class="brand">kernel<i>_</i>atlas</a><span class="muted">/</span><span class="muted">Models</span>` +
+    (SRC_FILE[M.id] ? `<a href="src/${SRC_FILE[M.id]}.html">${SRC_FILE[M.id]}.ptx source</a>` : '') + `<span style="margin-left:auto"></span>` +
     A.MODELS.filter(m => m !== k).map(m => `<a href="${m.id}.html">${m.name} →</a>`).join('');
 };
 })();

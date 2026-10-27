@@ -24,7 +24,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">EmbeddingGemma 2 · emb2.ptx · one 128-thread block per head</div>
+    <div class="eyebrow">EmbeddingGemma 2 · <a href="src/emb2.html#head_norm_rope">emb2.ptx</a> · one 128-thread block per head</div>
     <h1>Inside <code>head_norm_rope</code></h1>
     <p>After the Q/K/V products, every head of every token is RMS-normalized on its own. Query and key heads are then multiplied by their norm weights and rotated by the token's position (RoPE, NeoX layout); value heads are only normalized, with no weight. Unlike Gemma 3's <code>qk_norm_rope</code>, the same kernel must handle 256-dim heads (local layers) and 512-dim heads (global layers), there is no KV cache to write, and the position comes from a per-token array because one batch packs several texts.</p>
     <div class="formula"><span class="y">x'</span> = RoPE<sub>pos[t]</sub>( <span class="x">x</span> / √(Σ x² / D + ε) · <span class="w">w</span> ) &nbsp;&nbsp;<span class="muted">// pairs (i, i + D/2); v heads: x / √(Σ x² / D + ε) only</span></div>
@@ -97,7 +97,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gemma_emb2/emb2.ptx</code>, kernel <code>head_norm_rope</code>; launched from <code>forward()</code> in <code>emb2.c</code> with grid (nh + 2·nkv, tokens) and 128 threads. The cos/sin tables come from <code>rope_table()</code> (ggml's rope cache: f32 angles by repeated multiplication; base 10,000 local, 1,000,000 global, full head rotated). Head values are generated; the norm weights are the model's.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/emb2.html"><code>gemma_emb2/emb2.ptx</code></a>, kernel <a href="src/emb2.html#head_norm_rope"><code>head_norm_rope</code></a>; launched from <code>forward()</code> in <code>emb2.c</code> with grid (nh + 2·nkv, tokens) and 128 threads. The cos/sin tables come from <code>rope_table()</code> (ggml's rope cache: f32 angles by repeated multiplication; base 10,000 local, 1,000,000 global, full head rotated). Head values are generated; the norm weights are the model's.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

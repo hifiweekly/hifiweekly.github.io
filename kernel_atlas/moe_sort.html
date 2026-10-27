@@ -19,7 +19,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">gpt-oss · gptoss.ptx · prefill routing</div>
+    <div class="eyebrow">gpt-oss · <a href="src/gptoss.html#moe_sort">gptoss.ptx</a> · prefill routing</div>
     <h1>Inside <code>moe_sort</code></h1>
     <p>gpt-oss sends every token to 4 of its 32 experts. During prompt processing, the expert GEMM wants each expert's tokens side by side, so that expert's weights are read once for the whole chunk instead of once per token. <code>moe_sort</code> builds that grouping: a counting sort by expert id, done by one block with shared-memory atomics. It is a classic histogram → prefix sum → scatter, small enough to watch in full.</p>
     <div class="formula"><span class="w">ids</span>[p] = expert of pair p = (token t, slot j), p = 4t + j &nbsp;→&nbsp; <span class="y">list</span>[<span class="s">offs</span>[e] … <span class="s">offs</span>[e+1]) = the pairs routed to expert e</div>
@@ -69,7 +69,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>moe_sort</code>; launched from <code>gptoss.c</code> as one block of 1024 threads before the expert GEMMs (<code>gemm_mxfp4</code>). Expert ids here are generated with a realistic skew toward a few popular experts.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gptoss.html"><code>gptoss/gptoss.ptx</code></a>, kernel <a href="src/gptoss.html#moe_sort"><code>moe_sort</code></a>; launched from <code>gptoss.c</code> as one block of 1024 threads before the expert GEMMs (<a href="src/gptoss.html#gemm_mxfp4"><code>gemm_mxfp4</code></a>). Expert ids here are generated with a realistic skew toward a few popular experts.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

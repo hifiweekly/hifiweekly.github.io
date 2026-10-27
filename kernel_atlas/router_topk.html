@@ -19,7 +19,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">gpt-oss · gptoss.ptx · one warp per token, lane = expert</div>
+    <div class="eyebrow">gpt-oss · <a href="src/gptoss.html#router_topk">gptoss.ptx</a> · one warp per token, lane = expert</div>
     <h1>Inside <code>router_topk</code></h1>
     <p>gpt-oss sends each token through 4 of its 32 experts. <code>router_topk</code> takes the 32 router logits from <code>mv_f32</code>, picks the 4 largest and turns them into mixing weights with a softmax over just those 4. With 32 experts and 32 lanes, each lane holds one expert's logit, and the whole selection happens in registers: four rounds of a warp-wide argmax, each removing its winner.</p>
     <div class="formula"><span class="y">ids</span> = top-4 of <span class="x">logit</span>[0…31] &nbsp;&nbsp; <span class="y">w</span><sub>j</sub> = exp(<span class="x">logit</span><sub>ids[j]</sub> − m) / Σ<sub>k&lt;4</sub> exp(<span class="x">logit</span><sub>ids[k]</sub> − m) &nbsp;&nbsp;<span class="muted">// m = the largest; ties go to the smaller expert</span></div>
@@ -75,7 +75,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>router_topk</code>; launched by <code>router_topk()</code> in <code>gptoss.c</code> with one block of 32 threads per token, n = 32 experts and k = 4. Logits are generated; the tie option copies the 2nd-largest logit onto another expert.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gptoss.html"><code>gptoss/gptoss.ptx</code></a>, kernel <a href="src/gptoss.html#router_topk"><code>router_topk</code></a>; launched by <code>router_topk()</code> in <code>gptoss.c</code> with one block of 32 threads per token, n = 32 experts and k = 4. Logits are generated; the tie option copies the 2nd-largest logit onto another expert.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

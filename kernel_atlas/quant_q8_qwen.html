@@ -19,7 +19,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · one warp per 32-value block</div>
+    <div class="eyebrow">Qwen 3.5 · <a href="src/qwen35.html#quant_q8">qwen35.ptx</a> · one warp per 32-value block</div>
     <h1>Inside <code>quant_q8</code>, the Qwen version</h1>
     <p>Every Qwen 3.5 weight product is an integer dot product (<code>dp4a</code>, or int8 <code>mma</code> in prefill), so each activation vector is first turned into Q8 blocks: 32 consecutive values share one float scale d and each becomes round(x / d), between −127 and 127. One warp handles one block, one lane per value.</p>
     <p>It starts like <a href="quant_q8.html">the gpt-oss / Gemma 3 kernel</a> but writes one more number per block: d · Σq, the block's sum in the scale of x. Qwen's Q4_1 and Q5_K weights carry an offset per block (w = d<sub>w</sub>·n + m), and that offset multiplies the plain sum of the activations. With d · Σq stored here, mv_q4_1 and mv_q5_k pay one multiply-add per block for it. A second butterfly, on integers, makes the sum. The in-place float mode is gone: the prefill GEMM reads int8 too.</p>
@@ -101,7 +101,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>quant_q8</code>; launched by <code>quant_q8()</code> → <code>launch_1d()</code> in <code>qwen35/qwen35.c</code>; the reads of d · Σq are in mv_q4_1, mv_q5_k and gemm_q. Values are generated to resemble each call site's input: RMS-normalized activations with a few outlier dimensions, the gated DeltaNet read-out, or the sparse output of swiglu.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/qwen35.html"><code>qwen35/qwen35.ptx</code></a>, kernel <a href="src/qwen35.html#quant_q8"><code>quant_q8</code></a>; launched by <code>quant_q8()</code> → <code>launch_1d()</code> in <code>qwen35/qwen35.c</code>; the reads of d · Σq are in mv_q4_1, mv_q5_k and gemm_q. Values are generated to resemble each call site's input: RMS-normalized activations with a few outlier dimensions, the gated DeltaNet read-out, or the sparse output of swiglu.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

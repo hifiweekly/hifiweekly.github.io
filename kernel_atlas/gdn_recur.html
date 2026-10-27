@@ -18,7 +18,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · one warp per 32 columns of one head's state</div>
+    <div class="eyebrow">Qwen 3.5 · <a href="src/qwen35.html#gdn_recur">qwen35.ptx</a> · one warp per 32 columns of one head's state</div>
     <h1>Inside <code>gdn_recur</code></h1>
     <p>The heart of a Gated DeltaNet layer. Instead of keeping every past key and value, each of the 32 heads keeps one 128 × 128 matrix <span class="w">S</span> that maps keys to values. For every token it decays S by a learned gate g, corrects it toward the new pair (k, v) with the <em>delta rule</em> (write only what S does not already predict, scaled by b), and reads the output as Sᵀq. The tokens of a chunk must go in order, so the kernel loops over them; the parallelism is across heads and value columns. A block keeps its 128 × 32 slice of S in shared memory for the whole chunk.</p>
     <div class="formula"><span class="x">kv</span> = Sᵀ<span class="x">k</span> &nbsp;·&nbsp; δ = (<span class="x">v</span> − g·kv)·b &nbsp;·&nbsp; <span class="w">S</span> ← g·<span class="w">S</span> + <span class="x">k</span>·δᵀ &nbsp;·&nbsp; <span class="y">o</span> = Sᵀ<span class="x">q</span> / √128 &nbsp;&nbsp;<span class="muted">// g = exp(softplus(α + dt)·a), b = σ(β); q, k L2-normalized by gdn_conv</span></div>
@@ -86,7 +86,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>gdn_recur</code>; launched from <code>forward()</code> in <code>qwen35.c</code> with grid (32 v heads, 4) and 32 threads, after <code>gdn_conv</code> (which produces q, k, v) and before <code>gated_norm</code>. Semantics follow llama.cpp's fused <code>gated_delta_net.cu</code>: k and q of v head h come from head h mod 16. Here q, k, v, the gates and the initial state are generated; the page re-runs the kernel's float32 arithmetic and compares it with a float64 recurrence.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/qwen35.html"><code>qwen35/qwen35.ptx</code></a>, kernel <a href="src/qwen35.html#gdn_recur"><code>gdn_recur</code></a>; launched from <code>forward()</code> in <code>qwen35.c</code> with grid (32 v heads, 4) and 32 threads, after <a href="src/qwen35.html#gdn_conv"><code>gdn_conv</code></a> (which produces q, k, v) and before <a href="src/qwen35.html#gated_norm"><code>gated_norm</code></a>. Semantics follow llama.cpp's fused <code>gated_delta_net.cu</code>: k and q of v head h come from head h mod 16. Here q, k, v, the gates and the initial state are generated; the page re-runs the kernel's float32 arithmetic and compares it with a float64 recurrence.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

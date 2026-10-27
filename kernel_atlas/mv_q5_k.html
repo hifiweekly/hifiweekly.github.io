@@ -15,7 +15,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · decode: one warp per row, Q5_K super-blocks × int8 activations</div>
+    <div class="eyebrow">Qwen 3.5 · <a href="src/qwen35.html#mv_q5_k">qwen35.ptx</a> · decode: one warp per row, Q5_K super-blocks × int8 activations</div>
     <h1>Inside <code>mv_q5_k</code></h1>
     <p>The DeltaNet output projection (<code>ssm_out</code>, 4096 × 4096 in each of the 24 DeltaNet layers) is stored in Q5_K, one of ggml's "k-quants". Where Q4_1 gives every 32 values an f16 scale and offset, Q5_K groups 256 values into a super-block with one f16 scale d and one f16 dmin, and gives each of its 8 sub-blocks a 6-bit scale and a 6-bit min, packed into 12 bytes. Weights are 5 bits: a nibble plus one bit from a shared 32-byte array. That is 5.5 bits per weight with finer scales than Q5_0. This kernel unpacks it without a single branch.</p>
     <div class="formula">weight = <span class="w">d</span>·sc<sub>s</sub>·q − <span class="w">dmin</span>·m<sub>s</sub> &nbsp;⇒&nbsp; block term = (d·sc<sub>s</sub>)·dₓ · Σ q·<span class="x">x</span> − (dmin·m<sub>s</sub>) · dₓΣ<span class="x">x</span> &nbsp;&nbsp;<span class="muted">// q in 0…31; sc, m in 0…63; s = sub-block 0…7</span></div>
@@ -79,7 +79,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>mv_q5_k</code>; launched by <code>mv()</code> in <code>qwen35.c</code> with 512 blocks of 256 threads for <code>ssm_out</code> (4096 × 4096), after <a href="gated_norm.html">gated_norm</a> and quant_q8; it adds the residual (x += W · input). The format is ggml's <code>block_q5_K</code> and <code>dequantize_row_q5_K</code>. Weights and activations here are generated.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/qwen35.html"><code>qwen35/qwen35.ptx</code></a>, kernel <a href="src/qwen35.html#mv_q5_k"><code>mv_q5_k</code></a>; launched by <code>mv()</code> in <code>qwen35.c</code> with 512 blocks of 256 threads for <code>ssm_out</code> (4096 × 4096), after <a href="gated_norm.html">gated_norm</a> and quant_q8; it adds the residual (x += W · input). The format is ggml's <code>block_q5_K</code> and <code>dequantize_row_q5_K</code>. Weights and activations here are generated.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

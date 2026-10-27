@@ -20,7 +20,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">gpt-oss + Gemma 3 · identical in gptoss.ptx and gemma3.ptx · sampling with top-k / top-p</div>
+    <div class="eyebrow">gpt-oss + Gemma 3 · identical in <a href="src/gptoss.html#compact_logits">gptoss.ptx</a> and <a href="src/gemma3.html#compact_logits">gemma3.ptx</a> · sampling with top-k / top-p</div>
     <h1>Inside <code>compact_logits</code></h1>
     <p>Top-k and top-p sampling need the best candidates in sorted order, which is awkward on the GPU and slow to do on the host over all 201,088 logits. But tokens far below the best one have essentially zero probability. This kernel keeps only logits within a margin of the maximum (8 temperature units: a weight of e<sup>−8</sup> ≈ 0.03% of the best) and packs them into a short list with one global atomic counter. The host then sorts a few dozen or hundred entries instead of 201,088.</p>
     <div class="formula">keep i ⇔ <span class="x">x</span>[i] ≥ x[best] − <span class="s">margin</span> &nbsp;→&nbsp; j = atomicAdd(&amp;<span class="y">out</span>[0], 1); if j &lt; cap: out[2 + 2j] = i, out[3 + 2j] = x[i] &nbsp;&nbsp;<span class="muted">// margin = 8·T, then 16·T, cap = 16,384</span></div>
@@ -74,7 +74,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>compact_logits</code>, and <code>next_token()</code> in <code>gptoss.c</code> (margins 8 and 16 in units of the temperature, CAND_CAP = 16384). It is launched with <code>launch_1d()</code> after <code>argmax</code>. Logits here are generated: a broad bulk plus a small head of likely tokens.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gptoss.html"><code>gptoss/gptoss.ptx</code></a>, kernel <a href="src/gptoss.html#compact_logits"><code>compact_logits</code></a>, and <code>next_token()</code> in <code>gptoss.c</code> (margins 8 and 16 in units of the temperature, CAND_CAP = 16384). It is launched with <code>launch_1d()</code> after <a href="src/gptoss.html#argmax"><code>argmax</code></a>. Logits here are generated: a broad bulk plus a small head of likely tokens.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

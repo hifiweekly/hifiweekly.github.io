@@ -15,7 +15,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Model graph · llama31/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf · engine llama31.ptx</div>
+    <div class="eyebrow">Model graph · llama31/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf · engine <a href="src/llama31.html">llama31.ptx</a></div>
     <h1>Llama 3.1 8B</h1>
     <p>The plain pre-norm decoder that the other models in this atlas vary: 32 identical layers, each an RMSNorm, grouped-query attention with rotary position embedding, a residual add, an RMSNorm, a SwiGLU feed-forward and a residual add. No sliding windows, no sandwich norms, no head norms, no gates, no experts. This page draws the dataflow of the GGUF file with the kernel the engine launches at each step; weight shapes and types come from the file header. Click any box for details.</p>
     <div class="facts" id="facts"></div>
@@ -23,7 +23,7 @@
 
   <section aria-labelledby="h-fig">
     <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017), Figures 1 and 2. Panels: (a) the whole model, (b) scaled dot-product attention, (c) grouped-query attention with RoPE on q and k, (d) the SwiGLU feed-forward. Boxes whose kernel has a page link to it: hover one to see the kernel, click to open it.</p></div>
-    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/llama31.svg" width="1370" height="896" style="aspect-ratio: 1370 / 896" aria-label="Llama 3.1 8B architecture: token embedding; 32 layers, each RMSNorm, grouped-query attention, residual add, RMSNorm, SwiGLU feed-forward, residual add; final RMSNorm, linear head and softmax."><img src="figures/llama31.svg" width="1370" height="896" alt="Llama 3.1 8B architecture."></object><figcaption class="muted"><a href="figures/llama31.svg">Open the figure full size</a></figcaption></figure>
+    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/llama31.svg" width="1370" height="916" style="aspect-ratio: 1370 / 916" aria-label="Llama 3.1 8B architecture: token embedding; 32 layers, each RMSNorm, grouped-query attention, residual add, RMSNorm, SwiGLU feed-forward, residual add; final RMSNorm, linear head and softmax."><img src="figures/llama31.svg" width="1370" height="896" alt="Llama 3.1 8B architecture."></object><figcaption class="muted"><a href="figures/llama31.svg">Open the figure full size</a></figcaption></figure>
   </section>
 
   <section aria-labelledby="h-ov">
@@ -92,7 +92,7 @@
     </div>
   </section>
 
-  <footer>Sources: <code>forward()</code> in <code>llama31/llama31.c</code> (kernels, buffers, launch shapes) and <code>llama31/llama31.ptx</code>; tensor shapes and types from <code>Meta-Llama-3.1-8B-Instruct-Q8_0.gguf</code>; the layer semantics follow llama.cpp's <code>src/models/llama.cpp</code>. Every kernel of this engine has a page; sample_logits is shared with the other generators and has none yet. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer>Sources: <code>forward()</code> in <code>llama31/llama31.c</code> (kernels, buffers, launch shapes) and <a href="src/llama31.html"><code>llama31/llama31.ptx</code></a>; tensor shapes and types from <code>Meta-Llama-3.1-8B-Instruct-Q8_0.gguf</code>; the layer semantics follow llama.cpp's <code>src/models/llama.cpp</code>. Every kernel of this engine has a page; sample_logits is shared with the other generators and has none yet. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

@@ -16,7 +16,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Model graph · gemma3/gemma-3-12b-it-Q5_0.gguf · engines gemma3.ptx and gemma3_triton/kernels.py</div>
+    <div class="eyebrow">Model graph · gemma3/gemma-3-12b-it-Q5_0.gguf · engines <a href="src/gemma3.html">gemma3.ptx</a> and gemma3_triton/kernels.py</div>
     <h1>Gemma 3 12B</h1>
     <p>The dataflow of the GGUF file, drawn with the kernel the engine launches at each step. Weight shapes and types come from the file header; each operation is named after its PTX kernel, and the operations that have a walkthrough link to it. Click any box for details.</p>
     <div class="facts" id="facts"></div>
@@ -24,7 +24,7 @@
 
   <section aria-labelledby="h-fig">
     <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017), Figures 1 and 2. Panels: (a) the whole model with its sandwich norms, (b) one attention head, (c) grouped-query attention with head norms, (d) the GEGLU feed-forward. Boxes that run as a kernel link to its page: hover one to see the kernel, click to open it.</p></div>
-    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/gemma3.svg" width="1370" height="1054" style="aspect-ratio: 1370 / 1054" aria-label="Gemma 3 12B architecture: scaled token embedding, 48 layers each with RMSNorm, grouped-query attention, RMSNorm and a residual add, then RMSNorm, GEGLU feed-forward, RMSNorm and a residual add; final RMSNorm, tied linear head and softmax."><img src="figures/gemma3.svg" width="1370" height="1054" alt="Gemma 3 12B architecture: scaled token embedding, 48 layers each with RMSNorm, grouped-query attention, RMSNorm and a residual add, then RMSNorm, GEGLU feed-forward, RMSNorm and a residual add; final RMSNorm, tied linear head and softmax."></object><figcaption class="muted"><a href="figures/gemma3.svg">Open the figure full size</a></figcaption></figure>
+    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/gemma3.svg" width="1370" height="1074" style="aspect-ratio: 1370 / 1074" aria-label="Gemma 3 12B architecture: scaled token embedding, 48 layers each with RMSNorm, grouped-query attention, RMSNorm and a residual add, then RMSNorm, GEGLU feed-forward, RMSNorm and a residual add; final RMSNorm, tied linear head and softmax."><img src="figures/gemma3.svg" width="1370" height="1054" alt="Gemma 3 12B architecture: scaled token embedding, 48 layers each with RMSNorm, grouped-query attention, RMSNorm and a residual add, then RMSNorm, GEGLU feed-forward, RMSNorm and a residual add; final RMSNorm, tied linear head and softmax."></object><figcaption class="muted"><a href="figures/gemma3.svg">Open the figure full size</a></figcaption></figure>
   </section>
 
   <section aria-labelledby="h-ov">
@@ -63,7 +63,7 @@
   </section>
 
   <section aria-labelledby="h-tri">
-    <div class="sechead"><h2 id="h-tri">The Triton engine</h2><p class="muted"><code>gemma3_triton/</code> rewrites <code>gemma3.c</code> and <code>gemma3.ptx</code> in Python and Triton. It reads the same model files with the same weight formats (Q5_0 feed-forward, Q8_0 attention and output head, f16 KV cache) and launches the same sequence of kernels, so every box in the graphs above has a Triton counterpart. torch only allocates memory, moves bytes while loading and captures the CUDA graph; no torch math runs in the forward pass. Each kernel page with a Triton port has a <b>Triton (Python)</b> tab in its code panel, tagged with the same steps, and a section on how the port differs.</p></div>
+    <div class="sechead"><h2 id="h-tri">The Triton engine</h2><p class="muted"><code>gemma3_triton/</code> rewrites <code>gemma3.c</code> and <a href="src/gemma3.html"><code>gemma3.ptx</code></a> in Python and Triton. It reads the same model files with the same weight formats (Q5_0 feed-forward, Q8_0 attention and output head, f16 KV cache) and launches the same sequence of kernels, so every box in the graphs above has a Triton counterpart. torch only allocates memory, moves bytes while loading and captures the CUDA graph; no torch math runs in the forward pass. Each kernel page with a Triton port has a <b>Triton (Python)</b> tab in its code panel, tagged with the same steps, and a section on how the port differs.</p></div>
     <div class="facts" id="triFacts"></div>
     <div class="panel tablewrap"><table class="list" id="triMap"></table></div>
     <div class="two">

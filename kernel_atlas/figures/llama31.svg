@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1370" height="896" viewBox="0 190 1370 896" font-family="Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1370" height="916" viewBox="0 190 1370 916" font-family="Helvetica, Arial, sans-serif">
 <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#000"/></marker></defs>
 <style>a.k { cursor: pointer; } a.k:hover rect, a.k:hover circle, a.k:focus rect, a.k:focus circle { stroke: #c0392b; stroke-width: 2.4; } a.k:hover text, a.k:focus text { fill: #c0392b; }</style>
-<rect y="190" width="1370" height="896" fill="#fff"/>
+<rect y="190" width="1370" height="916" fill="#fff"/>
 <rect x="120" y="436" width="230" height="402" rx="12" fill="#ededed" stroke="#000" stroke-width="1.1"/>
 <text x="235" y="931" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Input tokens</text>
 <path d="M235,922 L235,896" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
@@ -205,4 +205,5 @@
 <text x="685" y="1012" font-size="16" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">Figure 5: The Llama 3.1 8B architecture, in the style of Vaswani et al. (2017): decoder-only, one RMSNorm before each sub-layer, grouped-query attention with rotary position embedding in every</text>
 <text x="685" y="1032" font-size="16" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">layer, and a SwiGLU feed-forward.</text>
 <text x="685" y="1064" font-size="12" text-anchor="middle" fill="#555" dominant-baseline="middle" font-family="Times New Roman, Times, serif">Copyright (c) 2026 Edward Jiang, all rights reserved.</text>
+<text x="685" y="1084" font-size="12" text-anchor="middle" fill="#555" font-family="Times New Roman, Times, serif">PTX source (llama31.ptx): <a class="k" href="../src/llama31.html#attention" target="_top"><title>attention in llama31.ptx</title><tspan fill="#1a5fb4">attention</tspan></a> · <a class="k" href="../src/llama31.html#compact_logits" target="_top"><title>compact_logits in llama31.ptx</title><tspan fill="#1a5fb4">compact_logits</tspan></a> · <a class="k" href="../src/llama31.html#mv_q" target="_top"><title>mv_q in llama31.ptx</title><tspan fill="#1a5fb4">mv_q</tspan></a> · <a class="k" href="../src/llama31.html#rmsnorm" target="_top"><title>rmsnorm in llama31.ptx</title><tspan fill="#1a5fb4">rmsnorm</tspan></a> · <a class="k" href="../src/llama31.html#rope_kv" target="_top"><title>rope_kv in llama31.ptx</title><tspan fill="#1a5fb4">rope_kv</tspan></a> · <a class="k" href="../src/llama31.html#swiglu" target="_top"><title>swiglu in llama31.ptx</title><tspan fill="#1a5fb4">swiglu</tspan></a></text>
 </svg>

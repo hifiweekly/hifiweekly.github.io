@@ -16,7 +16,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">gpt-oss + Gemma 3 · identical in gptoss.ptx and gemma3.ptx · greedy decoding</div>
+    <div class="eyebrow">gpt-oss + Gemma 3 · identical in <a href="src/gptoss.html#argmax">gptoss.ptx</a> and <a href="src/gemma3.html#argmax">gemma3.ptx</a> · greedy decoding</div>
     <h1>Inside <code>argmax</code></h1>
     <p>Greedy decoding picks the token with the largest logit out of the 201,088-entry vocabulary. The answer is a single index, and only the GPU has the logits, so one block of 1024 threads finds it and the host copies back 4 bytes instead of 786 KB. Ties go to the smaller index, which makes the result independent of thread timing and matches a plain CPU loop.</p>
     <div class="formula"><span class="y">out</span> = min { i : <span class="x">x</span>[i] = max<sub>j</sub> x[j] } &nbsp;&nbsp;<span class="muted">// pairs (value, index) compared as: larger value wins, equal values → smaller index</span></div>
@@ -69,7 +69,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>argmax</code> (Gemma 3 has the same kernel); launched as one block of 1024 threads after the output head. Its result also seeds <code>compact_logits</code> and <code>sample_logits</code>. Logits here are generated, with two planted equal maxima.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gptoss.html"><code>gptoss/gptoss.ptx</code></a>, kernel <a href="src/gptoss.html#argmax"><code>argmax</code></a> (Gemma 3 has the same kernel); launched as one block of 1024 threads after the output head. Its result also seeds <a href="src/gptoss.html#compact_logits"><code>compact_logits</code></a> and <a href="src/gptoss.html#sample_logits"><code>sample_logits</code></a>. Logits here are generated, with two planted equal maxima.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

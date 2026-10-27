@@ -21,7 +21,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Gemma 3 · gemma3.ptx · one block per token, three passes</div>
+    <div class="eyebrow">Gemma 3 · <a href="src/gemma3.html#add_rmsnorm">gemma3.ptx</a> · one block per token, three passes</div>
     <h1>Inside <code>add_rmsnorm</code></h1>
     <p>Gemma 3 normalizes twice around every sub-block: the attention and feed-forward outputs get their own RMSNorm before they are added to the residual stream, and the stream is normalized again before the next sub-block. <code>add_rmsnorm</code> does the post-norm, the residual add and the next pre-norm in one launch, so each layer ends its two halves with this kernel instead of three.</p>
     <div class="formula"><span class="x">x</span> += <span class="y">y</span> · s<sub>y</sub> · <span class="w">w1</span> &nbsp;&nbsp; <span class="y">xn</span> = <span class="x">x</span> · s<sub>x</sub> · <span class="w">w2</span> &nbsp;&nbsp;<span class="muted">// s<sub>v</sub> = 1 / √(Σ v² / n + ε), n = 3840, ε = 1e-6</span></div>
@@ -78,7 +78,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gemma3/gemma3.ptx</code>, kernel <code>add_rmsnorm</code>; launched by <code>add_rmsnorm()</code> in <code>gemma3.c</code> with one block of 1024 threads per token, twice per layer. Before layer 0, plain <code>rmsnorm</code> computes the first attn_norm. Values are generated (a residual stream with a few large outlier dimensions, norm weights near 1) and computed in float32 in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gemma3.html"><code>gemma3/gemma3.ptx</code></a>, kernel <a href="src/gemma3.html#add_rmsnorm"><code>add_rmsnorm</code></a>; launched by <code>add_rmsnorm()</code> in <code>gemma3.c</code> with one block of 1024 threads per token, twice per layer. Before layer 0, plain <a href="src/gemma3.html#rmsnorm"><code>rmsnorm</code></a> computes the first attn_norm. Values are generated (a residual stream with a few large outlier dimensions, norm weights near 1) and computed in float32 in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

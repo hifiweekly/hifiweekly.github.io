@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1370" height="1054" viewBox="0 32 1370 1054" font-family="Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1370" height="1074" viewBox="0 32 1370 1074" font-family="Helvetica, Arial, sans-serif">
 <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#000"/></marker></defs>
 <style>a.k { cursor: pointer; } a.k:hover rect, a.k:hover circle, a.k:focus rect, a.k:focus circle { stroke: #c0392b; stroke-width: 2.4; } a.k:hover text, a.k:focus text { fill: #c0392b; }</style>
-<rect y="32" width="1370" height="1054" fill="#fff"/>
+<rect y="32" width="1370" height="1074" fill="#fff"/>
 <rect x="120" y="278" width="230" height="514" rx="12" fill="#ededed" stroke="#000" stroke-width="1.1"/>
 <text x="235" y="931" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Input tokens</text>
 <path d="M235,922 L235,896" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
@@ -233,4 +233,5 @@
 <text x="685" y="1012" font-size="16" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">Figure 2: The Gemma 3 12B architecture, in the style of Vaswani et al. (2017): decoder-only, an RMSNorm before and after each sub-layer ("sandwich" norms), RMSNorm on every query and key head, local</text>
 <text x="685" y="1032" font-size="16" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">and global attention layers.</text>
 <text x="685" y="1064" font-size="12" text-anchor="middle" fill="#555" dominant-baseline="middle" font-family="Times New Roman, Times, serif">Copyright (c) 2026 Edward Jiang, all rights reserved.</text>
+<text x="685" y="1084" font-size="12" text-anchor="middle" fill="#555" font-family="Times New Roman, Times, serif">PTX source (gemma3.ptx): <a class="k" href="../src/gemma3.html#add_rmsnorm" target="_top"><title>add_rmsnorm in gemma3.ptx</title><tspan fill="#1a5fb4">add_rmsnorm</tspan></a> · <a class="k" href="../src/gemma3.html#attention" target="_top"><title>attention in gemma3.ptx</title><tspan fill="#1a5fb4">attention</tspan></a> · <a class="k" href="../src/gemma3.html#compact_logits" target="_top"><title>compact_logits in gemma3.ptx</title><tspan fill="#1a5fb4">compact_logits</tspan></a> · <a class="k" href="../src/gemma3.html#geglu" target="_top"><title>geglu in gemma3.ptx</title><tspan fill="#1a5fb4">geglu</tspan></a> · <a class="k" href="../src/gemma3.html#mv_q5" target="_top"><title>mv_q5 in gemma3.ptx</title><tspan fill="#1a5fb4">mv_q5</tspan></a> · <a class="k" href="../src/gemma3.html#mv_q8" target="_top"><title>mv_q8 in gemma3.ptx</title><tspan fill="#1a5fb4">mv_q8</tspan></a> · <a class="k" href="../src/gemma3.html#qk_norm_rope" target="_top"><title>qk_norm_rope in gemma3.ptx</title><tspan fill="#1a5fb4">qk_norm_rope</tspan></a></text>
 </svg>

@@ -58,7 +58,7 @@ pre.code .n { color: var(--y); }
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">gpt-oss + Gemma 3 · identical in gptoss.ptx and gemma3.ptx · prefill kernel</div>
+    <div class="eyebrow">gpt-oss + Gemma 3 · identical in <a href="src/gptoss.html#gemm_q8">gptoss.ptx</a> and <a href="src/gemma3.html#gemm_q8">gemma3.ptx</a> · prefill kernel</div>
     <h1>Inside <code>gemm_q8</code></h1>
     <p>This kernel multiplies a batch of token activations by an 8-bit quantized weight matrix. The prompt-processing path calls it for every attention projection. Pick a block, pick a thread, and step through one launch to see exactly which bytes each of the 256 threads moves and multiplies.</p>
     <div class="formula">
@@ -154,7 +154,7 @@ pre.code .n { color: var(--y); }
   </section>
 
   <footer id="foot">
-    Sources: <code>gptoss/gptoss.ptx</code> (kernel <code>gemm_q8</code>, helper <code>st4_s8</code>), the launch in <code>gptoss/gptoss.c</code>, and the CUDA C++ rewrite <code>gemm_q8.cu</code> with its comparison test. The timings are 200-launch averages from that test.
+    Sources: <a href="src/gptoss.html"><code>gptoss/gptoss.ptx</code></a> (kernel <a href="src/gptoss.html#gemm_q8"><code>gemm_q8</code></a>, helper <a href="src/gptoss.html#st4_s8"><code>st4_s8</code></a>), the launch in <code>gptoss/gptoss.c</code>, and the CUDA C++ rewrite <code>gemm_q8.cu</code> with its comparison test. The timings are 200-launch averages from that test.
   <br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 

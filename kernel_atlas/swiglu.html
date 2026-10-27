@@ -19,7 +19,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · element-wise, grid-stride</div>
+    <div class="eyebrow">Qwen 3.5 · <a href="src/qwen35.html#swiglu">qwen35.ptx</a> · element-wise, grid-stride</div>
     <h1>Inside <code>swiglu</code></h1>
     <p>Every Qwen 3.5 layer ends with a SwiGLU feed-forward. One stacked Q4_1 matrix produces the gate and up projections side by side, 2 × 12,288 values per token; <code>swiglu</code> applies SiLU to the gate half and multiplies by the up half, giving the 12,288 inputs of the down projection. SiLU is x · σ(x), and the sigmoid costs one base-2 exponential and one division. It is <a href="geglu.html">geglu</a> with a different activation: same indexing, half the arithmetic.</p>
     <div class="formula"><span class="y">out</span>[t][j] = SiLU(<span class="w">g</span>) · <span class="x">u</span> &nbsp;&nbsp; SiLU(g) = g / (1 + e<sup>−g</sup>) &nbsp;&nbsp;<span class="muted">// gu[t] = [g: n | u: n], n = 12,288; e^−g computed as 2^(−g · log₂e)</span></div>
@@ -79,7 +79,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>swiglu</code>; launched by <code>swiglu()</code> through <code>launch_1d()</code> in <code>qwen35.c</code> over n × tokens elements (256 threads, at most 8 blocks per SM), after the gate ‖ up product (<a href="mv_q4_1.html">mv_q4_1</a> or gemm_q) and before quant_q8 and the down projection.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/qwen35.html"><code>qwen35/qwen35.ptx</code></a>, kernel <a href="src/qwen35.html#swiglu"><code>swiglu</code></a>; launched by <code>swiglu()</code> through <code>launch_1d()</code> in <code>qwen35.c</code> over n × tokens elements (256 threads, at most 8 blocks per SM), after the gate ‖ up product (<a href="mv_q4_1.html">mv_q4_1</a> or gemm_q) and before quant_q8 and the down projection.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

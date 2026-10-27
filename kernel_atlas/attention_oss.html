@@ -18,7 +18,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">gpt-oss · gptoss.ptx · one block per query head per token</div>
+    <div class="eyebrow">gpt-oss · <a href="src/gptoss.html#attention">gptoss.ptx</a> · one block per query head per token</div>
     <h1>Inside <code>attention</code>, the gpt-oss version</h1>
     <p>gpt-oss's attention has the same job and the same name as <a href="attention.html">Gemma 3's kernel</a>, but it is a different kernel. Heads are 64 wide, so a block is only 4 warps and each lane owns 2 dims. The softmax is computed in two exact passes instead of online: the first pass scores every visible key and parks the scores in shared memory, the second turns them into weights against the true maximum and sums the values. Each head also has a learned <em>sink</em> logit, which competes in the softmax but brings no value vector, so a head can put part of its attention on nothing. Even layers see only the last 128 positions, read from a ring of cache slots (256 with the default 128-token prompt chunk).</p>
     <div class="formula"><span class="y">out</span> = Σ<sub>j=lo…p</sub> e<sup><span class="x">q</span>·<span class="w">k</span><sub>j</sub>/8 − m</sup> · <span class="w">v</span><sub>j</sub> / ( Σ<sub>j</sub> e<sup><span class="x">q</span>·<span class="w">k</span><sub>j</sub>/8 − m</sup> + e<sup><span class="s">sink</span><sub>h</sub> − m</sup> ) &nbsp;&nbsp;<span class="muted">// m = max(scores, sink); lo = p − 127 on window layers</span></div>
@@ -90,7 +90,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>attention</code>; launched by <code>attention()</code> in <code>gptoss/gptoss.c</code> with grid (64 q heads, tokens), 128 threads and 4 bytes of dynamic shared memory per key. Head dim 64, scale 1/8, 8 kv heads, window 128 on even layers. Keys, values and sinks here are generated and stored as f16 like the real cache; the kernel's float32 result is compared with a float64 softmax.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gptoss.html"><code>gptoss/gptoss.ptx</code></a>, kernel <a href="src/gptoss.html#attention"><code>attention</code></a>; launched by <code>attention()</code> in <code>gptoss/gptoss.c</code> with grid (64 q heads, tokens), 128 threads and 4 bytes of dynamic shared memory per key. Head dim 64, scale 1/8, 8 kv heads, window 128 on even layers. Keys, values and sinks here are generated and stored as f16 like the real cache; the kernel's float32 result is compared with a float64 softmax.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

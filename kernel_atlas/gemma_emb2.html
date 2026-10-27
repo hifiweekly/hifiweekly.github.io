@@ -16,7 +16,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Model graph · gemma_emb2/Q8_0/embeddinggemma-2-Q8_0.gguf · engine emb2.ptx</div>
+    <div class="eyebrow">Model graph · gemma_emb2/Q8_0/embeddinggemma-2-Q8_0.gguf · engine <a href="src/emb2.html">emb2.ptx</a></div>
     <h1>EmbeddingGemma 2</h1>
     <p>A 271M-parameter text encoder: a Gemma 4 style layer stack that reads the whole text in both directions and ends in one 768-dimensional vector per text. There is no decoding and no KV cache; every text is a single forward pass, and several texts share one batch. Each step of the GGUF dataflow is drawn with the kernel the engine launches for it. Click any box for details.</p>
     <div class="facts" id="facts"></div>
@@ -24,7 +24,7 @@
 
   <section aria-labelledby="h-fig">
     <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017), Figures 1 and 2. Panels: (a) the whole encoder with the per-layer-input branch, (b) bidirectional attention, (c) attention with q, k and v head norms, (d) the per-layer input inside a layer. Boxes that run as a kernel link to its page: hover one to see the kernel, click to open it.</p></div>
-    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/gemma_emb2.svg" width="1460" height="1328" style="aspect-ratio: 1460 / 1328" aria-label="EmbeddingGemma 2 architecture: scaled token embedding, 24 bidirectional layers of sandwich-normed attention and GEGLU feed-forward plus a per-layer input and a learned layer scale; final RMSNorm, linear 512 to 768, mean pooling and L2 normalization."><img src="figures/gemma_emb2.svg" width="1460" height="1328" alt="EmbeddingGemma 2 architecture: scaled token embedding, 24 bidirectional layers of sandwich-normed attention and GEGLU feed-forward plus a per-layer input and a learned layer scale; final RMSNorm, linear 512 to 768, mean pooling and L2 normalization."></object><figcaption class="muted"><a href="figures/gemma_emb2.svg">Open the figure full size</a></figcaption></figure>
+    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/gemma_emb2.svg" width="1460" height="1348" style="aspect-ratio: 1460 / 1348" aria-label="EmbeddingGemma 2 architecture: scaled token embedding, 24 bidirectional layers of sandwich-normed attention and GEGLU feed-forward plus a per-layer input and a learned layer scale; final RMSNorm, linear 512 to 768, mean pooling and L2 normalization."><img src="figures/gemma_emb2.svg" width="1460" height="1328" alt="EmbeddingGemma 2 architecture: scaled token embedding, 24 bidirectional layers of sandwich-normed attention and GEGLU feed-forward plus a per-layer input and a learned layer scale; final RMSNorm, linear 512 to 768, mean pooling and L2 normalization."></object><figcaption class="muted"><a href="figures/gemma_emb2.svg">Open the figure full size</a></figcaption></figure>
   </section>
 
   <section aria-labelledby="h-ov">
@@ -62,7 +62,7 @@
     <div class="panel tablewrap"><table class="list" id="tensors"></table></div>
   </section>
 
-  <footer>Sources: <code>gemma_emb2/emb2.c</code> (<code>forward()</code>, <code>embed_texts()</code>) and <code>gemma_emb2/emb2.ptx</code>; the graph follows llama.cpp's <code>src/models/gemma-embedding2.cpp</code>. rmsnorm, add_rmsnorm, geglu and gemm_q8 are copied unchanged from <code>gemma3.ptx</code>; their pages show the Gemma 3 sizes. <code>scale</code> (x ·= s, grid-stride) has no page. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer>Sources: <code>gemma_emb2/emb2.c</code> (<code>forward()</code>, <code>embed_texts()</code>) and <a href="src/emb2.html"><code>gemma_emb2/emb2.ptx</code></a>; the graph follows llama.cpp's <code>src/models/gemma-embedding2.cpp</code>. rmsnorm, add_rmsnorm, geglu and gemm_q8 are copied unchanged from <a href="src/gemma3.html"><code>gemma3.ptx</code></a>; their pages show the Gemma 3 sizes. <code>scale</code> (x ·= s, grid-stride) has no page. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

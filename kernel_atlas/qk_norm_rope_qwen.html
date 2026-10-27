@@ -25,7 +25,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · one warp per head</div>
+    <div class="eyebrow">Qwen 3.5 · <a href="src/qwen35.html#qk_norm_rope">qwen35.ptx</a> · one warp per head</div>
     <h1>Inside <code>qk_norm_rope</code>, the Qwen version</h1>
     <p>In Qwen 3.5's 8 attention layers, every query and key head is normalized on its own (RMSNorm over 256 dimensions), then only its first 64 dimensions are rotated by the token's position; keys and values go to the KV cache as f16. It has the same name and the same one-warp-per-head plan as <a href="qk_norm_rope.html">Gemma 3's kernel</a>, but different data layouts, so qwen35.ptx has its own version: q heads sit next to their output gates, the rotation pairs dimension i with i + 32, and those pairs fall in two different lanes.</p>
     <div class="formula"><span class="y">x'</span> = RoPE<sub>pos</sub>( <span class="x">x</span> / √(Σ x² / 256 + ε) · <span class="w">w</span> ) &nbsp;&nbsp;<span class="muted">// pair (i, i+32) for i &lt; 32 rotated by pos · 10<sup>−7i/32</sup> (base 10⁷); dims 64 … 255 left as they are</span></div>
@@ -105,7 +105,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>qk_norm_rope</code>, launched from <code>forward()</code> in <code>qwen35/qwen35.c</code>; the cos/sin table comes from <code>rope_table()</code> there (base 10,000,000 from qwen35.rope.freq_base, 64 rotary dims). Values on this page are generated and computed in float32, in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/qwen35.html"><code>qwen35/qwen35.ptx</code></a>, kernel <a href="src/qwen35.html#qk_norm_rope"><code>qk_norm_rope</code></a>, launched from <code>forward()</code> in <code>qwen35/qwen35.c</code>; the cos/sin table comes from <code>rope_table()</code> there (base 10,000,000 from qwen35.rope.freq_base, 64 rotary dims). Values on this page are generated and computed in float32, in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

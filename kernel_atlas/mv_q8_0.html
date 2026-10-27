@@ -15,7 +15,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · decode: one warp per row, Q8_0 weights × int8 activations</div>
+    <div class="eyebrow">Qwen 3.5 · <a href="src/qwen35.html#mv_q8_0">qwen35.ptx</a> · decode: one warp per row, Q8_0 weights × int8 activations</div>
     <h1>Inside <code>mv_q8_0</code></h1>
     <p>The plainest of the four weight formats: 32 signed 8-bit integers and one f16 scale per block. In the Unsloth Q4_1 file it serves only the DeltaNet gates, the stacked 64 × 4096 [β ‖ α] matrix, which decides per head how much to write (β) and how fast to forget (α). When the engine loads the BF16 file, or the Q8_0 file that <code>qwen35_demo quantize</code> writes, every matrix is Q8_0 and this kernel does all of the decoding work. Both operands are int8, so a block is 8 <code>dp4a</code> and one FMA: no nibbles, no offsets.</p>
     <div class="formula"><span class="y">y</span>[r] = Σ<sub>b</sub> <span class="w">d</span>[r][b] · dₓ[b] · Σ<sub>j&lt;32</sub> <span class="w">q</span><sub>j</sub> · <span class="x">x</span><sub>j</sub> + resid[r] &nbsp;&nbsp;<span class="muted">// weight = d · q, q in −127…127; activation = dₓ · x, x int8</span></div>
@@ -78,7 +78,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>mv_q8_0</code>; launched by <code>mv()</code> in <code>qwen35.c</code> with ⌈rows / 8⌉ blocks of 256 threads, after <a href="quant_q8.html">quant_q8</a>; the GGUF's 34-byte blocks are split into q and d arrays at load time. Weights and activations here are generated.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/qwen35.html"><code>qwen35/qwen35.ptx</code></a>, kernel <a href="src/qwen35.html#mv_q8_0"><code>mv_q8_0</code></a>; launched by <code>mv()</code> in <code>qwen35.c</code> with ⌈rows / 8⌉ blocks of 256 threads, after <a href="quant_q8.html">quant_q8</a>; the GGUF's 34-byte blocks are split into q and d arrays at load time. Weights and activations here are generated.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

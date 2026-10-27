@@ -20,7 +20,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">EmbeddingGemma 2 · emb2.ptx · one block per token, two passes</div>
+    <div class="eyebrow">EmbeddingGemma 2 · <a href="src/emb2.html#norm_add">emb2.ptx</a> · one block per token, two passes</div>
     <h1>Inside <code>norm_add</code></h1>
     <p>Gemma's sandwich norm puts an RMSNorm on every sub-block's output before it joins the residual stream. EmbeddingGemma 2 does that twice per layer after attention's <code>add_rmsnorm</code>: once for the feed-forward output and once for the per-layer-input branch, and the second time the whole stream is then multiplied by a learned scalar of that layer. <code>norm_add</code> is the post-norm and residual add with that scale, and without <code>add_rmsnorm</code>'s third pass: the next consumer of x here is a matrix product on the raw stream (inp_gate) or a separate rmsnorm.</p>
     <div class="formula"><span class="x">x</span> = ( <span class="x">x</span> + <span class="y">y</span> · s<sub>y</sub> · <span class="w">w</span> ) · <span class="w">scale</span> &nbsp;&nbsp;<span class="muted">// s<sub>y</sub> = 1 / √(Σ y² / 512 + ε), ε = 1e-6</span></div>
@@ -80,7 +80,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gemma_emb2/emb2.ptx</code>, kernel <code>norm_add</code>; launched by <code>norm_add()</code> in <code>emb2.c</code> with one block of 256 threads per token, twice per layer. The output scales are read from <code>blk.N.layer_output_scale.weight</code>; y, x and the norm weights are generated (weights near the model's means: 0.70 for post_ffw_norm, 0.55 for post_norm in layer 3), computed in float32 in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/emb2.html"><code>gemma_emb2/emb2.ptx</code></a>, kernel <a href="src/emb2.html#norm_add"><code>norm_add</code></a>; launched by <code>norm_add()</code> in <code>emb2.c</code> with one block of 256 threads per token, twice per layer. The output scales are read from <code>blk.N.layer_output_scale.weight</code>; y, x and the norm weights are generated (weights near the model's means: 0.70 for post_ffw_norm, 0.55 for post_norm in layer 3), computed in float32 in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

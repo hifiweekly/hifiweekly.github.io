@@ -128,7 +128,8 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .nums tr.on td { background: var(--hl); }
 
 .codehead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
-.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.srclink { font: 12.5px var(--font-mono); margin-left: 8px; }
 pre.code { margin: 0; overflow-x: auto; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; background: var(--bg); border-radius: 6px; padding: 8px 0; }
 pre.code .ln { display: block; padding: 0 14px 0 10px; border-left: 3px solid transparent; white-space: pre; }
 pre.code .ln.on { background: var(--hl); border-left-color: var(--accent); }

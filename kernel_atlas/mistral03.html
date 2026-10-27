@@ -15,7 +15,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Model graph · mistral03/Mistral-7B-Instruct-v0.3-Q8_0.gguf · engine mistral03.ptx</div>
+    <div class="eyebrow">Model graph · mistral03/Mistral-7B-Instruct-v0.3-Q8_0.gguf · engine <a href="src/mistral03.html">mistral03.ptx</a></div>
     <h1>Mistral 7B v0.3</h1>
     <p>Mistral 7B Instruct v0.3 is stored in its GGUF as the <code>llama</code> architecture, and its layer has exactly the shapes of <a href="llama31.html">Llama 3.1 8B</a>'s: 32 identical layers, each an RMSNorm, grouped-query attention with rotary position embedding, a residual add, an RMSNorm, a SwiGLU feed-forward and a residual add. What differs is around the layers: a 32,768-token SentencePiece vocabulary (a quarter of Llama 3's, so 0.8 GB less of embeddings and head), plain RoPE of base 10⁶ with no frequency factors, and the <code>[INST]</code> chat format. The engine runs Llama 3.1's kernels unchanged. This page draws the dataflow of the GGUF file with the kernel the engine launches at each step; weight shapes and types come from the file header. Click any box for details.</p>
     <div class="facts" id="facts"></div>
@@ -23,7 +23,7 @@
 
   <section aria-labelledby="h-fig">
     <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017), Figures 1 and 2. Panels: (a) the whole model, (b) scaled dot-product attention, (c) grouped-query attention with RoPE on q and k, (d) the SwiGLU feed-forward. Boxes whose kernel has a page link to it: hover one to see the kernel, click to open it.</p></div>
-    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/mistral03.svg" width="1370" height="896" style="aspect-ratio: 1370 / 896" aria-label="Mistral 7B v0.3 architecture: token embedding; 32 layers, each RMSNorm, grouped-query attention, residual add, RMSNorm, SwiGLU feed-forward, residual add; final RMSNorm, linear head and softmax."><img src="figures/mistral03.svg" width="1370" height="896" alt="Mistral 7B v0.3 architecture."></object><figcaption class="muted"><a href="figures/mistral03.svg">Open the figure full size</a></figcaption></figure>
+    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/mistral03.svg" width="1370" height="916" style="aspect-ratio: 1370 / 916" aria-label="Mistral 7B v0.3 architecture: token embedding; 32 layers, each RMSNorm, grouped-query attention, residual add, RMSNorm, SwiGLU feed-forward, residual add; final RMSNorm, linear head and softmax."><img src="figures/mistral03.svg" width="1370" height="896" alt="Mistral 7B v0.3 architecture."></object><figcaption class="muted"><a href="figures/mistral03.svg">Open the figure full size</a></figcaption></figure>
   </section>
 
   <section aria-labelledby="h-ov">
@@ -94,7 +94,7 @@
     </div>
   </section>
 
-  <footer>Sources: <code>forward()</code> in <code>mistral03/mistral03.c</code> (kernels, buffers, launch shapes), <code>mistral03/mistral03.ptx</code>, <code>tokenizer.c</code> and <code>chat.c</code>; tensor shapes and types from <code>Mistral-7B-Instruct-v0.3-Q8_0.gguf</code>; the layer semantics follow llama.cpp's <code>src/models/llama.cpp</code>. Every kernel of this engine has a page; sample_logits is shared with the other generators and has none yet. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer>Sources: <code>forward()</code> in <code>mistral03/mistral03.c</code> (kernels, buffers, launch shapes), <a href="src/mistral03.html"><code>mistral03/mistral03.ptx</code></a>, <code>tokenizer.c</code> and <code>chat.c</code>; tensor shapes and types from <code>Mistral-7B-Instruct-v0.3-Q8_0.gguf</code>; the layer semantics follow llama.cpp's <code>src/models/llama.cpp</code>. Every kernel of this engine has a page; sample_logits is shared with the other generators and has none yet. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

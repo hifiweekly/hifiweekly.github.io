@@ -18,7 +18,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Llama 3.1 · llama31.ptx · decode: one warp per row, any of 9 ggml formats</div>
+    <div class="eyebrow">Llama 3.1 · <a href="src/llama31.html#mv_q">llama31.ptx</a> · decode: one warp per row, any of 9 ggml formats</div>
     <h1>Inside <code>mv_q</code></h1>
     <p>Every matrix of Llama 3.1 is multiplied by this kernel when a token is generated: the stacked q, k, v projection, the output projection, gate and up, down, and the 128,256-row output head. It is a plain one-warp-per-row matrix × vector product like <a href="mv_q8_0.html">mv_q8_0</a>, with one difference: it does not know the weight format. A device function, <code>unpack16</code>, turns 16 weights of any of 9 ggml block formats into 16 int8 values, a scale for those 16 and an offset for their 32-value block. After that, every format is the same exact integer dot product. The Q8_0 Llama file needs only one of the 9 paths; a Q4_K_M or IQ4_XS file of the same model runs through this kernel too.</p>
     <div class="formula"><span class="y">y</span>[r] = Σ<sub>b</sub> dₓ[b] · (<span class="w">s₀</span> Σ<sub>j&lt;16</sub> <span class="w">q</span><sub>j</sub><span class="x">x</span><sub>j</sub> + <span class="w">s₁</span> Σ<sub>j≥16</sub> <span class="w">q</span><sub>j</sub><span class="x">x</span><sub>j</sub>) + <span class="w">m</span> · dₓΣx + resid[r] &nbsp;&nbsp;<span class="muted">// weight = s<sub>h</sub>·q + m, q int8 from unpack16; activation = dₓ·x, x int8</span></div>
@@ -79,7 +79,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>llama31/llama31.ptx</code>, kernel <code>mv_q</code> and device functions <code>unpack16</code>, <code>iq4_lut</code>, <code>iq3s_word</code> (identical in <code>qwen38/qwen38.ptx</code>); launched by <code>mv()</code> in <code>llama31.c</code> with ⌈rows / 8⌉ blocks of 256 threads, once per part of a stacked product. The block bytes here are generated (random bits with sane scales) and decoded exactly as the PTX does; the self-test (<code>llama31_demo test</code>) checks mv_q against a float64 product for all 9 formats.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/llama31.html"><code>llama31/llama31.ptx</code></a>, kernel <a href="src/llama31.html#mv_q"><code>mv_q</code></a> and device functions <a href="src/llama31.html#unpack16"><code>unpack16</code></a>, <a href="src/llama31.html#iq4_lut"><code>iq4_lut</code></a>, <a href="src/llama31.html#iq3s_word"><code>iq3s_word</code></a> (identical in <a href="src/qwen38.html"><code>qwen38/qwen38.ptx</code></a>); launched by <code>mv()</code> in <code>llama31.c</code> with ⌈rows / 8⌉ blocks of 256 threads, once per part of a stacked product. The block bytes here are generated (random bits with sane scales) and decoded exactly as the PTX does; the self-test (<code>llama31_demo test</code>) checks mv_q against a float64 product for all 9 formats.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

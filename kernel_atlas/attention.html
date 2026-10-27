@@ -19,7 +19,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Gemma 3 · gemma3.ptx · one block per query head per token</div>
+    <div class="eyebrow">Gemma 3 · <a href="src/gemma3.html#attention">gemma3.ptx</a> · one block per query head per token</div>
     <h1>Inside <code>attention</code></h1>
     <p>For one query head of one token, this kernel scores every visible cached key, turns the scores into softmax weights and sums the value vectors with those weights. It never stores the scores: each of its 8 warps walks its own share of the keys with an <em>online softmax</em>, keeping only a running maximum, a running sum and a 256-float accumulator, and the 8 partial results are merged at the end. Local layers see only the last 1024 positions, read from a ring buffer.</p>
     <div class="formula"><span class="y">out</span> = Σ<sub>j=lo…p</sub> softmax<sub>j</sub>(<span class="x">q</span> · <span class="w">k</span><sub>j</sub> / 16) · <span class="w">v</span><sub>j</sub> &nbsp;&nbsp;<span class="muted">// lo = p − 1023 on local layers (when p ≥ 1024), else 0; scores kept in log₂ units</span></div>
@@ -123,7 +123,7 @@ NO_GATE:
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gemma3/gemma3.ptx</code>, kernel <code>attention</code>; launched from <code>gemma3.c</code> with grid (16 q heads, tokens) and 256 threads. Head dim 256, scale 1/16, 8 kv heads. Keys and values here are generated and stored as f16 like the real cache; the kernel's float32 result is compared with a float64 softmax.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gemma3.html"><code>gemma3/gemma3.ptx</code></a>, kernel <a href="src/gemma3.html#attention"><code>attention</code></a>; launched from <code>gemma3.c</code> with grid (16 q heads, tokens) and 256 threads. Head dim 256, scale 1/16, 8 kv heads. Keys and values here are generated and stored as f16 like the real cache; the kernel's float32 result is compared with a float64 softmax.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

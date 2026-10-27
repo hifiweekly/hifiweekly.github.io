@@ -16,7 +16,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">gpt-oss + Gemma 3 · identical in gptoss.ptx and gemma3.ptx · decode: one token at a time</div>
+    <div class="eyebrow">gpt-oss + Gemma 3 · identical in <a href="src/gptoss.html#mv_q8">gptoss.ptx</a> and <a href="src/gemma3.html#mv_q8">gemma3.ptx</a> · decode: one token at a time</div>
     <h1>Inside <code>mv_q8</code></h1>
     <p>While generating, the model handles one token at a time, so every weight matrix is multiplied by a single vector. That work is limited by how fast the weights stream from memory, not by arithmetic: each weight byte is used exactly once. <code>mv_q8</code> gives each output row to one warp and arranges the loads so a warp always reads one contiguous kilobyte of weights at a time.</p>
     <div class="formula"><span class="y">y</span>[r] = Σ<sub>b</sub> d[r][b] · Σ<sub>j&lt;32</sub> <span class="w">q</span>[r][32b+j] · <span class="x">x</span>[32b+j] + bias[r] + resid[r] &nbsp;&nbsp;<span class="muted">// Q8_0: int8 q, one f16 scale d per 32 values; x stays f32</span></div>
@@ -70,7 +70,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernels <code>mv_q8</code> and its helper <code>dot4_s8</code>; launched from <code>gptoss.c</code> with 256 threads and ⌈rows / 8⌉ blocks. Values on this page are generated (int8 weights, f16 scales) and computed in float32 in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gptoss.html"><code>gptoss/gptoss.ptx</code></a>, kernels <a href="src/gptoss.html#mv_q8"><code>mv_q8</code></a> and its helper <a href="src/gptoss.html#dot4_s8"><code>dot4_s8</code></a>; launched from <code>gptoss.c</code> with 256 threads and ⌈rows / 8⌉ blocks. Values on this page are generated (int8 weights, f16 scales) and computed in float32 in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

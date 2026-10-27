@@ -19,7 +19,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">gpt-oss · gptoss.ptx · the MoE router, one warp per expert</div>
+    <div class="eyebrow">gpt-oss · <a href="src/gptoss.html#mv_f32">gptoss.ptx</a> · the MoE router, one warp per expert</div>
     <h1>Inside <code>mv_f32</code></h1>
     <p>Before the experts run, a small linear layer scores all 32 experts for the token. <code>mv_f32</code> computes those 32 router logits from the normalized hidden state: a 32 × 2880 matrix in plain float32, times a vector, plus a bias. It is the simplest matrix kernel in the engine and a good baseline for the quantized ones: one warp per output row, each lane striding through the columns, a butterfly to finish.</p>
     <div class="formula"><span class="y">logit</span>[t][e] = Σ<sub>c&lt;2880</sub> <span class="w">W</span>[e][c] · <span class="x">xn</span>[t][c] + <span class="w">b</span>[e] &nbsp;&nbsp;<span class="muted">// W = ffn_gate_inp.weight, b = ffn_gate_inp.bias, e &lt; 32</span></div>
@@ -77,7 +77,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>mv_f32</code>; launched by <code>mv_f32()</code> in <code>gptoss.c</code> with grid (⌈32 / 8⌉, tokens) and 256 threads, followed by <code>router_topk</code>. Values are generated and computed in float32 in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gptoss.html"><code>gptoss/gptoss.ptx</code></a>, kernel <a href="src/gptoss.html#mv_f32"><code>mv_f32</code></a>; launched by <code>mv_f32()</code> in <code>gptoss.c</code> with grid (⌈32 / 8⌉, tokens) and 256 threads, followed by <a href="src/gptoss.html#router_topk"><code>router_topk</code></a>. Values are generated and computed in float32 in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

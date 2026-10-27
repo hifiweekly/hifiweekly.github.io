@@ -21,7 +21,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">gpt-oss · gptoss.ptx · element-wise, grid-stride</div>
+    <div class="eyebrow">gpt-oss · <a href="src/gptoss.html#swiglu_oai">gptoss.ptx</a> · element-wise, grid-stride</div>
     <h1>Inside <code>swiglu_oai</code></h1>
     <p>Each gpt-oss expert computes two projections of the token, a gate g and an up value u, and combines them element by element before the down projection. OpenAI's variant clamps both inputs at ±7 and adds 1 to the up value. The kernel is the simplest kind there is: one thread per element, no cooperation, so this page is about two things, the arithmetic of one element and how a grid-stride loop spreads any n over a fixed-size grid.</p>
     <div class="formula"><span class="y">out</span> = x<sub>g</sub> · σ(1.702 · x<sub>g</sub>) · (x<sub>u</sub> + 1) &nbsp;&nbsp;<span class="muted">// x<sub>g</sub> = min(<span class="w">g</span>, 7), x<sub>u</sub> = clamp(<span class="x">u</span>, −7, 7)</span></div>
@@ -69,7 +69,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>swiglu_oai</code>; launched by <code>launch_1d()</code> in <code>gptoss.c</code> (256 threads, blocks capped at 8 × SM count) with α = 1.702 and limit = 7. The output overwrites g in place.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gptoss.html"><code>gptoss/gptoss.ptx</code></a>, kernel <a href="src/gptoss.html#swiglu_oai"><code>swiglu_oai</code></a>; launched by <code>launch_1d()</code> in <code>gptoss.c</code> (256 threads, blocks capped at 8 × SM count) with α = 1.702 and limit = 7. The output overwrites g in place.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

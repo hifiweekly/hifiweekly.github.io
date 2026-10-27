@@ -21,7 +21,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · one thread per channel and token</div>
+    <div class="eyebrow">Qwen 3.5 · <a href="src/qwen35.html#gdn_conv">qwen35.ptx</a> · one thread per channel and token</div>
     <h1>Inside <code>gdn_conv</code></h1>
     <p>Before the delta rule sees q, k and v, each of their 8192 channels passes through a short causal convolution: a weighted sum of the channel's value at this token and at the three tokens before it, with 4 learned weights per channel, then SiLU. It gives the linear-attention layer a little local context of its own. The 16 query and 16 key heads are then L2-normalized, so the recurrence only ever sees unit-length keys. The tokens before a chunk live in a small conv state; <code>conv_save</code> updates it afterwards.</p>
     <div class="formula"><span class="y">y</span>ₜ[c] = SiLU( Σ<sub>s=0…3</sub> <span class="w">w</span>[c][s] · <span class="x">x</span><sub>t−3+s</sub>[c] ) &nbsp;·&nbsp; q, k heads: y ← y / √(Σ y² + ε) &nbsp;&nbsp;<span class="muted">// x_u for u &lt; 0 is row 3 + u of the conv state; ε = 1e-6</span></div>
@@ -79,7 +79,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernels <code>gdn_conv</code> and <code>conv_save</code>; launched by <code>gdn_conv()</code> (grid (64, T), 128 threads) and <code>conv_save()</code> (grid-stride over 8192 channels) in <code>qwen35.c</code>, after the [qkv ‖ z] product and before <a href="gdn_recur.html">gdn_recur</a>. Weights: <code>ssm_conv1d.weight</code>, 8192 × 4 F32. Values here are generated and computed in float32 in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/qwen35.html"><code>qwen35/qwen35.ptx</code></a>, kernels <a href="src/qwen35.html#gdn_conv"><code>gdn_conv</code></a> and <a href="src/qwen35.html#conv_save"><code>conv_save</code></a>; launched by <code>gdn_conv()</code> (grid (64, T), 128 threads) and <code>conv_save()</code> (grid-stride over 8192 channels) in <code>qwen35.c</code>, after the [qkv ‖ z] product and before <a href="gdn_recur.html">gdn_recur</a>. Weights: <code>ssm_conv1d.weight</code>, 8192 × 4 F32. Values here are generated and computed in float32 in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

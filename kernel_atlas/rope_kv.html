@@ -20,7 +20,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">gpt-oss · gptoss.ptx · one warp per head, one thread per rotation pair</div>
+    <div class="eyebrow">gpt-oss · <a href="src/gptoss.html#rope_kv">gptoss.ptx</a> · one warp per head, one thread per rotation pair</div>
     <h1>Inside <code>rope_kv</code></h1>
     <p>Right after the q, k, v projections, gpt-oss rotates every query and key head by an angle that depends on the token's position (rotary position embedding, RoPE), then writes the token's keys and values into the f16 KV cache. <code>rope_kv</code> does both. A 64-dimensional head has 32 rotation pairs, so one warp rotates one head, and the values need no rotation, only a copy and a conversion to f16.</p>
     <div class="formula">(<span class="y">x'</span><sub>p</sub>, <span class="y">x'</span><sub>p+32</sub>) = (<span class="x">x</span><sub>p</sub> cos θ − <span class="x">x</span><sub>p+32</sub> sin θ, &nbsp;<span class="x">x</span><sub>p</sub> sin θ + <span class="x">x</span><sub>p+32</sub> cos θ) &nbsp;&nbsp;<span class="muted">// θ = pos · freq<sub>p</sub> (YaRN), cos and sin pre-scaled by 1.347</span></div>
@@ -85,7 +85,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>rope_kv</code>; launched by <code>rope_kv()</code> in <code>gptoss.c</code> with grid (⌈2816 / 256⌉, tokens); <code>rope_table()</code> builds cs with base 150000, factor 32, original context 4096, β 32 and 1. q, k and v here are generated; angles and the table are computed as on the host.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gptoss.html"><code>gptoss/gptoss.ptx</code></a>, kernel <a href="src/gptoss.html#rope_kv"><code>rope_kv</code></a>; launched by <code>rope_kv()</code> in <code>gptoss.c</code> with grid (⌈2816 / 256⌉, tokens); <code>rope_table()</code> builds cs with base 150000, factor 32, original context 4096, β 32 and 1. q, k and v here are generated; angles and the table are computed as on the host.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

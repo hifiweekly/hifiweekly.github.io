@@ -25,7 +25,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Qwen 3.5 · qwen35.ptx · one block of 128 threads per (head, token)</div>
+    <div class="eyebrow">Qwen 3.5 · <a href="src/qwen35.html#gated_norm">qwen35.ptx</a> · one block of 128 threads per (head, token)</div>
     <h1>Inside <code>gated_norm</code></h1>
     <p>After <a href="gdn_recur.html">gdn_recur</a> has read each DeltaNet head's state, the 32 head outputs o (128 values each) are normalized and gated before the output projection: an RMSNorm over each head separately, a learned weight shared by all heads, and a multiplicative gate silu(z), where z is a fourth projection of the layer input computed alongside q, k and v. One block handles one head of one token, so a thread owns one value and the only reduction is over 128 numbers.</p>
     <div class="formula"><span class="y">out</span>[j] = <span class="x">o</span>[j] · <span class="s">1 / √(Σ o² / 128 + ε)</span> · <span class="w">w</span>[j] · SiLU(<span class="x">z</span>[j]) &nbsp;&nbsp;<span class="muted">// per head of 128; w = ssm_norm.weight (128 values, all heads); ε = 1e-6</span></div>
@@ -97,7 +97,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>qwen35/qwen35.ptx</code>, kernel <code>gated_norm</code>; launched by <code>gated_norm()</code> in <code>qwen35.c</code> with grid (32 heads, tokens) and 128 threads. Values here are generated and computed in float32 in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/qwen35.html"><code>qwen35/qwen35.ptx</code></a>, kernel <a href="src/qwen35.html#gated_norm"><code>gated_norm</code></a>; launched by <code>gated_norm()</code> in <code>qwen35.c</code> with grid (32 heads, tokens) and 128 threads. Values here are generated and computed in float32 in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

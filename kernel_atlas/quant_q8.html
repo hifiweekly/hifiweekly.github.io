@@ -20,7 +20,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">gpt-oss + Gemma 3 · identical in gptoss.ptx and gemma3.ptx · one warp per 32-value block</div>
+    <div class="eyebrow">gpt-oss + Gemma 3 · identical in <a href="src/gptoss.html#quant_q8">gptoss.ptx</a> and <a href="src/gemma3.html#quant_q8">gemma3.ptx</a> · one warp per 32-value block</div>
     <h1>Inside <code>quant_q8</code></h1>
     <p>The 4-bit and 5-bit expert and feed-forward weights are multiplied with integer dot products (<code>dp4a</code>), so the activation they meet has to be 8-bit integers too. <code>quant_q8</code> converts a float vector into Q8 blocks: every 32 consecutive values share one float scale d, and each value becomes round(x / d), between −127 and 127. One warp handles one block, one lane per value, so the block's maximum comes from a five-step butterfly with no shared memory.</p>
     <p>The kernel is the same PTX, byte for byte, in both engines. What differs is where it runs: gpt-oss calls it before the MXFP4 expert products, Gemma 3 before the Q5_0 feed-forward products. Pick a call site below; the data and sizes follow.</p>
@@ -90,7 +90,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code> and <code>gemma3/gemma3.ptx</code>, kernel <code>quant_q8</code> (identical); launched by <code>quant_q8()</code> → <code>launch_1d()</code> in <code>gptoss.c</code> and <code>gemma3.c</code>. Values are generated to resemble each call site's input: RMS-normalized activations with a few outlier dimensions, or the sparse outputs of swiglu_oai and geglu.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gptoss.html"><code>gptoss/gptoss.ptx</code></a> and <a href="src/gemma3.html"><code>gemma3/gemma3.ptx</code></a>, kernel <a href="src/gemma3.html#quant_q8"><code>quant_q8</code></a> (identical); launched by <code>quant_q8()</code> → <code>launch_1d()</code> in <code>gptoss.c</code> and <code>gemma3.c</code>. Values are generated to resemble each call site's input: RMS-normalized activations with a few outlier dimensions, or the sparse outputs of swiglu_oai and geglu.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

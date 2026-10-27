@@ -16,7 +16,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Gemma 3 · gemma3.ptx · decode: one warp per row, Q5_0 weights × Q8 activations</div>
+    <div class="eyebrow">Gemma 3 · <a href="src/gemma3.html#mv_q5">gemma3.ptx</a> · decode: one warp per row, Q5_0 weights × Q8 activations</div>
     <h1>Inside <code>mv_q5</code></h1>
     <p>Gemma 3's feed-forward weights are two thirds of the model, so the engine stores them in Q5_0: 5-bit integers with one f16 scale per 32 values, 5.5 bits per weight. <code>mv_q5</code> multiplies them by the token's activation, which <code>quant_q8</code> has just turned into int8. It runs twice per layer in decode: once for the stacked gate ‖ up matrix and once for down. The interesting part is rebuilding each 5-bit weight from a nibble and a separately stored fifth bit, four at a time, without a loop.</p>
     <div class="formula"><span class="y">y</span>[r] = Σ<sub>b</sub> <span class="w">d</span>[r][b] · xd[b] · ( Σ<sub>j&lt;32</sub> <span class="w">q</span><sub>j</sub> · <span class="x">x</span><sub>j</sub> − 16 · Σ<sub>j&lt;32</sub> <span class="x">x</span><sub>j</sub> ) &nbsp;&nbsp;<span class="muted">// weight = (q − 16) · d, q in 0…31</span></div>
@@ -79,7 +79,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gemma3/gemma3.ptx</code>, kernel <code>mv_q5</code>; launched by <code>mv_q5()</code> in <code>gemma3.c</code> with ⌈rows / 8⌉ blocks of 256 threads, after <code>quant_q8</code>; <code>upload_q5()</code> splits the GGUF blocks. Weights and activations here are generated. In prefill, <code>gemm_q5</code> does this work as a tiled matrix product.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gemma3.html"><code>gemma3/gemma3.ptx</code></a>, kernel <a href="src/gemma3.html#mv_q5"><code>mv_q5</code></a>; launched by <code>mv_q5()</code> in <code>gemma3.c</code> with ⌈rows / 8⌉ blocks of 256 threads, after <a href="src/gemma3.html#quant_q8"><code>quant_q8</code></a>; <code>upload_q5()</code> splits the GGUF blocks. Weights and activations here are generated. In prefill, <a href="src/gemma3.html#gemm_q5"><code>gemm_q5</code></a> does this work as a tiled matrix product.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

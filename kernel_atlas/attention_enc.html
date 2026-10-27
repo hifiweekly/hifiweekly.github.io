@@ -22,7 +22,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">EmbeddingGemma 2 · emb2.ptx · one block per query head per token</div>
+    <div class="eyebrow">EmbeddingGemma 2 · <a href="src/emb2.html#attention_enc">emb2.ptx</a> · one block per query head per token</div>
     <h1>Inside <code>attention_enc</code></h1>
     <p>The encoder's attention: every token looks at the keys of its own text in both directions, within ±512 positions on local layers and over the whole text on global layers. Several texts share one batch, so the kernel first turns the token's text bounds and the window into one contiguous key range. With every key already computed (no cache, no decoding), it can afford an exact two-pass softmax: the scores of the range go to shared memory, then the maximum, the exponentials and their sum, then the weighted sum of the values.</p>
     <div class="formula"><span class="y">out</span><sub>t,h</sub> = Σ<sub>j∈[lo,hi)</sub> softmax<sub>j</sub>(<span class="x">q</span><sub>t,h</sub> · <span class="w">k</span><sub>j</sub>) · <span class="w">v</span><sub>j</sub> &nbsp;&nbsp;<span class="muted">// [lo, hi) = t's text ∩ [t − 512, t + 512] on local layers; scale 1, no 1/√d</span></div>
@@ -94,7 +94,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gemma_emb2/emb2.ptx</code>, kernel <code>attention_enc</code>; launched from <code>forward()</code> in <code>emb2.c</code> with grid (4 q heads, tokens), 256 threads and 4 · keys bytes of dynamic shared memory. q, k and v are generated as RMS-normalized heads with the model's norm weights (q × 1.02, k × 0.122 local / 0.063 global, v without weight), and a few keys made to resemble the query; RoPE is left out. The kernel's float32 arithmetic is replayed in its order and compared with a float64 softmax.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/emb2.html"><code>gemma_emb2/emb2.ptx</code></a>, kernel <a href="src/emb2.html#attention_enc"><code>attention_enc</code></a>; launched from <code>forward()</code> in <code>emb2.c</code> with grid (4 q heads, tokens), 256 threads and 4 · keys bytes of dynamic shared memory. q, k and v are generated as RMS-normalized heads with the model's norm weights (q × 1.02, k × 0.122 local / 0.063 global, v without weight), and a few keys made to resemble the query; RoPE is left out. The kernel's float32 arithmetic is replayed in its order and compared with a float64 softmax.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

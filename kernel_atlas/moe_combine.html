@@ -19,7 +19,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">gpt-oss · gptoss.ptx · element-wise, grid-stride</div>
+    <div class="eyebrow">gpt-oss · <a href="src/gptoss.html#moe_combine">gptoss.ptx</a> · element-wise, grid-stride</div>
     <h1>Inside <code>moe_combine</code></h1>
     <p>After the down projection, each token has four expert outputs of 2880 values, one per expert the router chose. <code>moe_combine</code> mixes them with the router's weights and adds the result to the residual stream, in place. It is the last launch of every gpt-oss layer. One thread per output element; each reads the same element from the four expert rows.</p>
     <div class="formula"><span class="y">x</span>[t][i] = <span class="x">x</span>[t][i] + Σ<sub>j&lt;4</sub> <span class="w">w</span>[t][j] · <span class="x">down</span>[t][j][i] &nbsp;&nbsp;<span class="muted">// w from router_topk (sums to 1), down from mv_mxfp4 / gemm_mxfp4</span></div>
@@ -83,7 +83,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gptoss/gptoss.ptx</code>, kernel <code>moe_combine</code>; launched by <code>moe_combine()</code> → <code>launch_1d(n · T)</code> in <code>gptoss.c</code> with k = 4 and the residual buffer passed as both <code>resid</code> and <code>y</code>. Values are generated; expert ids and weights come from a softmax over four random router logits per token.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/gptoss.html"><code>gptoss/gptoss.ptx</code></a>, kernel <a href="src/gptoss.html#moe_combine"><code>moe_combine</code></a>; launched by <code>moe_combine()</code> → <code>launch_1d(n · T)</code> in <code>gptoss.c</code> with k = 4 and the residual buffer passed as both <code>resid</code> and <code>y</code>. Values are generated; expert ids and weights come from a softmax over four random router logits per token.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

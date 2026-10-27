@@ -20,7 +20,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">EmbeddingGemma 2 · emb2.ptx · element-wise, grid-stride, in place</div>
+    <div class="eyebrow">EmbeddingGemma 2 · <a href="src/emb2.html#gelu_mul">emb2.ptx</a> · element-wise, grid-stride, in place</div>
     <h1>Inside <code>gelu_mul</code></h1>
     <p>EmbeddingGemma 2 gives every layer a second input besides the residual stream: 512 values per token, computed once from the token's embedding before the first layer (<code>ple</code>, 24 slices of 512 per token). After its feed-forward, each layer projects the stream to a 512-value gate, and <code>gelu_mul</code> multiplies GELU(gate) by the layer's slice of <code>ple</code>. The result is projected back and added to the stream by <code>norm_add</code>. The GELU arithmetic is <code>geglu</code>'s; what is new is where the second operand lives.</p>
     <div class="formula"><span class="y">g</span>[t][i] = GELU(<span class="w">g</span>[t][i]) · <span class="x">ple</span>[t][l][i] &nbsp;&nbsp;<span class="muted">// ple row stride 24 · 512 = 12,288 floats; the kernel gets ple + l·512 and that stride</span></div>
@@ -81,7 +81,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>gemma_emb2/emb2.ptx</code>, kernel <code>gelu_mul</code>; launched by <code>gelu_mul()</code> in <code>emb2.c</code> over 512 × tokens elements (256 threads, at most 8 blocks per SM). The ple buffer is filled once per batch by <code>gemm_q8</code> (per_layer_model_proj), <code>scale</code> (× 1/√512) and <code>rmsnorm</code> (per_layer_proj_norm, over every 512-slice).<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/emb2.html"><code>gemma_emb2/emb2.ptx</code></a>, kernel <a href="src/emb2.html#gelu_mul"><code>gelu_mul</code></a>; launched by <code>gelu_mul()</code> in <code>emb2.c</code> over 512 × tokens elements (256 threads, at most 8 blocks per SM). The ple buffer is filled once per batch by <a href="src/emb2.html#gemm_q8"><code>gemm_q8</code></a> (per_layer_model_proj), <a href="src/emb2.html#scale"><code>scale</code></a> (× 1/√512) and <a href="src/emb2.html#rmsnorm"><code>rmsnorm</code></a> (per_layer_proj_norm, over every 512-slice).<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

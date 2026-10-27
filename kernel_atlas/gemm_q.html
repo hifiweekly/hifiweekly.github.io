@@ -28,7 +28,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Llama 3.1 · llama31.ptx (an older version in qwen35.ptx) · prefill: int8 tensor cores, 64 rows × 64 tokens per block</div>
+    <div class="eyebrow">Llama 3.1 · <a href="src/llama31.html#gemm_q">llama31.ptx</a> (an older version in <a href="src/qwen35.html#gemm_q">qwen35.ptx</a>) · prefill: int8 tensor cores, 64 rows × 64 tokens per block</div>
     <h1>Inside <code>gemm_q</code></h1>
     <p>When a prompt is processed, up to 512 tokens go through each matrix at once, and this kernel does the product. Each block computes a 64-row × 64-token tile of the output. It walks the inner dimension 64 values at a time: the 256 threads decode the weight slice with <code>unpack16</code> (any of the 9 formats of <a href="mv_q.html">mv_q</a>) into int8 in shared memory, copy the int8 activations next to it, and then every warp runs <code>mma.sync.m16n8k16</code> on the tensor cores: exact int32 dot products of 16 values, which the kernel scales into float sums. Every token's result is computed in the same order whatever its neighbours, so splitting a prompt into different chunks gives bit-identical logits.</p>
     <div class="formula"><span class="y">Y</span>[t][r] = Σ<sub>b</sub> dₓ[t][b] · (<span class="w">s₀</span>[r][b] · dot₀ + <span class="w">s₁</span>[r][b] · dot₁) + <span class="w">m</span>[r][b] · dₓΣx[t][b] + resid[t][r] &nbsp;&nbsp;<span class="muted">// dot_h = Σ over 16 values of q·x, int32 from one mma</span></div>
@@ -109,7 +109,7 @@
     </div>
   </section>
 
-  <footer id="foot">Source: <code>llama31/llama31.ptx</code>, kernel <code>gemm_q</code> and <code>.func gm_out</code> (identical in <code>qwen38/qwen38.ptx</code>); launched by <code>gemm()</code> in <code>llama31.c</code> with grid (⌈T / 64⌉, ⌈rows / 64⌉) and 256 threads, once per part of a stacked product. qwen35.ptx's version is described in its own section. Data here is generated; every accumulator is computed with the kernel's operation order in float32 and compared with float64.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer id="foot">Source: <a href="src/llama31.html"><code>llama31/llama31.ptx</code></a>, kernel <a href="src/llama31.html#gemm_q"><code>gemm_q</code></a> and <code>.func gm_out</code> (identical in <a href="src/qwen38.html"><code>qwen38/qwen38.ptx</code></a>); launched by <code>gemm()</code> in <code>llama31.c</code> with grid (⌈T / 64⌉, ⌈rows / 64⌉) and 256 threads, once per part of a stacked product. qwen35.ptx's version is described in its own section. Data here is generated; every accumulator is computed with the kernel's operation order in float32 and compared with float64.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>

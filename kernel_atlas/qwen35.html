@@ -15,7 +15,7 @@
 <div class="wrap">
   <header>
     <nav class="crumbs" id="crumbs"></nav>
-    <div class="eyebrow">Model graph · qwen35/Qwen3.5-9B-Q4_1.gguf · engine qwen35.ptx</div>
+    <div class="eyebrow">Model graph · qwen35/Qwen3.5-9B-Q4_1.gguf · engine <a href="src/qwen35.html">qwen35.ptx</a></div>
     <h1>Qwen 3.5 9B</h1>
     <p>A hybrid model: three of every four layers replace attention with a Gated DeltaNet, a linear-attention layer that keeps a 128 × 128 matrix per head instead of a growing KV cache; the fourth is a gated full-attention layer. This page draws the dataflow of the GGUF file with the kernel the engine launches at each step. Weight shapes and types come from the file header; each operation is named after its PTX kernel. Click any box for details.</p>
     <div class="facts" id="facts"></div>
@@ -23,7 +23,7 @@
 
   <section aria-labelledby="h-fig">
     <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017), Figures 1 and 2. Panels: (a) the whole model, 8 blocks of three DeltaNet layers and one attention layer, (b) the Gated DeltaNet, (c) gated attention with head norms and partial RoPE, (d) the SwiGLU feed-forward. Boxes whose kernel has a page link to it: hover one to see the kernel, click to open it.</p></div>
-    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/qwen35.svg" width="1660" height="1312" style="aspect-ratio: 1660 / 1312" id="qfig" aria-label="Qwen 3.5 9B architecture: token embedding; 8 blocks, each three Gated DeltaNet layers and one gated attention layer, every layer RMSNorm, mixer, residual add, RMSNorm, SwiGLU feed-forward, residual add; final RMSNorm, linear head and softmax."><img src="figures/qwen35.svg" width="1660" height="1312" alt="Qwen 3.5 9B architecture."></object><figcaption class="muted"><a href="figures/qwen35.svg">Open the figure full size</a></figcaption></figure>
+    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/qwen35.svg" width="1660" height="1332" style="aspect-ratio: 1660 / 1332" id="qfig" aria-label="Qwen 3.5 9B architecture: token embedding; 8 blocks, each three Gated DeltaNet layers and one gated attention layer, every layer RMSNorm, mixer, residual add, RMSNorm, SwiGLU feed-forward, residual add; final RMSNorm, linear head and softmax."><img src="figures/qwen35.svg" width="1660" height="1312" alt="Qwen 3.5 9B architecture."></object><figcaption class="muted"><a href="figures/qwen35.svg">Open the figure full size</a></figcaption></figure>
   </section>
 
   <section aria-labelledby="h-ov">
@@ -93,7 +93,7 @@
     </div>
   </section>
 
-  <footer>Sources: <code>forward()</code> in <code>qwen35/qwen35.c</code> (kernels, buffers, launch shapes) and <code>qwen35/qwen35.ptx</code>; tensor shapes and types from <code>Qwen3.5-9B-Q4_1.gguf</code>; the layer semantics follow llama.cpp's <code>src/models/qwen35.cpp</code> and its fused <code>gated_delta_net.cu</code>. Kernel without a page yet: mv_q6_k (the output head); the prompt GEMM, gemm_q, is described in the Qwen 3.5 section of the <a href="gemm_q.html">gemm_q</a> page; conv_save is described on the gdn_conv page. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+  <footer>Sources: <code>forward()</code> in <code>qwen35/qwen35.c</code> (kernels, buffers, launch shapes) and <a href="src/qwen35.html"><code>qwen35/qwen35.ptx</code></a>; tensor shapes and types from <code>Qwen3.5-9B-Q4_1.gguf</code>; the layer semantics follow llama.cpp's <code>src/models/qwen35.cpp</code> and its fused <code>gated_delta_net.cu</code>. Kernel without a page yet: mv_q6_k (the output head); the prompt GEMM, gemm_q, is described in the Qwen 3.5 section of the <a href="gemm_q.html">gemm_q</a> page; conv_save is described on the gdn_conv page. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
 <script>
