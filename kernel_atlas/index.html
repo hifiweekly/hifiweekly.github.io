@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="atlas.css">
 <style>
-/* Index of the v9 atlas ("Scope" theme; tokens and base styles come from atlas.css). */
+/* Index of the v11 atlas ("Scope" theme; tokens and base styles come from atlas.css). */
 body { padding-top: 0; }
 .wrap a, .hero a { color: inherit; }
 .wrap footer a { color: var(--accent); }
@@ -47,7 +47,7 @@ section { display: flex; flex-direction: column; gap: 18px; }
 .seg button:last-child { border-right: 0; }
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
-.d-gptoss { background: var(--e-gptoss); } .d-gemma3 { background: var(--e-gemma3); } .d-emb2 { background: var(--e-emb2); } .d-qwen35 { background: var(--e-qwen35); } .d-llama31 { background: var(--e-llama31); } .d-mistral03 { background: var(--e-mistral03); }
+.d-gptoss { background: var(--e-gptoss); } .d-gemma3 { background: var(--e-gemma3); } .d-emb2 { background: var(--e-emb2); } .d-qwen35 { background: var(--e-qwen35); } .d-llama31 { background: var(--e-llama31); } .d-mistral03 { background: var(--e-mistral03); } .d-glm46v { background: var(--e-glm46v); }
 
 /* models */
 .models { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
@@ -115,7 +115,7 @@ footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--lin
   <h1 class="logo"><img class="dk" src="kernel_atlas_dark.png" width="817" height="187" alt="kernel_atlas: GPU kernels, mapped thread by thread"><img class="lt" src="kernel_atlas_light.png" width="817" height="187" alt=""></h1>
   <p id="intro"></p>
   <div class="stats" id="stats"></div>
-  <p class="mono" style="font-size:13px"><a href="src/index.html" style="color:var(--accent)">Read the PTX source of all seven engines →</a></p>
+  <p class="mono" style="font-size:13px"><a href="src/index.html" style="color:var(--accent)">Read all eight PTX source files →</a></p>
 </div></div>
 
 <div class="wrap">
@@ -152,8 +152,8 @@ footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--lin
   </section>
 
   <section aria-labelledby="h-src">
-    <div class="sh"><span class="no">06</span><h2 id="h-src">ptx_source</h2><p>The seven .ptx files in full: syntax colours, every label, parameter and array linked to its definition, registers traced through a kernel, and indexes of symbols and instructions. <a href="src/index.html" style="color:var(--accent)">Which kernels are the same code in which files →</a></p></div>
-    <div class="srcfs"><a class="srcf" href="src/gptoss.html"><i class="dot d-gptoss"></i><code>gptoss.ptx</code><span>gpt-oss-20b</span></a><a class="srcf" href="src/gemma3.html"><i class="dot d-gemma3"></i><code>gemma3.ptx</code><span>Gemma 3 12B</span></a><a class="srcf" href="src/emb2.html"><i class="dot d-emb2"></i><code>emb2.ptx</code><span>EmbeddingGemma 2</span></a><a class="srcf" href="src/qwen35.html"><i class="dot d-qwen35"></i><code>qwen35.ptx</code><span>Qwen 3.5 9B</span></a><a class="srcf" href="src/qwen38.html"><i class="dot d-qwen35"></i><code>qwen38.ptx</code><span>Qwen 3.8 27B</span></a><a class="srcf" href="src/llama31.html"><i class="dot d-llama31"></i><code>llama31.ptx</code><span>Llama 3.1 8B</span></a><a class="srcf" href="src/mistral03.html"><i class="dot d-mistral03"></i><code>mistral03.ptx</code><span>Mistral 7B v0.3</span></a></div>
+    <div class="sh"><span class="no">06</span><h2 id="h-src">ptx_source</h2><p>The eight .ptx files in full: syntax colours, every label, parameter and array linked to its definition, registers traced through a kernel, and indexes of symbols and instructions. <a href="src/index.html" style="color:var(--accent)">Which kernels are the same code in which files →</a></p></div>
+    <div class="srcfs"><a class="srcf" href="src/gptoss.html"><i class="dot d-gptoss"></i><code>gptoss.ptx</code><span>gpt-oss-20b</span></a><a class="srcf" href="src/gemma3.html"><i class="dot d-gemma3"></i><code>gemma3.ptx</code><span>Gemma 3 12B</span></a><a class="srcf" href="src/emb2.html"><i class="dot d-emb2"></i><code>emb2.ptx</code><span>EmbeddingGemma 2</span></a><a class="srcf" href="src/qwen35.html"><i class="dot d-qwen35"></i><code>qwen35.ptx</code><span>Qwen 3.5 9B</span></a><a class="srcf" href="src/qwen38.html"><i class="dot d-qwen35"></i><code>qwen38.ptx</code><span>Qwen 3.8 27B</span></a><a class="srcf" href="src/llama31.html"><i class="dot d-llama31"></i><code>llama31.ptx</code><span>Llama 3.1 8B</span></a><a class="srcf" href="src/mistral03.html"><i class="dot d-mistral03"></i><code>mistral03.ptx</code><span>Mistral 7B v0.3</span></a><a class="srcf" href="src/glm46v.html"><i class="dot d-glm46v"></i><code>glm46v.ptx</code><span>GLM-4.6V-Flash 9.4B</span></a></div>
   </section>
 
   <footer id="foot"></footer>
@@ -180,7 +180,7 @@ footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--lin
       : `<a class="step${mm}" href="${C.page(k)}">${inner}${noteHtml}</a>`;
   };
   $('tracks').innerHTML = C.FLOWS.map(f => `<div class="track" data-eng="${f.id}"><div class="tl"><i class="dot d-${f.id}"></i><a href="${C.page(E[f.id].page.replace('.html', ''))}">${E[f.id].name}</a><span>· ${f.note}</span></div><div class="rail">${f.steps.map(stepHtml).join('')}</div></div>`).join('') +
-    `<div class="track" data-eng="gptoss gemma3 qwen35 llama31 mistral03"><div class="tl"><i class="dot d-gptoss"></i><i class="dot d-gemma3"></i><i class="dot d-qwen35"></i><i class="dot d-llama31"></i><i class="dot d-mistral03"></i><span>${C.TAIL.note}</span></div><div class="rail">${C.TAIL.steps.map(stepHtml).join('')}</div></div>`;
+    `<div class="track" data-eng="gptoss gemma3 qwen35 llama31 mistral03 glm46v"><div class="tl"><i class="dot d-gptoss"></i><i class="dot d-gemma3"></i><i class="dot d-qwen35"></i><i class="dot d-llama31"></i><i class="dot d-mistral03"></i><i class="dot d-glm46v"></i><span>${C.TAIL.note}</span></div><div class="rail">${C.TAIL.steps.map(stepHtml).join('')}</div></div>`;
   $('fams').innerHTML = C.FAMILIES.map(f => `<div class="fam"><h3>${f.name}</h3><div class="grid">${f.kernels.map(k =>
     `<a class="kc" data-eng="${k.engines.join(' ')}" href="${k.href}"><div class="top"><span class="name">${k.name}</span><span class="eng">${dots(k.engines)}</span></div><p>${k.desc}</p><div class="shows">${k.shows}</div><div class="launch">${k.launch}${C.TRITON.includes(k.name) ? '<span class="tri">+ Triton</span>' : ''}</div></a>`).join('')}</div></div>`).join('');
   $('how').innerHTML = C.HOW.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('');

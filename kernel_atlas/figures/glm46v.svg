@@ -1,0 +1,220 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1370" height="1028" viewBox="0 78 1370 1028" font-family="Helvetica, Arial, sans-serif">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#000"/></marker></defs>
+<style>a.k { cursor: pointer; } a.k:hover rect, a.k:hover circle, a.k:focus rect, a.k:focus circle { stroke: #c0392b; stroke-width: 2.4; } a.k:hover text, a.k:focus text { fill: #c0392b; }</style>
+<rect y="78" width="1370" height="1028" fill="#fff"/>
+<rect x="120" y="324" width="230" height="514" rx="12" fill="#ededed" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="931" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Input tokens</text>
+<path d="M235,922 L235,896" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="155" y="852" width="160" height="44" rx="6" fill="#fadadd" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="865.375" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Token</text>
+<text x="235" y="882.625" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Embedding</text>
+<text x="329" y="866.2" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">151,552 → 4096</text>
+<text x="329" y="881.8" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">[gMASK]&lt;sop&gt; first</text>
+<path d="M235,852 L235,822" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M235,822 L235,808" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M235,808 L235,796" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../add_rmsnorm.html" target="_top"><title>add_rmsnorm: attn_norm, fused into the previous layer's last launch (rmsnorm in layer 0)</title>
+<rect x="155" y="766" width="160" height="30" rx="6" fill="#f2f3c1" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="781" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">RMSNorm</text>
+</a>
+<path d="M235,766 L235,740" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../attention_llama.html" target="_top"><title>attention_llama: 8 warps × 2 keys, online softmax, 16 q heads per kv head</title>
+<rect x="155" y="684" width="160" height="56" rx="6" fill="#fcdcb4" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="703.375" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Grouped-Query</text>
+<text x="235" y="720.625" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Attention</text>
+</a>
+<text x="364" y="673" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">32 query heads,</text>
+<text x="364" y="688.6" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">2 key/value heads, d = 128</text>
+<text x="364" y="704.2" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">q, k, v biases</text>
+<text x="364" y="719.8" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">RoPE 5·10⁵ on dims 0–63</text>
+<text x="364" y="735.4" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle"></text>
+<text x="364" y="751" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">every layer: full context</text>
+<path d="M235,684 L235,658" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../add_rmsnorm.html" target="_top"><title>add_rmsnorm: x += post_attention_norm(y), xn = ffn_norm(x) in one launch</title>
+<rect x="155" y="628" width="160" height="30" rx="6" fill="#f2f3c1" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="643" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">RMSNorm</text>
+</a>
+<path d="M235,628 L235,602" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../add_rmsnorm.html" target="_top"><title>add_rmsnorm: x += post_attention_norm(y), xn = ffn_norm(x) in one launch</title>
+<circle cx="235" cy="592" r="10" fill="#fff" stroke="#000" stroke-width="1.1"/>
+<path d="M228,592 L242,592 M235,585 L235,599" stroke="#000" stroke-width="1.1"/>
+</a>
+<path d="M235,808 L327,808 L327,592 L245,592" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<path d="M235,582 L235,568" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M235,568 L235,556" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../add_rmsnorm.html" target="_top"><title>add_rmsnorm: x += post_attention_norm(y), xn = ffn_norm(x) in one launch</title>
+<rect x="155" y="526" width="160" height="30" rx="6" fill="#f2f3c1" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="541" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">RMSNorm</text>
+</a>
+<path d="M235,526 L235,500" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../swiglu.html" target="_top"><title>swiglu: h = SiLU(gate) · up, between two Q8_0 products</title>
+<rect x="155" y="444" width="160" height="56" rx="6" fill="#c7e9f6" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="463.375" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Feed</text>
+<text x="235" y="480.625" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Forward</text>
+</a>
+<text x="364" y="464.2" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">SwiGLU, width 13696</text>
+<text x="364" y="479.8" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">Q8_0 weights</text>
+<path d="M235,444 L235,418" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../add_rmsnorm.html" target="_top"><title>add_rmsnorm: x += post_ffw_norm(y), xn = next attn_norm(x) in one launch</title>
+<rect x="155" y="388" width="160" height="30" rx="6" fill="#f2f3c1" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="403" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">RMSNorm</text>
+</a>
+<path d="M235,388 L235,362" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../add_rmsnorm.html" target="_top"><title>add_rmsnorm: x += post_ffw_norm(y), xn = next attn_norm(x) in one launch</title>
+<circle cx="235" cy="352" r="10" fill="#fff" stroke="#000" stroke-width="1.1"/>
+<path d="M228,352 L242,352 M235,345 L235,359" stroke="#000" stroke-width="1.1"/>
+</a>
+<path d="M235,568 L327,568 L327,352 L245,352" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="112" y="581" font-size="17" text-anchor="end" fill="#000" dominant-baseline="middle">40×</text>
+<path d="M235,342 L235,324" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M235,324 L235,312" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../add_rmsnorm.html" target="_top"><title>add_rmsnorm: the last launch of layer 39 applies output_norm</title>
+<rect x="155" y="282" width="160" height="30" rx="6" fill="#f2f3c1" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="297" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">RMSNorm</text>
+</a>
+<path d="M235,282 L235,256" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../mv_q.html" target="_top"><title>mv_q: output head, 151,552 logits</title>
+<rect x="155" y="226" width="160" height="30" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="241" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+</a>
+<text x="329" y="233.2" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">untied head, Q8_0</text>
+<text x="329" y="248.8" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">4096 → 151,552</text>
+<path d="M235,226 L235,200" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../compact_logits.html" target="_top"><title>compact_logits: keeps the logits near the max for sampling (argmax when greedy)</title>
+<rect x="155" y="170" width="160" height="30" rx="6" fill="#cde8c7" stroke="#000" stroke-width="1.1"/>
+<text x="235" y="185" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Softmax</text>
+</a>
+<text x="235" y="117" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Output</text>
+<text x="235" y="135" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Probabilities</text>
+<path d="M235,170 L235,144" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="235" y="968" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">(a) GLM-4.6V-Flash, language model</text>
+<a class="k" href="../attention_llama.html" target="_top"><title>attention_llama: one pass, online softmax per warp, no stored scores, 128-dim heads</title>
+<path d="M640,600 L640,578" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="580" y="600" width="120" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="640" y="614" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">MatMul</text>
+<path d="M640,652 L640,628" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="580" y="652" width="120" height="28" rx="6" fill="#cde8c7" stroke="#000" stroke-width="1.1"/>
+<text x="640" y="666" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">SoftMax</text>
+<path d="M640,706 L640,680" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="580" y="706" width="120" height="38" rx="6" fill="#f4dde6" stroke="#000" stroke-width="1.1"/>
+<text x="640" y="717.5" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Mask</text>
+<text x="640" y="732.5" font-size="11" text-anchor="middle" fill="#555" dominant-baseline="middle">causal</text>
+<path d="M640,762 L640,744" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="580" y="762" width="120" height="28" rx="6" fill="#f2f3c1" stroke="#000" stroke-width="1.1"/>
+<text x="640" y="776" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Scale  1/√128</text>
+<path d="M640,816 L640,790" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="580" y="816" width="120" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="640" y="830" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">MatMul</text>
+<path d="M610,892 L610,844" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="610" y="906" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Q</text>
+<path d="M670,892 L670,844" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="670" y="906" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">K</text>
+<path d="M722,892 L722,614 L700,614" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="722" y="906" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">V</text>
+</a>
+<text x="640" y="968" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">(b) Scaled dot-product attention</text>
+<path d="M880,568 L880,548" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../mv_q.html" target="_top"><title>mv_q: output projection into y; add_rmsnorm adds it to x</title>
+<rect x="820" y="568" width="120" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="880" y="582" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+</a>
+<text x="952" y="582" font-size="12" text-anchor="start" fill="#555" dominant-baseline="middle">4096 → 4096</text>
+<path d="M880,620 L880,596" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../attention_llama.html" target="_top"><title>attention_llama: grouped-query attention over the f16 cache</title>
+<rect x="820" y="620" width="120" height="28" rx="6" fill="#f2f3c1" stroke="#000" stroke-width="1.1"/>
+<text x="880" y="634" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Concat</text>
+</a>
+<path d="M880,676 L880,648" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../attention_llama.html" target="_top"><title>attention_llama: grouped-query attention over the f16 cache</title>
+<rect x="792" y="664" width="200" height="50" rx="6" fill="#d4cbe8" stroke="#000" stroke-width="1.1"/>
+<rect x="788" y="668" width="200" height="50" rx="6" fill="#d4cbe8" stroke="#000" stroke-width="1.1"/>
+<rect x="784" y="672" width="200" height="50" rx="6" fill="#d4cbe8" stroke="#000" stroke-width="1.1"/>
+<rect x="780" y="676" width="200" height="50" rx="6" fill="#d4cbe8" stroke="#000" stroke-width="1.1"/>
+<text x="880" y="692.375" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Scaled Dot-Product</text>
+<text x="880" y="709.625" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Attention</text>
+</a>
+<text x="1006" y="690" font-size="14" text-anchor="start" fill="#000" dominant-baseline="middle">h = 32</text>
+<path d="M810,800 L810,726" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../mv_q.html" target="_top"><title>mv_q: q, k and v in one stacked Q8_0 product (gemm_q in prefill)</title>
+<rect x="790" y="792" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<rect x="786" y="796" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<rect x="782" y="800" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="810" y="814" font-size="13" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+</a>
+<text x="815" y="850" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">2 heads</text>
+<path d="M810,870 L810,828" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../bias_rope_kv.html" target="_top"><title>bias_rope_kv: adds the q, k, v biases, RoPE on dims 0–63 in NeoX pairs (i, i + 32); k, v to the f16 cache</title>
+<circle cx="880" cy="770" r="12" fill="#fff" stroke="#000" stroke-width="1.1"/>
+<path d="M872,770 C876,761 876,761 880,770 S884,779 888,770" fill="none" stroke="#000" stroke-width="1.1"/>
+</a>
+<path d="M880,800 L880,782" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<path d="M880,758 L880,726" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../mv_q.html" target="_top"><title>mv_q: q, k and v in one stacked Q8_0 product (gemm_q in prefill)</title>
+<rect x="860" y="792" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<rect x="856" y="796" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<rect x="852" y="800" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="880" y="814" font-size="13" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+</a>
+<text x="885" y="850" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">2 heads</text>
+<path d="M880,870 L880,828" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../bias_rope_kv.html" target="_top"><title>bias_rope_kv: adds the q, k, v biases, RoPE on dims 0–63 in NeoX pairs (i, i + 32); k, v to the f16 cache</title>
+<circle cx="950" cy="770" r="12" fill="#fff" stroke="#000" stroke-width="1.1"/>
+<path d="M942,770 C946,761 946,761 950,770 S954,779 958,770" fill="none" stroke="#000" stroke-width="1.1"/>
+</a>
+<path d="M950,800 L950,782" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<path d="M950,758 L950,726" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../mv_q.html" target="_top"><title>mv_q: q, k and v in one stacked Q8_0 product (gemm_q in prefill)</title>
+<rect x="930" y="792" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<rect x="926" y="796" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<rect x="922" y="800" width="56" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="950" y="814" font-size="13" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+</a>
+<text x="955" y="850" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">32 heads</text>
+<path d="M950,870 L950,828" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<text x="970" y="770" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">+ bias, RoPE dims 0–63</text>
+<path d="M810,870 L950,870" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M880,900 L880,870" fill="none" stroke="#000" stroke-width="1.1"/>
+<text x="880" y="912" font-size="14" text-anchor="middle" fill="#000" dominant-baseline="middle">x (normed)</text>
+<text x="880" y="940" font-size="11" text-anchor="middle" fill="#555" dominant-baseline="middle">each K/V head serves 16 query heads</text>
+<text x="880" y="968" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">(c) Grouped-query attention</text>
+<path d="M1180,620 L1180,596" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../mv_q.html" target="_top"><title>mv_q: down projection into y; add_rmsnorm adds it to x</title>
+<rect x="1120" y="620" width="120" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="1180" y="634" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+</a>
+<text x="1248" y="626.85" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">down</text>
+<text x="1248" y="641.15" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">13696 → model</text>
+<path d="M1180,680 L1180,648" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../swiglu.html" target="_top"><title>swiglu: h = SiLU(gate) · up</title>
+<circle cx="1180" cy="690" r="10" fill="#fff" stroke="#000" stroke-width="1.1"/>
+<path d="M1174.96,684.96 L1185.04,695.04 M1174.96,695.04 L1185.04,684.96" stroke="#000" stroke-width="1.1"/>
+</a>
+<path d="M1130,740 L1130,690 L1170,690" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../swiglu.html" target="_top"><title>swiglu: h = SiLU(gate) · up</title>
+<rect x="1088" y="740" width="84" height="28" rx="6" fill="#c7e9f6" stroke="#000" stroke-width="1.1"/>
+<text x="1130" y="754" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle">SiLU</text>
+</a>
+<path d="M1130,800 L1130,768" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<path d="M1230,800 L1230,690 L1190,690" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../mv_q.html" target="_top"><title>mv_q: ffn_up: gate and up stored as one Q8_0 matrix (gemm_q in prefill)</title>
+<rect x="1095" y="800" width="70" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="1130" y="814" font-size="13" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+</a>
+<text x="1090" y="814" font-size="11" text-anchor="end" fill="#555" dominant-baseline="middle">gate</text>
+<path d="M1130,870 L1130,828" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<a class="k" href="../mv_q.html" target="_top"><title>mv_q: ffn_up: gate and up stored as one Q8_0 matrix (gemm_q in prefill)</title>
+<rect x="1195" y="800" width="70" height="28" rx="6" fill="#dcd5ee" stroke="#000" stroke-width="1.1"/>
+<text x="1230" y="814" font-size="13" text-anchor="middle" fill="#000" dominant-baseline="middle">Linear</text>
+</a>
+<text x="1270" y="814" font-size="11" text-anchor="start" fill="#555" dominant-baseline="middle">up</text>
+<path d="M1230,870 L1230,828" fill="none" stroke="#000" stroke-width="1.1" marker-end="url(#ah)"/>
+<path d="M1130,870 L1230,870" fill="none" stroke="#000" stroke-width="1.1"/>
+<path d="M1180,900 L1180,870" fill="none" stroke="#000" stroke-width="1.1"/>
+<text x="1180" y="912" font-size="14" text-anchor="middle" fill="#000" dominant-baseline="middle">x (normed)</text>
+<text x="1180" y="940" font-size="11" text-anchor="middle" fill="#555" dominant-baseline="middle">one stacked matrix [gate ‖ up], model → 2 × 13696</text>
+<text x="1180" y="968" font-size="15" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">(d) SwiGLU feed-forward</text>
+<text x="685" y="1012" font-size="16" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">Figure 7: The language model of GLM-4.6V-Flash (9.4B), in the style of Vaswani et al. (2017): decoder-only, an RMSNorm before and after each sub-layer ("sandwich" norms, as Gemma 3), biased q, k, v</text>
+<text x="685" y="1032" font-size="16" text-anchor="middle" fill="#000" dominant-baseline="middle" font-family="Times New Roman, Times, serif">projections, grouped-query attention with only 2 key/value heads, and rotary embedding on the first half of each head.</text>
+<text x="685" y="1064" font-size="12" text-anchor="middle" fill="#555" dominant-baseline="middle" font-family="Times New Roman, Times, serif">Copyright (c) 2026 Edward Jiang, all rights reserved.</text>
+<text x="685" y="1084" font-size="12" text-anchor="middle" fill="#555" font-family="Times New Roman, Times, serif">PTX source (glm46v.ptx): <a class="k" href="../src/glm46v.html#add_rmsnorm" target="_top"><title>add_rmsnorm in glm46v.ptx</title><tspan fill="#1a5fb4">add_rmsnorm</tspan></a> · <a class="k" href="../src/glm46v.html#attention" target="_top"><title>attention in glm46v.ptx</title><tspan fill="#1a5fb4">attention</tspan></a> · <a class="k" href="../src/glm46v.html#bias_rope_kv" target="_top"><title>bias_rope_kv in glm46v.ptx</title><tspan fill="#1a5fb4">bias_rope_kv</tspan></a> · <a class="k" href="../src/glm46v.html#compact_logits" target="_top"><title>compact_logits in glm46v.ptx</title><tspan fill="#1a5fb4">compact_logits</tspan></a> · <a class="k" href="../src/glm46v.html#mv_q" target="_top"><title>mv_q in glm46v.ptx</title><tspan fill="#1a5fb4">mv_q</tspan></a> · <a class="k" href="../src/glm46v.html#swiglu" target="_top"><title>swiglu in glm46v.ptx</title><tspan fill="#1a5fb4">swiglu</tspan></a></text>
+</svg>

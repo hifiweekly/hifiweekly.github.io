@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GLM-4.6V Graph</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script src="atlas.js"></script>
+<script src="model.js"></script>
+
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Model graph · glm46v/Huihui-GLM-9.4B-4.6V-Flash-abliterated-Q8_0.gguf · engine <a href="src/glm46v.html">glm46v.ptx</a></div>
+    <h1>GLM-4.6V-Flash (language model)</h1>
+    <p>The 9.4B text decoder of Zhipu's GLM-4.6V-Flash vision-language model (GGUF architecture <code>glm4</code>; the engine runs text only, without the vision encoder). Its layer is Llama 3.1's with four changes: an RMSNorm also <i>after</i> each sub-layer, before the residual add, as in Gemma 3; biases on the q, k and v projections; only 2 key/value heads for 32 query heads; and rotary embedding on the first 64 of each head's 128 dims, in NeoX pairs. The engine runs it with Llama 3.1's kernels, Gemma 3's fused <a href="add_rmsnorm.html">add_rmsnorm</a> and one new kernel, <a href="bias_rope_kv.html">bias_rope_kv</a>. This page draws the dataflow of the GGUF file with the kernel the engine launches at each step; weight shapes and types come from the file header. Click any box for details.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="h-fig">
+    <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017), Figures 1 and 2. Panels: (a) the whole model, (b) scaled dot-product attention, (c) grouped-query attention with the biases and half-dim RoPE on q and k, (d) the SwiGLU feed-forward. Boxes whose kernel has a page link to it: hover one to see the kernel, click to open it.</p></div>
+    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/glm46v.svg" width="1370" height="1028" style="aspect-ratio: 1370 / 1028" aria-label="GLM-4.6V-Flash language model architecture: token embedding; 40 layers, each RMSNorm, grouped-query attention, RMSNorm, residual add, RMSNorm, SwiGLU feed-forward, RMSNorm, residual add; final RMSNorm, linear head and softmax."><img src="figures/glm46v.svg" width="1370" height="1008" alt="GLM-4.6V-Flash language model architecture."></object><figcaption class="muted"><a href="figures/glm46v.svg">Open the figure full size</a></figcaption></figure>
+  </section>
+
+  <section aria-labelledby="h-ov">
+    <div class="sechead"><h2 id="h-ov">Whole model</h2><p class="muted">40 layers, all alike. Click the layer box to show it below. Each sub-layer's output goes to a scratch buffer y; add_rmsnorm normalizes it, adds it to x and computes the next norm of x in one launch, so only layer 0 starts with a plain rmsnorm.</p></div>
+    <div class="mgrid">
+      <div class="panel graph" id="ovGraph" aria-label="Whole-model graph"></div>
+      <div class="panel side" aria-live="polite"><div id="detail"><h3>Details</h3><p class="muted">Click a box in either graph.</p></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-ly">
+    <div class="sechead"><h2 id="h-ly">One layer</h2><p class="muted" id="lyTitle"></p></div>
+    <div class="controls">
+      <span class="seg" id="passSeg" role="group" aria-label="Pass"></span>
+      <span class="seg" id="kindSeg" role="group" aria-label="Layer kind"></span>
+      <label>Highlight kernel <select id="hotSel"></select></label>
+    </div>
+    <div class="key">
+      <span><i style="border-color:var(--sync)"></i>kernel with a walkthrough</span>
+      <span><i style="border-color:var(--muted);border-style:dashed"></i>kernel, no page yet</span>
+      <span><i style="border-color:var(--w)"></i>GGUF tensor</span>
+      <span><i style="border-color:var(--x);border-radius:8px"></i>activations or cache</span>
+      <span><i style="border-color:var(--line)"></i>host (CPU) step</span>
+    </div>
+    <div class="panel graph" id="lyGraph" aria-label="Layer graph"></div>
+  </section>
+
+  <section aria-labelledby="h-ln">
+    <div class="sechead"><h2 id="h-ln">Launch order</h2><p class="muted" id="launchCount"></p></div>
+    <div class="panel tablewrap"><table class="list" id="launches"></table></div>
+  </section>
+
+  <section aria-labelledby="h-new">
+    <div class="sechead"><h2 id="h-new">What is new in glm46v.ptx</h2><p class="muted">The engine started as a copy of the <a href="llama31.html">Llama 3.1</a> engine. Hashing every <code>.entry</code> with its comments stripped against the other engines: of its 11 kernels, 9 are byte-identical to llama31.ptx's, <a href="add_rmsnorm.html">add_rmsnorm</a> is byte-identical to gemma3.ptx's, and one is new, <a href="bias_rope_kv.html">bias_rope_kv</a>.</p></div>
+    <div class="two">
+      <div class="panel">
+        <h3>The kernels</h3>
+        <div class="tablewrap"><table class="list" id="newKernels"></table></div>
+        <h3>Sandwich norms, fused as in Gemma 3</h3>
+        <p>Each sub-layer ends with <code>x += rmsnorm(y) · post_norm</code>, and the next step starts with <code>xn = rmsnorm(x) · pre_norm</code>. Gemma 3's <a href="add_rmsnorm.html">add_rmsnorm</a> does both in one launch per row: the sum of squares of y, then x += y · scale · w₁ while summing x², then xn. GLM-4 needs exactly that, so the output and down projections no longer add into x themselves: they write y, and two add_rmsnorm launches per layer replace Llama 3.1's two residual adds and two rmsnorms.</p>
+      </div>
+      <div class="panel">
+        <h3>RoPE on half the head, from M-RoPE</h3>
+        <p>The GGUF says <code>rope.dimension_count = 64</code> and <code>rope.dimension_sections = [8, 12, 12, 0]</code>: GLM-4.6V's multimodal RoPE. Only dims 0–63 of each 128-dim head rotate, in NeoX pairs (i, i + 32), and pair i takes its angle from a temporal position (pairs 0–7), a height position (8–19) or a width position (20–31). An image patch has three different positions; a text token has the same one three times, so for text it is ordinary NeoX RoPE on 64 dims with θᵢ = pos · 500000<sup>−i/32</sup>, and dims 64–127 carry no position at all. <a href="bias_rope_kv.html">bias_rope_kv</a> steps through it.</p>
+        <h3>2 key/value heads</h3>
+        <p>32 query heads share 2 key/value heads, 16 each (Llama 3.1: 4 each). The KV cache is 2 × 2 × 128 f16 values per layer and position, 40 KiB over the 40 layers: 320 MiB at the default context of 8,192, a third of Llama 3.1's at the same length. The <a href="attention_llama.html">attention</a> kernel is unchanged: q head h reads kv head h / 16.</p>
+        <h3>Chat and thinking</h3>
+        <p>Prompts start with <code>[gMASK]&lt;sop&gt;</code>; turns are <code>&lt;|system|&gt;</code>, <code>&lt;|user|&gt;</code> and <code>&lt;|assistant|&gt;</code> control tokens, and the model reasons inside <code>&lt;think&gt; … &lt;/think&gt;</code> before it answers, unless the turn ends with <code>/nothink</code>. Its reply ends when it emits <code>&lt;|user|&gt;</code>. Earlier replies are rendered without their reasoning, so the KV cache is reused up to the end of the previous user message.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-t">
+    <div class="sechead"><h2 id="h-t">Tensors of one layer, plus the shared ones</h2><p class="muted">Shapes are rows × cols, that is output × input, the way the kernels index them (the GGUF header lists them the other way round). The matrices are Q8_0, embeddings and head included; the engine splits each 34-byte block into a q array (32 int8) and a d array (one f16), and stacks matrices that read the same input into one product. Norm weights and biases are F32.</p></div>
+    <div class="panel tablewrap"><table class="list" id="tensors"></table></div>
+  </section>
+
+  <section aria-labelledby="h-m">
+    <div class="sechead"><h2 id="h-m">Measured</h2><p class="muted">RTX 4070 SUPER, both engines on the same Q8_0 file.</p></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Speed</h3>
+        <div class="tablewrap"><table class="list" id="perf"></table></div>
+        <p class="muted" id="perfNote"></p>
+      </div>
+      <div class="panel">
+        <h3>Checked against llama.cpp</h3>
+        <div class="tablewrap"><table class="list" id="checks"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Sources: <code>forward()</code> in <code>glm46v/glm46v.c</code> (kernels, buffers, launch shapes) and <a href="src/glm46v.html"><code>glm46v/glm46v.ptx</code></a>; tensor shapes and types from <code>Huihui-GLM-9.4B-4.6V-Flash-abliterated-Q8_0.gguf</code> (an abliterated fine-tune of zai-org/GLM-4.6V-Flash with the same architecture); the layer semantics follow llama.cpp's <code>src/models/glm4.cpp</code> and its M-RoPE. Every kernel of this engine has a page; sample_logits is shared with the other generators and has none yet. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+const GS = '≤ 448 blocks · 256 · grid-stride';
+const mm = rows => ({ decode: `${Atlas.int(rows / 8)} blocks · 256`, prefill: `grid (⌈T/64⌉, ${Atlas.int(Math.ceil(rows / 64))}) · 256` });
+const MVN = 'mv_q with type 8 (Q8_0): unpack16 loads 16 int8 and the f16 scale per half block; gemm_q in prefill.';
+const QUANT_NOTE = 'qwen35.ptx\'s quant_q8 (via llama31.ptx), unchanged: int8 blocks of 32 with {d, d · Σq}; the Q8_0 weights do not need the second number, other formats (Q4_1, Q4_K, …) do.';
+const ARN = 'gemma3.ptx\'s add_rmsnorm, unchanged: one block of 1024 threads per token row, three passes (Σy², then x += y · scale · w₁ with Σx², then xn = x · scale · w₂).';
+const AR = { decode: '1 block · 1024', prefill: 'T blocks · 1024' };
+const M = {
+  id: 'glm46v', engine: 'GLM-4.6V', nLayers: 40,
+  kinds: [['layer', 'every layer']],
+  layersOf: () => 40,
+  facts: [['40', 'layers'], ['4096', 'n_embd'], ['32 / 2', 'q / kv heads × 128'], ['13696', 'n_ff (SwiGLU)'], ['151,552', 'vocabulary'], ['5·10⁵ · 64 of 128', 'RoPE base · rotated dims'], ['1/√128', 'attention scale'], ['1e-5', 'RMSNorm ε'], ['9.33 GB', 'weights read per token'], ['40 KiB', 'KV cache per position']],
+  layerTitle: p => `All 40 layers: grouped-query attention over every earlier position, then SwiGLU, each followed by add_rmsnorm; ${p === 'decode' ? 'decode, T = 1: mv_q, one warp per weight row' : 'prefill, a chunk of T ≤ 512 tokens: gemm_q on the int8 tensor cores'}.`,
+  overview() {
+    return {
+      nodes: [
+        { id: 'tok', kind: 'io', label: 'tokens', sub: '[gMASK]&lt;sop&gt; first (chat)' },
+        { id: 'emb', kind: 'w', label: 'token_embd.weight', sub: '151,552 × 4096 · Q8_0' },
+        { id: 'look', kind: 'op', label: 'embedding lookup', sub: 'CPU: row → f32 (no scale), copied to x', io: 'tokens → x' },
+        { id: 'anw0', kind: 'w', label: 'blk.0.attn_norm.weight', sub: '4096 · F32' },
+        { id: 'n0', kind: 'op', kernel: 'rmsnorm', sub: 'xn = attn_norm(x), layer 0 only', launch: { decode: '1 block · 1024', prefill: 'T blocks · 1024' }, io: 'x → xn' },
+        { id: 'b0', kind: 'blk', label: 'layer × 40', sub: 'attention + SwiGLU, sandwich norms, KV cache', layerKind: 'layer' },
+        { id: 'onw', kind: 'w', label: 'output_norm.weight', sub: '4096 · F32, used by layer 39\'s last add_rmsnorm' },
+        { id: 'qo', kind: 'op', kernel: 'quant_q8', page: 'quant_q8_qwen', sub: 'xn (last token) → int8 + scale per 32', launch: { any: GS }, io: 'xn → xq, xds', note: QUANT_NOTE },
+        { id: 'ow', kind: 'w', label: 'output.weight', sub: 'untied head · 151,552 × 4096 · Q8_0' },
+        { id: 'head', kind: 'op', kernel: 'mv_q', sub: 'output head → 151,552 logits', launch: { any: '18,944 blocks · 256' }, io: 'xq, xds → logits', note: MVN.replace('; gemm_q in prefill', '; always one token') },
+        { id: 'am', kind: 'op', kernel: 'argmax', sub: 'best token (greedy result)', launch: { any: '1 block · 1024' }, io: 'logits → next' },
+        { id: 'sm', kind: 'op', kernel: 'sample_logits', sub: 'temperature sampling, min-p', launch: { any: '1 block · 1024' }, io: 'logits, next → draw' },
+        { id: 'cl', kind: 'op', kernel: 'compact_logits', sub: 'candidates near the max (top-k 2, top-p 0.6)', launch: { any: GS }, io: 'logits, next → cand' },
+        { id: 'hs', kind: 'op', label: 'host sampler', sub: 'sort, top-k / top-p, draw' },
+        { id: 'nt', kind: 'io', label: 'next token', sub: 'stops at &lt;|user|&gt;, &lt;|observation|&gt;, &lt;|endoftext|&gt;' },
+      ],
+      edges: [['tok', 'look'], ['emb', 'look'], ['look', 'n0', 'x'], ['anw0', 'n0'], ['n0', 'b0', 'x, xn'],
+        ['onw', 'b0'], ['b0', 'qo', 'xn, output-normed'], ['qo', 'head'], ['ow', 'head'],
+        ['head', 'am', 'logits'], ['am', 'nt', 'temperature 0'], ['am', 'sm'], ['sm', 'nt', 'no top-k / top-p'], ['sm', 'cl', 'top-k / top-p'], ['cl', 'hs'], ['hs', 'nt']],
+    };
+  },
+  layer(pass) {
+    const qn = (id, what) => ({ id, kind: 'op', kernel: 'quant_q8', page: 'quant_q8_qwen', sub: `${what} → int8 + scale per 32`, launch: { any: GS }, io: `${what} → xq, xds`, note: QUANT_NOTE });
+    const mv = (id, sub, rows, io) => ({ id, kind: 'op', kernel: pass === 'decode' ? 'mv_q' : 'gemm_q', sub, launch: mm(rows), io, note: MVN });
+    const nodes = [
+      { id: 'x', kind: 'io', label: 'x, xn', sub: 'residual stream and its attn_norm,<br/>from the previous add_rmsnorm' },
+      qn('q1', 'xn'),
+      { id: 'wqkv', kind: 'w', label: 'attn_q ‖ attn_k ‖ attn_v', t: 'attn_q.weight', sub: 'stacked: 4608 × 4096 · Q8_0' },
+      mv('pqkv', '[q | k | v] = W·xn<br/>32 × 128, 2 × 128, 2 × 128', 4608, 'xq → big'),
+      { id: 'bqkv', kind: 'w', label: 'attn_q ‖ attn_k ‖ attn_v .bias', t: 'attn_q.bias', sub: '4608 · F32, one vector on the GPU' },
+      { id: 'rope', kind: 'op', kernel: 'bias_rope_kv', sub: '+ bias; RoPE on dims 0–63, pairs (i, i+32)<br/>q in place · k, v → f16 cache', launch: { any: 'grid (36 heads, T) · 32' }, io: 'big, b, cs → big, kc, vc', note: 'glm46v.ptx\'s new kernel: a warp per head, lane l owns dims 4l … 4l+3; lanes 0–7 and 8–15 swap their values with shfl.bfly 8 to rotate the NeoX pairs, lanes 16–31 only add the bias.' },
+      { id: 'kv', kind: 'io', label: 'KV cache', sub: 'f16 [ctx][2][128] each, slot = position' },
+      { id: 'att', kind: 'op', kernel: 'attention', page: 'attention_llama', sub: 'softmax(q·kᵀ / √128)·v<br/>32 q / 2 kv heads<br/>all earlier positions', launch: { any: 'grid (32, T) · 256' }, io: 'big, kc, vc → ro', note: 'llama31.ptx\'s attention, unchanged: q head h reads kv head h / 16; 8 warps × 2 keys per step, online softmax.' },
+      qn('q2', 'ro'),
+      { id: 'wo', kind: 'w', label: 'attn_output.weight', sub: '4096 × 4096 · Q8_0' },
+      mv('po', 'y = W·att', 4096, 'xq → ro'),
+      { id: 'panw', kind: 'w', label: 'post_attention_norm ‖ ffn_norm', t: 'post_attention_norm.weight', sub: '2 × 4096 · F32' },
+      { id: 'ar1', kind: 'op', kernel: 'add_rmsnorm', sub: 'x += post_attention_norm(y)<br/>xn = ffn_norm(x)', launch: AR, io: 'ro, x → x, xn', note: ARN },
+      qn('q3', 'xn'),
+      { id: 'wgu', kind: 'w', label: 'ffn_up.weight', t: 'ffn_up.weight', sub: 'gate rows, then up rows: 27392 × 4096 · Q8_0' },
+      mv('gu', 'gate and up in one product', 27392, 'xq → big'),
+      { id: 'act', kind: 'op', kernel: 'swiglu', sub: 'h = silu(gate) · up', launch: { any: GS }, io: 'big → xn' },
+      qn('q4', 'h'),
+      { id: 'wd', kind: 'w', label: 'ffn_down.weight', sub: '4096 × 13696 · Q8_0' },
+      mv('dn', 'y = W·h', 4096, 'xq → ro'),
+      { id: 'pfnw', kind: 'w', label: 'post_ffw_norm ‖ next attn_norm', t: 'post_ffw_norm.weight', sub: '2 × 4096 · F32 (layer 39: output_norm)' },
+      { id: 'ar2', kind: 'op', kernel: 'add_rmsnorm', sub: 'x += post_ffw_norm(y)<br/>xn = next layer’s attn_norm(x)', launch: AR, io: 'ro, x → x, xn', note: ARN },
+      { id: 'y', kind: 'io', label: 'x, xn', sub: 'to the next layer' },
+    ];
+    const edges = [['x', 'q1', 'xn'], ['q1', 'pqkv'], ['wqkv', 'pqkv'],
+      ['pqkv', 'rope', 'q, k, v'], ['bqkv', 'rope'], ['rope', 'kv', 'k, v'], ['rope', 'att', 'q'], ['kv', 'att'],
+      ['att', 'q2', 'att'], ['q2', 'po'], ['wo', 'po'], ['po', 'ar1', 'y'], ['x', 'ar1', 'x'], ['panw', 'ar1'],
+      ['ar1', 'q3', 'xn'], ['q3', 'gu'], ['wgu', 'gu'], ['gu', 'act', 'gate, up'], ['act', 'q4', 'h'],
+      ['q4', 'dn'], ['wd', 'dn'], ['dn', 'ar2', 'y'], ['ar1', 'ar2', 'x'], ['pfnw', 'ar2'], ['ar2', 'y']];
+    return { nodes, edges };
+  },
+  tensors: [
+    { name: 'token_embd.weight', file: '151,552 × 4096 · Q8_0', engine: 'stays on the host: one row dequantized per token', by: 'embedding lookup on the CPU' },
+    { name: 'attn_norm.weight', file: '4096 · F32', engine: 'F32', by: 'rmsnorm (layer 0) · add_rmsnorm' },
+    { name: 'attn_q.weight', file: '4096 × 4096 · Q8_0', engine: 'Q8_0 (q int8 | d f16), rows 0 … 4095 of the stacked qkv matrix', by: 'mv_q · gemm_q' },
+    { name: 'attn_k.weight', file: '256 × 4096 · Q8_0', engine: 'Q8_0, rows 4096 … 4351', by: 'mv_q · gemm_q' },
+    { name: 'attn_v.weight', file: '256 × 4096 · Q8_0', engine: 'Q8_0, rows 4352 … 4607', by: 'mv_q · gemm_q' },
+    { name: 'attn_q.bias', file: '4096 · F32', engine: 'F32, entries 0 … 4095 of one 4608-float bias vector', by: 'bias_rope_kv' },
+    { name: 'attn_k.bias', file: '256 · F32', engine: 'F32, entries 4096 … 4351', by: 'bias_rope_kv' },
+    { name: 'attn_v.bias', file: '256 · F32', engine: 'F32, entries 4352 … 4607', by: 'bias_rope_kv' },
+    { name: 'attn_output.weight', file: '4096 × 4096 · Q8_0', engine: 'Q8_0', by: 'mv_q · gemm_q' },
+    { name: 'post_attention_norm.weight', file: '4096 · F32', engine: 'F32', by: 'add_rmsnorm' },
+    { name: 'ffn_norm.weight', file: '4096 · F32', engine: 'F32', by: 'add_rmsnorm' },
+    { name: 'ffn_up.weight', file: '27392 × 4096 · Q8_0', engine: 'Q8_0: rows 0 … 13695 are the gate, 13696 … 27391 the up projection (llama.cpp splits it the same way for its swiglu)', by: 'mv_q · gemm_q' },
+    { name: 'ffn_down.weight', file: '4096 × 13696 · Q8_0', engine: 'Q8_0 (13696 = 214 × 64: a multiple of gemm_q\'s 64, not of 256)', by: 'mv_q · gemm_q' },
+    { name: 'post_ffw_norm.weight', file: '4096 · F32', engine: 'F32', by: 'add_rmsnorm' },
+    { name: 'output_norm.weight', file: '4096 · F32', engine: 'F32', by: 'add_rmsnorm (end of layer 39)' },
+    { name: 'output.weight', file: '151,552 × 4096 · Q8_0', engine: 'Q8_0, untied from the embedding', by: 'mv_q' },
+  ],
+};
+Atlas.model(M);
+
+(() => {
+  const $ = Atlas.$, row = r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`;
+  $('newKernels').innerHTML = '<thead><tr><th>kernel</th><th>from</th></tr></thead><tbody>' + [
+    ['<a href="bias_rope_kv.html">bias_rope_kv</a>', '<b>new</b> (replaces rope_kv)'],
+    ['<a href="add_rmsnorm.html">add_rmsnorm</a>', 'gemma3.ptx'],
+    ['<a href="mv_q.html">mv_q</a>, <a href="gemm_q.html">gemm_q</a>', 'llama31.ptx'],
+    ['<a href="attention_llama.html">attention</a>', 'llama31.ptx'],
+    ['rmsnorm, quant_q8, swiglu', 'llama31.ptx'],
+    ['argmax, compact_logits, sample_logits', 'llama31.ptx'],
+  ].map(row).join('') + '</tbody>';
+  $('perf').innerHTML = '<thead><tr><th></th><th>llama.cpp (CUDA)</th><th>glm46v_demo</th></tr></thead><tbody>' +
+    [['prompt, 494–512 / 1,285 tokens', '4,190 (pp512) / 3,660 tok/s', '2,390 / 2,000 tok/s'], ['decode, 128 tokens', '46.3 tok/s', '47.8 tok/s'], ['load (page cache / from disk)', '', '3.4 s / 35 s']].map(row).join('') + '</tbody>';
+  $('perfNote').innerHTML = 'Decode reads 9.33 GB of weights per token: at 47.8 tokens/s that is 446 GB/s of the card\'s 504, a little ahead of llama.cpp. Prompt processing is 1.8× slower than llama.cpp\'s: the same <a href="gemm_q.html">gemm_q</a> gap as in the Llama and Qwen engines (no double buffering, 64 × 64 tiles).';
+  $('checks').innerHTML = '<thead><tr><th>check</th><th>result</th></tr></thead><tbody>' + [
+    ['logits, 7 / 37 / 1,285-token prompts', 'KL 4.3e-4 / 3.5e-8 / 9.9e-4 vs CUDA; llama.cpp\'s own CPU backend: 3.5e-4 / 2.5e-8 / 1.2e-3. Same top-1 on all three, 10/10 of the top 10 on the longer two (9/10 on the 7-token one, as for the CPU run)'],
+    ['tokenizer (glm4 = llama-bpe regex)', '3,146 fuzzed lines, identical ids with and without control-token parsing'],
+    ['chat template', '16 conversations, thinking on and off: identical ids'],
+    ['kernels', '50 self-tests vs CPU references'],
+    ['cache reuse', 'extend, rewind to a common prefix, single steps: bit-identical; 6 layers streamed from host memory: bit-identical logits'],
+  ].map(row).join('') + '</tbody>';
+})();
+</script>

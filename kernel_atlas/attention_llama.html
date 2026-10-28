@@ -74,6 +74,7 @@
         <p>The final write gives one thread per output dimension. With 256 threads and 128 dims, threads 128–255 take part in the barrier and then branch to <code>ret</code>; the other half reads the 8 warps' accumulators for its dim from shared memory (stride 512 bytes, one row per warp) and divides by the common denominator. Keeping 8 warps matters more than the idle tail: they are what keeps 16 keys in flight per block while the loop runs.</p>
         <h3>Grouped-query sharing</h3>
         <p>q heads 4g … 4g + 3 all read kv head g. Their 4 blocks run at about the same time and read the same 512 bytes per key (256 of K, 256 of V), so 3 of the 4 reads hit in L2. Per decoded token a layer reads 4 KB of cache per position from DRAM: at 8,192 positions that is 32 MB per layer, about 1 GB per token over the 32 layers, against the 7.95 GB of weights.</p>
+        <p><a href="glm46v.html">GLM-4.6V</a> runs this kernel unchanged with 2 kv heads: q heads 16g … 16g + 15 share kv head g, so 15 of every 16 cache reads hit in L2, and the cache is 1 KB per position per layer, 40 KiB over its 40 layers.</p>
       </div>
     </div>
   </section>

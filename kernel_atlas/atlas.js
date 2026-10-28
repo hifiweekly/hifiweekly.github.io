@@ -13,7 +13,9 @@ window.Atlas = A;
 // section on its page). llama31.ptx (Llama 3.1) copies rmsnorm, argmax, compact_logits,
 // quant_q8 and swiglu of qwen35.ptx unchanged, and brings the generic-format mv_q / gemm_q
 // (gemm_q's page has a section on Qwen 3.5's older version). mistral03.ptx (Mistral 7B
-// v0.3) is llama31.ptx unchanged, so every Llama 3.1 kernel also lists 'mistral03'. Kernels that share an .entry
+// v0.3) is llama31.ptx unchanged, so every Llama 3.1 kernel also lists 'mistral03'. glm46v.ptx
+// (GLM-4.6V-Flash) keeps every llama31.ptx kernel but rope_kv, takes add_rmsnorm from gemma3.ptx
+// and adds bias_rope_kv, so those kernels list 'glm46v'. Kernels that share an .entry
 // name but not the code get pages of their own: qk_norm_rope_qwen, quant_q8_qwen,
 // attention_oss, rope_kv_llama and attention_llama; `entry` gives the .entry name when the
 // id differs from it.
@@ -24,10 +26,11 @@ A.MODELS = [
   { id: 'qwen35', name: 'Qwen 3.5 9B', engine: 'Qwen 3.5' },
   { id: 'llama31', name: 'Llama 3.1 8B', engine: 'Llama 3.1' },
   { id: 'mistral03', name: 'Mistral 7B v0.3', engine: 'Mistral 7B' },
+  { id: 'glm46v', name: 'GLM-4.6V-Flash 9.4B', engine: 'GLM-4.6V' },
 ];
 A.KERNELS = [
-  { id: 'rmsnorm', name: 'rmsnorm', engine: 'shared', models: ['gptoss', 'gemma3', 'gemma_emb2', 'qwen35', 'llama31', 'mistral03'], family: 'Norms & activations' },
-  { id: 'add_rmsnorm', name: 'add_rmsnorm', engine: 'Gemma 3', models: ['gemma3', 'gemma_emb2'], family: 'Norms & activations' },
+  { id: 'rmsnorm', name: 'rmsnorm', engine: 'shared', models: ['gptoss', 'gemma3', 'gemma_emb2', 'qwen35', 'llama31', 'mistral03', 'glm46v'], family: 'Norms & activations' },
+  { id: 'add_rmsnorm', name: 'add_rmsnorm', engine: 'Gemma 3', models: ['gemma3', 'gemma_emb2', 'glm46v'], family: 'Norms & activations' },
   { id: 'norm_add', name: 'norm_add', engine: 'EmbeddingGemma 2', models: ['gemma_emb2'], family: 'Norms & activations' },
   { id: 'qk_norm_rope', name: 'qk_norm_rope', engine: 'Gemma 3', models: ['gemma3'], family: 'Norms & activations' },
   { id: 'qk_norm_rope_qwen', name: 'qk_norm_rope (Qwen)', entry: 'qk_norm_rope', engine: 'Qwen 3.5', models: ['qwen35'], family: 'Norms & activations' },
@@ -36,23 +39,24 @@ A.KERNELS = [
   { id: 'geglu', name: 'geglu', engine: 'Gemma 3', models: ['gemma3', 'gemma_emb2'], family: 'Norms & activations' },
   { id: 'gelu_mul', name: 'gelu_mul', engine: 'EmbeddingGemma 2', models: ['gemma_emb2'], family: 'Norms & activations' },
   { id: 'gated_norm', name: 'gated_norm', engine: 'Qwen 3.5', models: ['qwen35'], family: 'Norms & activations' },
-  { id: 'swiglu', name: 'swiglu', engine: 'Qwen 3.5', models: ['qwen35', 'llama31', 'mistral03'], family: 'Norms & activations' },
+  { id: 'swiglu', name: 'swiglu', engine: 'Qwen 3.5', models: ['qwen35', 'llama31', 'mistral03', 'glm46v'], family: 'Norms & activations' },
   { id: 'quant_q8', name: 'quant_q8', engine: 'shared', models: ['gptoss', 'gemma3'], family: 'Matrix products' },
-  { id: 'quant_q8_qwen', name: 'quant_q8 (Qwen)', entry: 'quant_q8', engine: 'Qwen 3.5', models: ['qwen35', 'llama31', 'mistral03'], family: 'Matrix products' },
+  { id: 'quant_q8_qwen', name: 'quant_q8 (Qwen)', entry: 'quant_q8', engine: 'Qwen 3.5', models: ['qwen35', 'llama31', 'mistral03', 'glm46v'], family: 'Matrix products' },
   { id: 'mv_q8', name: 'mv_q8', engine: 'shared', models: ['gptoss', 'gemma3'], family: 'Matrix products' },
   { id: 'mv_q5', name: 'mv_q5', engine: 'Gemma 3', models: ['gemma3'], family: 'Matrix products' },
   { id: 'mv_mxfp4', name: 'mv_mxfp4', engine: 'gpt-oss', models: ['gptoss'], family: 'Matrix products' },
   { id: 'mv_q4_1', name: 'mv_q4_1', engine: 'Qwen 3.5', models: ['qwen35'], family: 'Matrix products' },
   { id: 'mv_q8_0', name: 'mv_q8_0', engine: 'Qwen 3.5', models: ['qwen35'], family: 'Matrix products' },
   { id: 'mv_q5_k', name: 'mv_q5_k', engine: 'Qwen 3.5', models: ['qwen35'], family: 'Matrix products' },
-  { id: 'mv_q', name: 'mv_q', engine: 'Llama 3.1', models: ['llama31', 'mistral03'], family: 'Matrix products' },
-  { id: 'gemm_q', name: 'gemm_q', engine: 'Llama 3.1', models: ['llama31', 'mistral03', 'qwen35'], family: 'Matrix products' },
+  { id: 'mv_q', name: 'mv_q', engine: 'Llama 3.1', models: ['llama31', 'mistral03', 'glm46v'], family: 'Matrix products' },
+  { id: 'gemm_q', name: 'gemm_q', engine: 'Llama 3.1', models: ['llama31', 'mistral03', 'glm46v', 'qwen35'], family: 'Matrix products' },
   { id: 'gemm_q8', name: 'gemm_q8', engine: 'shared', models: ['gptoss', 'gemma3', 'gemma_emb2'], family: 'Matrix products' },
   { id: 'rope_kv', name: 'rope_kv', engine: 'gpt-oss', models: ['gptoss'], family: 'Attention' },
   { id: 'attention', name: 'attention', engine: 'Gemma 3', models: ['gemma3', 'qwen35'], family: 'Attention' },
   { id: 'attention_oss', name: 'attention (gpt-oss)', entry: 'attention', engine: 'gpt-oss', models: ['gptoss'], family: 'Attention' },
   { id: 'rope_kv_llama', name: 'rope_kv (Llama)', entry: 'rope_kv', engine: 'Llama 3.1', models: ['llama31', 'mistral03'], family: 'Attention' },
-  { id: 'attention_llama', name: 'attention (Llama)', entry: 'attention', engine: 'Llama 3.1', models: ['llama31', 'mistral03'], family: 'Attention' },
+  { id: 'attention_llama', name: 'attention (Llama)', entry: 'attention', engine: 'Llama 3.1', models: ['llama31', 'mistral03', 'glm46v'], family: 'Attention' },
+  { id: 'bias_rope_kv', name: 'bias_rope_kv', engine: 'GLM-4.6V', models: ['glm46v'], family: 'Attention' },
   { id: 'attention_enc', name: 'attention_enc', engine: 'EmbeddingGemma 2', models: ['gemma_emb2'], family: 'Attention' },
   { id: 'mv_f32', name: 'mv_f32', engine: 'gpt-oss', models: ['gptoss'], family: 'Routing & sampling' },
   { id: 'router_topk', name: 'router_topk', engine: 'gpt-oss', models: ['gptoss'], family: 'Routing & sampling' },
@@ -60,34 +64,35 @@ A.KERNELS = [
   { id: 'moe_combine', name: 'moe_combine', engine: 'gpt-oss', models: ['gptoss'], family: 'Routing & sampling' },
   { id: 'gdn_conv', name: 'gdn_conv', engine: 'Qwen 3.5', models: ['qwen35'], family: 'Linear attention' },
   { id: 'gdn_recur', name: 'gdn_recur', engine: 'Qwen 3.5', models: ['qwen35'], family: 'Linear attention' },
-  { id: 'argmax', name: 'argmax', engine: 'shared', models: ['gptoss', 'gemma3', 'qwen35', 'llama31', 'mistral03'], family: 'Routing & sampling' },
-  { id: 'compact_logits', name: 'compact_logits', engine: 'shared', models: ['gptoss', 'gemma3', 'qwen35', 'llama31', 'mistral03'], family: 'Routing & sampling' },
+  { id: 'argmax', name: 'argmax', engine: 'shared', models: ['gptoss', 'gemma3', 'qwen35', 'llama31', 'mistral03', 'glm46v'], family: 'Routing & sampling' },
+  { id: 'compact_logits', name: 'compact_logits', engine: 'shared', models: ['gptoss', 'gemma3', 'qwen35', 'llama31', 'mistral03', 'glm46v'], family: 'Routing & sampling' },
 ];
 A.engineLabel = e => e === 'shared' ? 'gpt-oss + Gemma 3' : e;
 
 // <src-xref> generated by src/build.py: the PTX listings in src/ that hold each page's kernel
 // (primary engine first), and each listing's functions.
 A.SRC = {
-  add_rmsnorm: [['gemma3', 'add_rmsnorm'], ['emb2', 'add_rmsnorm']],
-  argmax: [['gptoss', 'argmax'], ['gemma3', 'argmax'], ['qwen35', 'argmax'], ['qwen38', 'argmax'], ['llama31', 'argmax'], ['mistral03', 'argmax']],
+  add_rmsnorm: [['gemma3', 'add_rmsnorm'], ['emb2', 'add_rmsnorm'], ['glm46v', 'add_rmsnorm']],
+  argmax: [['gptoss', 'argmax'], ['gemma3', 'argmax'], ['qwen35', 'argmax'], ['qwen38', 'argmax'], ['llama31', 'argmax'], ['mistral03', 'argmax'], ['glm46v', 'argmax']],
   attention: [['gemma3', 'attention'], ['qwen35', 'attention'], ['qwen38', 'attention']],
   attention_enc: [['emb2', 'attention_enc']],
-  attention_llama: [['llama31', 'attention'], ['mistral03', 'attention']],
+  attention_llama: [['llama31', 'attention'], ['mistral03', 'attention'], ['glm46v', 'attention']],
   attention_oss: [['gptoss', 'attention']],
-  compact_logits: [['gptoss', 'compact_logits'], ['gemma3', 'compact_logits'], ['qwen35', 'compact_logits'], ['qwen38', 'compact_logits'], ['llama31', 'compact_logits'], ['mistral03', 'compact_logits']],
+  bias_rope_kv: [['glm46v', 'bias_rope_kv']],
+  compact_logits: [['gptoss', 'compact_logits'], ['gemma3', 'compact_logits'], ['qwen35', 'compact_logits'], ['qwen38', 'compact_logits'], ['llama31', 'compact_logits'], ['mistral03', 'compact_logits'], ['glm46v', 'compact_logits']],
   gated_norm: [['qwen35', 'gated_norm'], ['qwen38', 'gated_norm']],
   gdn_conv: [['qwen35', 'gdn_conv'], ['qwen35', 'conv_save'], ['qwen38', 'gdn_conv'], ['qwen38', 'conv_save']],
   gdn_recur: [['qwen35', 'gdn_recur'], ['qwen38', 'gdn_recur']],
   geglu: [['gemma3', 'geglu'], ['emb2', 'geglu']],
   gelu_mul: [['emb2', 'gelu_mul']],
-  gemm_q: [['llama31', 'gemm_q'], ['qwen35', 'gemm_q'], ['qwen38', 'gemm_q'], ['mistral03', 'gemm_q']],
+  gemm_q: [['llama31', 'gemm_q'], ['qwen35', 'gemm_q'], ['qwen38', 'gemm_q'], ['mistral03', 'gemm_q'], ['glm46v', 'gemm_q']],
   gemm_q8: [['gptoss', 'gemm_q8'], ['gemma3', 'gemm_q8'], ['emb2', 'gemm_q8']],
   head_norm_rope: [['emb2', 'head_norm_rope']],
   moe_combine: [['gptoss', 'moe_combine']],
   moe_sort: [['gptoss', 'moe_sort']],
   mv_f32: [['gptoss', 'mv_f32']],
   mv_mxfp4: [['gptoss', 'mv_mxfp4']],
-  mv_q: [['llama31', 'mv_q'], ['qwen38', 'mv_q'], ['mistral03', 'mv_q']],
+  mv_q: [['llama31', 'mv_q'], ['qwen38', 'mv_q'], ['mistral03', 'mv_q'], ['glm46v', 'mv_q']],
   mv_q4_1: [['qwen35', 'mv_q4_1']],
   mv_q5: [['gemma3', 'mv_q5']],
   mv_q5_k: [['qwen35', 'mv_q5_k']],
@@ -97,12 +102,12 @@ A.SRC = {
   qk_norm_rope: [['gemma3', 'qk_norm_rope']],
   qk_norm_rope_qwen: [['qwen35', 'qk_norm_rope'], ['qwen38', 'qk_norm_rope']],
   quant_q8: [['gptoss', 'quant_q8'], ['gemma3', 'quant_q8']],
-  quant_q8_qwen: [['qwen35', 'quant_q8'], ['qwen38', 'quant_q8'], ['llama31', 'quant_q8'], ['mistral03', 'quant_q8']],
-  rmsnorm: [['gptoss', 'rmsnorm'], ['gemma3', 'rmsnorm'], ['emb2', 'rmsnorm'], ['qwen35', 'rmsnorm'], ['qwen38', 'rmsnorm'], ['llama31', 'rmsnorm'], ['mistral03', 'rmsnorm']],
+  quant_q8_qwen: [['qwen35', 'quant_q8'], ['qwen38', 'quant_q8'], ['llama31', 'quant_q8'], ['mistral03', 'quant_q8'], ['glm46v', 'quant_q8']],
+  rmsnorm: [['gptoss', 'rmsnorm'], ['gemma3', 'rmsnorm'], ['emb2', 'rmsnorm'], ['qwen35', 'rmsnorm'], ['qwen38', 'rmsnorm'], ['llama31', 'rmsnorm'], ['mistral03', 'rmsnorm'], ['glm46v', 'rmsnorm']],
   rope_kv: [['gptoss', 'rope_kv']],
   rope_kv_llama: [['llama31', 'rope_kv'], ['mistral03', 'rope_kv']],
   router_topk: [['gptoss', 'router_topk']],
-  swiglu: [['qwen35', 'swiglu'], ['qwen38', 'swiglu'], ['llama31', 'swiglu'], ['mistral03', 'swiglu']],
+  swiglu: [['qwen35', 'swiglu'], ['qwen38', 'swiglu'], ['llama31', 'swiglu'], ['mistral03', 'swiglu'], ['glm46v', 'swiglu']],
   swiglu_oai: [['gptoss', 'swiglu_oai']],
 };
 A.SRC_FILES = {
@@ -113,6 +118,7 @@ A.SRC_FILES = {
   qwen38: ['rmsnorm', 'quant_q8', 'iq4_lut', 'iq3s_word', 'unpack16', 'mv_q', 'gm_out', 'gemm_q', 'gdn_conv', 'conv_save', 'gdn_recur', 'gated_norm', 'swiglu', 'qk_norm_rope', 'attention', 'argmax', 'compact_logits', 'sample_logits'],
   llama31: ['rmsnorm', 'quant_q8', 'iq4_lut', 'iq3s_word', 'unpack16', 'mv_q', 'gm_out', 'gemm_q', 'swiglu', 'rope_kv', 'attention', 'argmax', 'compact_logits', 'sample_logits'],
   mistral03: ['rmsnorm', 'quant_q8', 'iq4_lut', 'iq3s_word', 'unpack16', 'mv_q', 'gm_out', 'gemm_q', 'swiglu', 'rope_kv', 'attention', 'argmax', 'compact_logits', 'sample_logits'],
+  glm46v: ['rmsnorm', 'add_rmsnorm', 'quant_q8', 'iq4_lut', 'iq3s_word', 'unpack16', 'mv_q', 'gm_out', 'gemm_q', 'swiglu', 'bias_rope_kv', 'attention', 'argmax', 'compact_logits', 'sample_logits'],
 };
 // </src-xref>
 // Links to the full listings: one per file holding the page's kernel (a page that explains two

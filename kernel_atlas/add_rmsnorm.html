@@ -78,6 +78,10 @@
     </div>
   </section>
 
+  <section aria-labelledby="s-glm">
+    <div class="sechead"><h2 id="s-glm">The same kernel in GLM-4.6V</h2><p>glm46v.ptx copies add_rmsnorm from gemma3.ptx byte for byte (comments aside). GLM-4 has Gemma 3's sandwich norms: <code>post_attention_norm</code> and <code>post_ffw_norm</code> after the sub-layers, <code>attn_norm</code> and <code>ffn_norm</code> before them, all plain RMSNorms with ε = 10⁻⁵ and no +1 offset in the file. So the <a href="glm46v.html">GLM engine</a> launches it at the same two places per layer, with rows of 4096 instead of 3840 (4 values per thread instead of 3.75), 80 launches per token over its 40 layers; the last one applies <code>output_norm</code>. Its output and down projections therefore write a scratch row y instead of adding into x, unlike Llama 3.1's.</p></div>
+  </section>
+
   <footer id="foot">Source: <a href="src/gemma3.html"><code>gemma3/gemma3.ptx</code></a>, kernel <a href="src/gemma3.html#add_rmsnorm"><code>add_rmsnorm</code></a>; launched by <code>add_rmsnorm()</code> in <code>gemma3.c</code> with one block of 1024 threads per token, twice per layer. Before layer 0, plain <a href="src/gemma3.html#rmsnorm"><code>rmsnorm</code></a> computes the first attn_norm. Values are generated (a residual stream with a few large outlier dimensions, norm weights near 1) and computed in float32 in the kernel's order.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
 </div>
 
