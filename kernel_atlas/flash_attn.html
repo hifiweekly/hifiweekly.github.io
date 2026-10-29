@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>flash_attn Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.figs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 700px) { .figs { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">SAM 3 · <a href="src/sam3.html#flash_attn">sam3.ptx</a> · 64 queries per block, tensor cores, online softmax, P in registers</div>
+    <h1>Inside <code>flash_attn</code></h1>
+    <p>All attention in SAM 3 runs in this kernel. That covers the ViT's windowed and global self-attention, the text encoder's causal attention, the fusion encoder's 5184 × 5184 self-attention and its cross-attention to the prompt, the decoder's three attentions (the image one with a relative position bias per query box), the geometry token and the segmentation head. It is a flash attention. For a block of 64 queries it walks over the keys in tiles of 64, computes the scores of a tile with tensor-core <code>mma</code>, updates a running maximum and sum per query row, rescales its output accumulators, and adds the tile's probabilities times its values. The score matrix never exists in memory, so a 5184-key attention needs no more shared memory than a 64-key one.</p>
+    <div class="formula"><span class="y">O</span> = softmax(<span class="x">Q</span><span class="w">K</span><sup>T</sup> · scale + bias) <span class="w">V</span>: &nbsp; per tile, m′ = max(m, max<sub>j</sub> s<sub>j</sub>), &nbsp;l′ = l · 2<sup>m − m′</sup> + Σ<sub>j</sub> 2<sup>s<sub>j</sub> − m′</sup>, &nbsp;<span class="y">O</span>′ = <span class="y">O</span> · 2<sup>m − m′</sup> + P <span class="w">V</span> &nbsp;&nbsp;<span class="muted">// s in base 2: s = (q · k · scale + bias) · log₂e</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">One block: 64 queries of one head, the keys 64 at a time</h2>
+      <p>blockIdx.y is the (batch or window) × head, blockIdx.x a group of 64 queries. Each of the 4 warps owns 16 query rows for the whole kernel. Every thread holds 2 of those rows (g = lane / 4 and g + 8) and, per key tile, 16 scores of each. Pick a use of the kernel. The panels run the kernel's arithmetic on a small generated example: 64 queries and up to 256 keys of 64 dims. Click a query row in the score map.</p>
+    </div>
+    <div class="controls">
+      <label>use <select id="use"></select></label>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x">Scores of the block: 64 queries × the keys</b><span id="scoresub"></span></div>
+        <canvas id="scores"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="cvlabel"><b class="w" id="fraglabel"></b><span id="fragsub"></span></div>
+        <canvas id="frag"></canvas>
+        <div class="status" id="status"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="card"></dl>
+        <div class="figure"><svg id="online" role="img" aria-label="running max, sum and rescale factor of the selected row, per key tile"></svg></div>
+      </div>
+    </div>
+    <div class="figs">
+      <div class="panel">
+        <div class="cvlabel"><b class="s">From scores to the A operand, without shared memory</b><span>two 8-key tiles = one 16-key fragment</span></div>
+        <div class="figure"><svg id="pfrag" role="img" aria-label="how S accumulators become P fragments"></svg></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b class="y" id="maplabel"></b><span id="mapsub"></span></div>
+        <div class="figure"><svg id="map" role="img" aria-label="where the output rows go"></svg></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>One kernel, seven attentions</h3>
+        <p>SAM 3 attends in many shapes: 576-token windows and 5184-token global blocks of 64-dim heads, 5184 × 5184 with 32-dim heads, 201 queries over 5184 keys, 5184 queries over 33 prompt tokens, 32 causal text tokens, one CLS query. Instead of a kernel per shape, the layout is fixed: Q, K and V are f16 [batch × head][rows][64] with rows padded to 64. The parameters cover the rest. <code>lq</code> and <code>lk</code> say which rows are real. <code>flags</code> select a key mask, causality or the box bias. <code>dout</code> and <code>ostride</code> say where the output columns go, and <code>wsz</code>, <code>nwx</code> and <code>gw</code> undo the window partition when the result is stored. 32-dim heads are zero-padded to 64 by <code>split_heads</code>. The padding adds 0 to every score and its output columns are not stored, so the cost is twice the mma work of the fusion encoder's attention, about 4 ms per image.</p>
+        <h3>The masks cost nothing when unused</h3>
+        <p>A full tile with no flags (every ViT tile, every fusion-encoder self-attention tile) only multiplies its 32 scores by scale · log₂e. The general path calls <code>mask_score</code> for each score. It sets a padding key (index ≥ lk) to −∞, then a masked key (flags 1: the prompt's padding tokens), then a later key (flags 2: causal). Last it adds the box bias (flags 4). The bias is separable: by[h][q][key row] + bx[h][q][key column] over the 72 × 72 grid of image tokens, two loads instead of a 5184-entry row per query (<a href="rpb_mlp.html">rpb_mlp</a> builds it). A row whose keys so far are all masked keeps m = −∞; the rescale then subtracts 0 instead, so no NaN appears.</p>
+      </div>
+      <div class="panel">
+        <h3>P stays in registers</h3>
+        <p>The S accumulator of an m16n8 mma holds, per lane, rows g and g + 8 at columns 2t and 2t + 1 of 8 keys. The A operand of an m16n8k16 mma wants rows g and g + 8 at k = 2t, 2t + 1 and 2t + 8, 2t + 9. So the accumulators of two adjacent 8-key tiles, converted to f16 pairs (<code>cvt.rn.f16x2.f32</code>), are exactly the A fragment for those 16 keys. The probabilities go from the softmax into the P·V mma without touching shared memory. V is stored [key][dim] and the mma needs it as the "col" operand, so it is read with <code>ldmatrix.trans</code>, which transposes 8 × 8 tiles on the way into registers.</p>
+        <h3>Shared memory and occupancy</h3>
+        <p>Q (8 KB) is loaded once and kept in 16 registers per thread. K and V tiles take 8 KB each and are double-buffered: the next tile's <code>cp.async</code> copies run under this tile's mma work. That is 40 KB per block, and with 128 threads and 162 registers each, several blocks fit on an SM. Rows are 128 bytes, and chunk c of row r is stored at c ^ (r &amp; 7), so every <code>ldmatrix</code> phase hits 8 different bank groups. Softmax runs in base 2 with <code>ex2.approx</code>: the scale is multiplied by log₂e once, and an exponential costs one instruction. Attention is about 20% of the engine's GPU time, mostly the ViT's 4 global blocks.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <a href="src/sam3.html"><code>sam3/sam3.ptx</code></a>, kernel <a href="src/sam3.html#flash_attn"><code>flash_attn</code></a> with the device functions <a href="src/sam3.html#mask_score"><code>mask_score</code></a> and <a href="src/sam3.html#out_token"><code>out_token</code></a>; launched by <code>flash()</code> in <code>sam3.c</code> (directly for the ViT and text encoder, through <code>attn256()</code> for the 256-wide modules) with grid (lq_pad / 64, batch × heads) and 128 threads. Checked by <code>sam3_demo test</code> against an attention in double, in six configurations (plain, windows, key mask with 32-dim heads, causal, box bias with 1 and 201 queries): max relative error 2 · 10<sup>−4</sup>. The values here are generated; the arithmetic is the kernel's, in float32.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('flash_attn');
+const L2E = 1.4426950408889634;
+// uses: [label, lq, lk, heads launched, head dim, flags, window, toy keys, note]
+const USES = [
+  { name: 'ViT windowed block: 9 windows × 16 heads, 576 tokens', lq: 576, lk: 576, bh: 144, hd: 64, flags: 0, win: true, toyK: 256, launches: '28 per image' },
+  { name: 'ViT global block (7, 15, 23, 31): 5184 tokens', lq: 5184, lk: 5184, bh: 16, hd: 64, flags: 0, win: false, toyK: 256, launches: '4 per image' },
+  { name: 'fusion encoder self-attention: 8 heads × 32 dims, 5184 tokens', lq: 5184, lk: 5184, bh: 8, hd: 32, flags: 0, win: false, toyK: 256, launches: '6 per prompt' },
+  { name: 'cross-attention to the prompt: 33 keys, padding masked', lq: 5184, lk: 33, bh: 8, hd: 32, flags: 1, win: false, toyK: 33, launches: '7 per prompt' },
+  { name: 'decoder image cross-attention: 201 × 5184, box bias', lq: 201, lk: 5184, bh: 8, hd: 32, flags: 4, win: false, toyK: 256, launches: '6 per prompt' },
+  { name: 'text encoder: 32 tokens, causal', lq: 32, lk: 32, bh: 16, hd: 64, flags: 2, win: false, toyK: 32, launches: '24 per prompt' },
+];
+$('use').innerHTML = USES.map((u, i) => `<option value="${i}">${u.name}</option>`).join('');
+const S = { use: 0, row: 21, lane: 9, tile: 1 };
+// generated f16 operands of the toy: Q [64][64], K, V [toyK][64]; dims >= hd are zero
+const q16 = (i, d, u) => d >= u.hd ? 0 : Atlas.f16(Atlas.gauss(Atlas.rng(Atlas.h32(i * 977 + d * 13 + 1))) * 1.1);
+const k16 = (j, d, u) => d >= u.hd ? 0 : Atlas.f16(Atlas.gauss(Atlas.rng(Atlas.h32(j * 7717 + d * 31 + 5))) * 1.1);
+const v16 = (j, d, u) => d >= u.hd ? 0 : Atlas.f16(Atlas.gauss(Atlas.rng(Atlas.h32(j * 3301 + d * 7 + 9))));
+// toy key mask (prompt: 3 text tokens, 29 padding, 1 CLS) and box bias over a 16 x 16 key grid
+const kmask = (j, u) => (u.flags & 1) ? (j >= 3 && j < 32) : false;
+const BG = 16;
+function boxBias(i, j) { // per query: a box in the 16 x 16 grid; inside ~ +2, falling off outside
+  const r = Atlas.rng(Atlas.h32(i * 31 + 7)), cx = 3 + r() * 10, cy = 3 + r() * 10, w = 2 + r() * 5, h = 2 + r() * 5;
+  const ky = Math.floor(j / BG), kx = j % BG;
+  const dy = Math.max(0, Math.abs(ky - cy) - h / 2), dx = Math.max(0, Math.abs(kx - cx) - w / 2);
+  return { by: fr(2 - 0.9 * dy), bx: fr(-0.9 * dx) };
+}
+function scoreOf(i, j, u, sl2) { // base-2 scaled score, as the kernel computes it (−inf when masked)
+  if (j >= u.toyK) return -Infinity;
+  if (kmask(j, u)) return -Infinity;
+  if ((u.flags & 2) && j > i) return -Infinity;
+  let s = 0; for (let d = 0; d < 64; d++) s = fr(s + fr(q16(i, d, u) * k16(j, d, u)));
+  s = fr(s * sl2);
+  if (u.flags & 4) { const b = boxBias(i, j); s = fr(s + fr((b.by + b.bx) * L2E)); }
+  return s;
+}
+// the online softmax of one row, tile by tile: m, alpha, l, and O[0..3] after each tile
+function runRow(i, u) {
+  const sl2 = fr(fr(1 / Math.sqrt(u.hd)) * L2E), nt = Math.ceil(u.toyK / 64), hist = [];
+  let m = -Infinity, l = 0; const O = [0, 0, 0, 0];
+  for (let t = 0; t < nt; t++) {
+    const s = []; for (let j = t * 64; j < t * 64 + 64; j++) s.push(scoreOf(i, j, u, sl2));
+    const mx = Math.max(m, ...s), mu = mx === -Infinity ? 0 : mx, alpha = fr(Math.pow(2, m - mu));
+    const p = s.map(v => v === -Infinity ? 0 : fr(Math.pow(2, v - mu)));
+    l = fr(l * alpha); for (const v of p) l = fr(l + v);
+    for (let d = 0; d < 4; d++) { O[d] = fr(O[d] * alpha); for (let jj = 0; jj < 64; jj++) O[d] = fr(O[d] + fr(Atlas.f16(p[jj]) * v16(t * 64 + jj, d, u))); }
+    hist.push({ m: mx, alpha, l, O: O.slice(), s, p });
+    m = mx;
+  }
+  // exact softmax for comparison
+  const all = []; for (let j = 0; j < nt * 64; j++) all.push(scoreOf(i, j, u, sl2) * Math.LN2);
+  const M = Math.max(...all), e = all.map(v => v === -Infinity ? 0 : Math.exp(v - M)), Z = e.reduce((a, b) => a + b, 0);
+  const exact = [0, 1, 2, 3].map(d => e.reduce((a, w, j) => a + w * v16(j, d, u), 0) / Z);
+  return { hist, exact, nt };
+}
+
+const steps = [
+  { tag: 'I', short: 'roles', title: 'blockIdx.y = batch × head, blockIdx.x = 64 queries; warp w → query rows 16w … 16w + 15', text: 'Each thread owns rows g = lane / 4 and g + 8 of its warp\'s 16, and per tile the 16 scores of each at columns 2·(lane % 4), +1 of the 8 n-tiles.' },
+  { tag: 'Q', short: 'Q', title: 'Q tile → shared (cp.async, 4 chunks per thread) → 4 ldmatrix.x4 → 16 registers', text: 'The warp\'s 16 rows × 64 dims become the A fragments of 4 k16 steps. They stay in registers for every key tile.' },
+  { tag: 'K', short: 'K, V tile', title: 'wait for key tile j, barrier, then cp.async tile j + 1 into the other buffer', text: '8 KB of K and 8 KB of V per tile, 128-byte rows, chunk c of row r at c ^ (r & 7). The prefetch overlaps this tile\'s work.' },
+  { tag: 'S', short: 'S = QKᵀ', title: '16 ldmatrix.x4 of K and 32 mma: a 16 × 64 score tile per warp', text: 'K is stored [key][dim], the "col" layout: no transpose. 4 k16 steps × 8 n-tiles of 8 keys. 32 f32 scores per thread.' },
+  { tag: 'M', short: 'scale, mask', title: 'scores × scale · log₂e; masks and bias only off the fast path', text: 'A full tile without flags only multiplies. Otherwise mask_score per score: key ≥ lk → −∞, masked key → −∞, causal → −∞, + box bias.' },
+  { tag: 'X', short: 'row max', title: 'max over the thread\'s 16 scores of each row, then shfl.bfly 1 and 2', text: 'The 4 lanes of a quad hold the 64 scores of a row (16 each). Two butterfly rounds give all four the row maximum m′ = max(m, tile max).' },
+  { tag: 'E', short: 'rescale, exp', title: 'α = 2^(m − m′); O ×= α, l ×= α; p = 2^(s − m′), l += Σp', text: 'ex2.approx per score. A row with every key so far masked has m′ = −∞ and subtracts 0 instead. l is summed per thread and reduced over the quad only at the end.' },
+  { tag: 'P', short: 'P → f16', title: 'cvt.rn.f16x2 of two adjacent S n-tiles = the A fragment for 16 keys', text: 'No shared memory: the accumulator layout of m16n8 is the operand layout of m16n8k16, two n-tiles at a time.' },
+  { tag: 'V', short: 'O += PV', title: '16 ldmatrix.x4.trans of V and 32 mma into the 32 output accumulators', text: 'V is stored [key][dim] and is needed as the col operand: .trans transposes each 8 × 8 tile while loading. Then the next key tile.' },
+  { tag: 'O', short: 'normalize, store', title: 'after the last tile: l summed over the quad, O / l, f16 store (window → token)', text: 'Rows ≥ lq are not stored, nor columns ≥ dout (32-dim heads). With windows, out_token turns (window, position) back into the token\'s row of the 72 × 72 grid.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `I|extern "C" __global__ void __launch_bounds__(128) flash_attn(const __half *Q, const __half *K, const __half *V,
+I|        __half *O, unsigned lq, unsigned lk, unsigned lq_pad, unsigned lk_pad, unsigned H, unsigned dout,
+I|        unsigned ostride, float scale, unsigned flags, const uint8_t *kmask, const float *bx, const float *by,
+I|        unsigned bgw, unsigned wsz, unsigned nwx, unsigned gw)
+I|{
+I|    __shared__ __align__(128) uint4 sq[64][8], sk[2][64][8], sv[2][64][8];   // 128-byte rows, swizzled
+I|    unsigned lane = threadIdx.x & 31, w = threadIdx.x >> 5, q0 = blockIdx.x * 64, bh = blockIdx.y;
+I|    unsigned g = lane >> 2, t2 = 2 * (lane & 3), row0 = q0 + 16 * w + g;     // rows row0 and row0 + 8
+Q|    load_tile(sq, Q + ((size_t)bh * lq_pad + q0) * 64);  cp_async_commit();
+K|    load_tile(sk[0], K + (size_t)bh * lk_pad * 64);  load_tile(sv[0], V + (size_t)bh * lk_pad * 64);  cp_async_commit();
+Q|    cp_async_wait_group<1>(); __syncthreads();
+Q|    uint32_t qa[4][4];  for (int kk = 0; kk < 4; kk++) ldmatrix_x4(qa[kk], &sq[16 * w + (lane & 15)][(2 * kk + (lane >> 4)) ^ (lane & 7)]);
+E|    float m[2] = {-INFINITY, -INFINITY}, l[2] = {0, 0}, o[8][4] = {};
+E|    const float sl2 = scale * 1.4426950f;                                      // softmax in base 2
+K|    for (unsigned t = 0, nt = (lk + 63) / 64; t < nt; t++) {
+K|        cp_async_wait_group<0>(); __syncthreads();
+K|        if (t + 1 < nt) { load_tile(sk[(t + 1) & 1], ...); load_tile(sv[(t + 1) & 1], ...); cp_async_commit(); }
+S|        float s[8][4] = {};                                                     // 16 rows x 64 keys per warp
+S|        for (int kk = 0; kk < 4; kk++) for (int np = 0; np < 4; np++) {
+S|            uint32_t kb[4];  ldmatrix_x4(kb, &sk[t & 1][16 * np + (lane & 7) + 8 * (lane >> 4)][...]);
+S|            mma_m16n8k16(s[2 * np], qa[kk], kb);  mma_m16n8k16(s[2 * np + 1], qa[kk], kb + 2);
+S|        }
+M|        bool full = (t + 1) * 64 <= lk && flags == 0;
+M|        for (int e = 0; e < 32; e++) {                                         // key = 64t + 8(e/4) + t2 + (e&1)
+M|            float &x = s[e / 4][e % 4];
+M|            x = full ? x * sl2 : mask_score(x, sl2, key(e), row0 + 8 * ((e >> 1) & 1), ...);
+M|        }
+X|        float mx[2];
+X|        for (int h = 0; h < 2; h++) {                                          // row g (h = 0), g + 8 (h = 1)
+X|            mx[h] = m[h];  for (int n = 0; n < 8; n++) mx[h] = fmaxf(mx[h], fmaxf(s[n][2 * h], s[n][2 * h + 1]));
+X|            mx[h] = fmaxf(mx[h], __shfl_xor_sync(~0u, mx[h], 1));  mx[h] = fmaxf(mx[h], __shfl_xor_sync(~0u, mx[h], 2));
+E|            float mu = mx[h] == -INFINITY ? 0.f : mx[h], alpha = exp2f(m[h] - mu);
+E|            l[h] *= alpha;  for (int n = 0; n < 8; n++) { o[n][2 * h] *= alpha; o[n][2 * h + 1] *= alpha; }
+E|            for (int n = 0; n < 8; n++) for (int c = 0; c < 2; c++) { s[n][2 * h + c] = exp2f(s[n][2 * h + c] - mu); l[h] += s[n][2 * h + c]; }
+E|            m[h] = mx[h];
+X|        }
+P|        for (int kc = 0; kc < 4; kc++) {                                       // keys 16kc .. 16kc + 15
+P|            uint32_t pa[4] = { pack_f16x2(s[2 * kc][0], s[2 * kc][1]), pack_f16x2(s[2 * kc][2], s[2 * kc][3]),
+P|                               pack_f16x2(s[2 * kc + 1][0], s[2 * kc + 1][1]), pack_f16x2(s[2 * kc + 1][2], s[2 * kc + 1][3]) };
+V|            for (int np = 0; np < 4; np++) {                                   // dims 16np .. 16np + 15
+V|                uint32_t vb[4];  ldmatrix_x4_trans(vb, &sv[t & 1][16 * kc + (lane & 7) + 8 * ((lane >> 3) & 1)][...]);
+V|                mma_m16n8k16(o[2 * np], pa, vb);  mma_m16n8k16(o[2 * np + 1], pa, vb + 2);
+V|            }
+P|        }
+K|    }
+O|    for (int h = 0; h < 2; h++) {
+O|        l[h] += __shfl_xor_sync(~0u, l[h], 1);  l[h] += __shfl_xor_sync(~0u, l[h], 2);
+O|        unsigned r = row0 + 8 * h;  if (r >= lq) continue;
+O|        float inv = l[h] > 0 ? 1.f / l[h] : 0.f;
+O|        __half *dst = O + (size_t)out_token(r, bh / H, wsz, nwx, gw) * ostride + (bh % H) * dout + t2;
+O|        for (int n = 0; n < dout / 8; n++) *(__half2 *)(dst + 8 * n) = __floats2half2_rn(o[n][2 * h] * inv, o[n][2 * h + 1] * inv);
+O|    }
+I|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    mov.u32         %r3, %ctaid.x;
+I|    shl.b32         %r3, %r3, 6;            // q0
+I|    mov.u32         %r4, %ctaid.y;          // bh
+Q|    cp.async.cg.shared.global [%r15], [%rd1], 16;
+Q|    cp.async.cg.shared.global [%r15+2048], [%rd1+2048], 16;
+Q|    ...                                     // + 4096, + 6144: rows +16, +32, +48
+Q|    cp.async.commit_group;
+Q|    cp.async.wait_group 1;
+Q|    bar.sync        0;
+Q|    ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%qa0, %qa1, %qa2, %qa3}, [%r32];
+K|TILE:
+K|    cp.async.wait_group 0;
+K|    bar.sync        0;
+K|    xor.b32         %r41, %r39, 8192;       // the other buffer
+K|    cp.async.cg.shared.global [%r42], [%rd4], 16;
+K|    ...
+S|    ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%kb0, %kb1, %kb2, %kb3}, [%r46+0];
+S|    mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {%s0, %s1, %s2, %s3}, {%qa0, %qa1, %qa2, %qa3}, {%kb0, %kb1}, {%s0, %s1, %s2, %s3};
+S|    mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {%s4, %s5, %s6, %s7}, {%qa0, %qa1, %qa2, %qa3}, {%kb2, %kb3}, {%s4, %s5, %s6, %s7};
+S|    ...                                     // 32 mma per tile
+M|    setp.gt.u32     %p1, %r48, %r7;         // tile runs past lk?
+M|    setp.ne.or.u32  %p1, %r33, 0, %p1;      // or any flag
+M|    @%p1 bra        SLOW_MASK;
+M|    mul.f32 %s0, %s0, %f4; ...              // fast path: scale only
+M|SLOW_MASK:
+M|    call.uni (%s0), mask_score, (%s0, %f4, %r50, %r51, %r54, %r7, %r57, %r33, %rd8, %rd9, %rd10, %r61);
+X|    max.f32         %f5, %s0, %s1;          // row g: 16 values
+X|    ...
+X|    shfl.sync.bfly.b32 %f7, %f5, 1, 31, 0xffffffff;
+X|    max.f32         %f5, %f5, %f7;
+X|    shfl.sync.bfly.b32 %f7, %f5, 2, 31, 0xffffffff;
+X|    max.f32         %f5, %f5, %f7;
+E|    setp.eq.f32     %p2, %f5, 0fFF800000;   // all masked so far?
+E|    selp.f32        %f8, 0f00000000, %f5, %p2;
+E|    sub.f32         %f10, %f0, %f8;
+E|    ex2.approx.ftz.f32 %f10, %f10;          // alpha0
+E|    mul.f32 %o0, %o0, %f10; ...
+E|    sub.f32 %s0, %s0, %f8; ex2.approx.ftz.f32 %s0, %s0; add.f32 %f2, %f2, %s0;
+P|    cvt.rn.f16x2.f32 %pa0, %s1, %s0;
+P|    cvt.rn.f16x2.f32 %pa1, %s3, %s2;
+P|    cvt.rn.f16x2.f32 %pa2, %s5, %s4;
+P|    cvt.rn.f16x2.f32 %pa3, %s7, %s6;
+V|    ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%kb0, %kb1, %kb2, %kb3}, [%r46+0];
+V|    mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {%o0, %o1, %o2, %o3}, {%pa0, %pa1, %pa2, %pa3}, {%kb0, %kb1}, {%o0, %o1, %o2, %o3};
+V|    ...
+K|    @%p0 bra        TILE;
+O|    shfl.sync.bfly.b32 %f7, %f2, 1, 31, 0xffffffff;
+O|    add.f32         %f2, %f2, %f7;
+O|    rcp.rn.f32      %f12, %f2;
+O|    call.uni (%r59), out_token, (%r58, %r53, %r62, %r63, %r52);
+O|    cvt.rn.f16x2.f32 %r60, %f15, %f14;
+O|    st.global.b32   [%rd7+0], %r60;` },
+});
+
+const sg = Atlas.grid($('scores'), 64, 64), fg = Atlas.grid($('frag'), 16, 64);
+$('frag').style.aspectRatio = '64 / 14';
+function use() { return USES[S.use]; }
+let cache = null;
+function rowRun() { const k = S.use + ':' + S.row; if (!cache || cache.k !== k) cache = { k, r: runRow(S.row, use()) }; return cache.r; }
+const ORDER = steps.map(s => s.tag);
+function draw() {
+  const st = stepper.step, u = use(), si = ORDER.indexOf(st.tag), nt = Math.ceil(u.toyK / 64);
+  if (S.tile >= nt) S.tile = nt - 1;
+  const showK = nt * 64, sl2 = fr(fr(1 / Math.sqrt(u.hd)) * L2E);
+  sg.resize(64, Math.max(showK, 64));
+  $('scores').style.aspectRatio = '4 / 1';
+  const g = sg.prep();
+  // probabilities of every row from the full softmax, shown up to the current tile
+  const cur = st.tag === 'O' ? nt - 1 : S.tile;
+  for (let i = 0; i < 64; i++) {
+    const sc = []; for (let j = 0; j < showK; j++) sc.push(scoreOf(i, j, u, sl2));
+    const M = Math.max(...sc);
+    for (let j = 0; j < showK; j++) {
+      const t = j >> 6;
+      if (sc[j] === -Infinity) { g.hatch(i, j); continue; }
+      const p = Math.pow(2, sc[j] - M), seen = si >= 3 && t <= cur;
+      g.cell(i, j, (i >> 4) === (S.row >> 4) ? C.x : C.w, seen ? 0.12 + 0.85 * Math.sqrt(p) : 0.08, 0);
+    }
+  }
+  if (si >= 2) g.box(0, cur * 64, 64, 64, C.sync, 2);
+  g.box(S.row, 0, 1, showK, C.fg, 1.5);
+  for (let w = 1; w < 4; w++) g.hline(16 * w, C.line, 1);
+  $('scoresub').textContent = `toy: ${showK > u.toyK ? u.toyK + ' keys (+ padding to ' + showK + ')' : showK + ' keys'}; real: ${Atlas.int(u.lq)} × ${Atlas.int(u.lk)}`;
+  Atlas.legend($('legend'), [['--x', 'the selected warp\'s 16 rows'], ['--w', 'other warps'], ['--sync', 'current key tile']]);
+  // the selected warp's 16 x 64 score tile: which lane owns which score
+  const fgp = fg.prep(), w = S.row >> 4, run = rowRun(), hcur = run.hist[Math.min(cur, run.hist.length - 1)];
+  for (let r = 0; r < 16; r++) for (let c = 0; c < 64; c++) {
+    const lane = ((r & 7) << 2) | ((c & 7) >> 1), mine = lane === S.lane;
+    fgp.cell(r, c, mine ? C.y : ((c >> 3) & 1 ? C.w : C.x), mine ? 0.95 : 0.22, 0.08);
+  }
+  for (let n = 1; n < 8; n++) fgp.vline(8 * n, n % 2 ? C.line : C.fg, n % 2 ? 1 : 1.5);
+  fgp.hline(8, C.fg, 1.5);
+  fgp.box(S.row & 15, 0, 1, 64, C.fg, 1.5);
+  $('fraglabel').textContent = `warp ${w}: its 16 × 64 score tile, by owning lane`;
+  $('fragsub').textContent = `lane ${S.lane} (yellow): rows ${S.lane >> 2}, ${(S.lane >> 2) + 8}; columns ${2 * (S.lane & 3)}, ${2 * (S.lane & 3) + 1} of each 8-key n-tile`;
+  // card
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`, T = run.hist[Math.min(cur, run.hist.length - 1)];
+  $('thlabel').textContent = `query row ${S.row} (warp ${w}, held by lanes ${4 * (S.row & 7)}–${4 * (S.row & 7) + 3}${(S.row & 15) >= 8 ? ' as row g + 8' : ' as row g'})`;
+  let c = row('use', `${u.name.split(':')[0]}; ${u.launches}`);
+  c += row('launch', `grid (${Atlas.int(Math.ceil(u.lq / 64))}, ${u.bh}), 128 threads; head ${u.hd} dims${u.hd < 64 ? ' padded to 64' : ''}`);
+  c += row('scale · log₂e', `${(1 / Math.sqrt(u.hd)).toFixed(5)} · 1.4427 = ${sl2.toFixed(5)}`);
+  c += row('flags', u.flags === 0 ? '0: the fast path for every full tile' : u.flags === 1 ? '1: key mask (padding tokens 3–31 of the prompt)' : u.flags === 2 ? '2: causal' : '4: box bias by[key row] + bx[key column]');
+  if (si >= 4) {
+    const smax = Math.max(...T.s);
+    c += row(`tile ${cur}: max score`, smax === -Infinity ? '−∞ (all masked)' : smax.toFixed(4) + ' (base 2)');
+    c += row('running m', T.m === -Infinity ? '−∞' : T.m.toFixed(4));
+  }
+  if (si >= 6) c += row('α, l', `${T.alpha.toFixed(5)}, ${T.l.toFixed(4)}`);
+  if (si >= 8) c += row('O[0 … 3] (unnormalized)', T.O.map(v => v.toFixed(3)).join(', '));
+  if (st.tag === 'O') {
+    const L = run.hist[run.hist.length - 1];
+    const outv = L.O.map(v => Atlas.f16(v / L.l));
+    c += row('O / l, f16', outv.map(v => v.toFixed(4)).join(', '));
+    c += row('exact softmax', run.exact.map(v => v.toFixed(4)).join(', ') + ` (max diff ${Math.max(...outv.map((v, d) => Math.abs(v - run.exact[d]))).toExponential(1)})`);
+  }
+  $('card').innerHTML = c;
+  $('status').textContent = st.tag === 'M' && u.flags ? 'hatched: scores set to −∞ (padding keys, masked keys, or later keys when causal)' : 'brightness: the softmax weight of each key for each query (square root, so small weights show)';
+  drawOnline(run, cur, si); drawP(st); drawMap(u, st);
+}
+function drawOnline(run, cur, si) {
+  const W = 340, H = 230, x0 = 46, nt = run.hist.length, bw = Math.min(64, (W - x0 - 10) / nt);
+  let s = `<text x="8" y="14" font-size="10.5" fill="${C.fg}">row ${S.row}, after each key tile</text>`;
+  const ms = run.hist.map(h => h.m).filter(v => v > -Infinity), ls = run.hist.map(h => h.l);
+  const mlo = Math.min(...ms, 0), mhi = Math.max(...ms, 1), lmax = Math.max(...ls, 1e-9);
+  run.hist.forEach((h, t) => {
+    const x = x0 + t * bw, on = t <= cur && si >= 5;
+    const ym = h.m === -Infinity ? null : 90 - (h.m - mlo) / (mhi - mlo || 1) * 60;
+    if (ym !== null) s += `<rect x="${x + 6}" y="${ym}" width="${bw - 12}" height="${90 - ym}" fill="${C.x}" opacity="${on ? 0.8 : 0.2}"/>`;
+    const yl = 190 - h.l / lmax * 70;
+    s += `<rect x="${x + 6}" y="${yl}" width="${bw - 12}" height="${190 - yl}" fill="${C.y}" opacity="${on && si >= 6 ? 0.8 : 0.2}"/>`;
+    s += `<text x="${x + bw / 2}" y="${205}" font-size="9" text-anchor="middle" fill="${C.muted}">tile ${t}</text>`;
+    if (on && si >= 6) s += `<text x="${x + bw / 2}" y="${118}" font-size="9" text-anchor="middle" fill="${C.sync}">α ${h.alpha.toFixed(2)}</text>`;
+  });
+  s += `<text x="8" y="60" font-size="10" fill="${C.x}">m</text><text x="8" y="160" font-size="10" fill="${C.y}">l</text>`;
+  s += `<text x="8" y="${H - 6}" font-size="9.5" fill="${C.muted}">α &lt; 1: the tile raised the max; old l and O shrink</text>`;
+  $('online').setAttribute('viewBox', `0 0 ${W} ${H}`); $('online').innerHTML = s;
+}
+function drawP(st) {
+  const W = 520, H = 200, cs = 13, gq = S.lane >> 2, t4 = S.lane & 3;
+  let s = '';
+  const tile = (x0, y0, cols, label, own, col) => {
+    let o = `<text x="${x0}" y="${y0 - 6}" font-size="10" fill="${C.muted}">${label}</text>`;
+    for (let r = 0; r < 16; r++) for (let c = 0; c < cols; c++) {
+      const on = own(r, c);
+      o += `<rect x="${x0 + c * cs}" y="${y0 + r * 8}" width="${cs - 1.5}" height="6.5" fill="${on ? col : C.zero}" opacity="${on ? 0.95 : 0.35}"/>`;
+    }
+    return o;
+  };
+  const owns = (r, c) => (r === gq || r === gq + 8) && (c >> 1) === t4;
+  s += tile(10, 24, 8, 'S tile 2kc', owns, C.x);
+  s += tile(136, 24, 8, 'S tile 2kc + 1', owns, C.x);
+  s += `<text x="248" y="92" font-size="18" fill="${C.fg}">→</text>`;
+  s += tile(280, 24, 16, 'P: A fragment, 16 keys', (r, c) => (r === gq || r === gq + 8) && ((c >> 1) === t4 || (c >> 1) === t4 + 4), C.y);
+  s += `<text x="10" y="${H - 22}" font-size="10" fill="${C.fg}">lane ${S.lane}: s[2kc][0,1] → pa0 (row g), s[2kc][2,3] → pa1 (row g + 8),</text>`;
+  s += `<text x="10" y="${H - 8}" font-size="10" fill="${C.fg}">s[2kc+1][0,1] → pa2, s[2kc+1][2,3] → pa3: four cvt.rn.f16x2.f32, no shared memory</text>`;
+  $('pfrag').setAttribute('viewBox', `0 0 ${W} ${H}`); $('pfrag').innerHTML = s;
+}
+function drawMap(u, st) {
+  const W = 520, H = 200;
+  let s = '';
+  if (u.win) {
+    $('maplabel').textContent = 'Windows: block row → token of the 72 × 72 grid';
+    $('mapsub').textContent = '9 windows of 24 × 24';
+    const x0 = 20, y0 = 14, cell = 2.3, b = 4, q = (S.row + 64 * 3) % 576;
+    for (let wy = 0; wy < 3; wy++) for (let wx = 0; wx < 3; wx++) {
+      const on = wy * 3 + wx === b;
+      s += `<rect x="${x0 + wx * 24 * cell}" y="${y0 + wy * 24 * cell}" width="${24 * cell - 1}" height="${24 * cell - 1}" fill="${on ? C.y : C.zero}" opacity="${on ? 0.5 : 0.35}" stroke="${C.line}"/>`;
+    }
+    const ty = Math.floor(q / 24), tx = q % 24, gy = 24 + ty, gx = 24 + tx;
+    s += `<rect x="${x0 + gx * cell - 1}" y="${y0 + gy * cell - 1}" width="${cell + 2}" height="${cell + 2}" fill="${C.fg}"/>`;
+    s += `<text x="200" y="40" font-size="10.5" fill="${C.fg}">bh = window b × 16 + head; b = 4 (the centre)</text>`;
+    s += `<text x="200" y="60" font-size="10" fill="${C.muted}">query ${q} of the window = (${ty}, ${tx}) inside it</text>`;
+    s += `<text x="200" y="78" font-size="10" fill="${C.muted}">out_token: row (4 / 3)·24 + ${ty} = ${gy}, column (4 % 3)·24 + ${tx} = ${gx}</text>`;
+    s += `<text x="200" y="96" font-size="10" fill="${C.muted}">→ token ${gy} · 72 + ${gx} = ${gy * 72 + gx}, columns h·64 … h·64 + 63</text>`;
+    s += `<text x="200" y="124" font-size="10" fill="${C.muted}">rope_vit wrote Q, K, V in window order; the</text>`;
+    s += `<text x="200" y="140" font-size="10" fill="${C.muted}">store puts every row back in raster order, so</text>`;
+    s += `<text x="200" y="156" font-size="10" fill="${C.muted}">the projection after it sees the plain 5184 rows.</text>`;
+  } else if (u.flags & 4) {
+    $('maplabel').textContent = 'Box bias of the selected query over the key grid';
+    $('mapsub').textContent = 'toy 16 × 16 grid (the model: 72 × 72)';
+    const x0 = 20, y0 = 14, cell = 10;
+    for (let ky = 0; ky < BG; ky++) for (let kx = 0; kx < BG; kx++) {
+      const b = boxBias(S.row, ky * BG + kx), v = b.by + b.bx;
+      s += `<rect x="${x0 + kx * cell}" y="${y0 + ky * cell}" width="${cell - 1}" height="${cell - 1}" fill="${v > 0 ? C.y : C.x}" opacity="${Math.min(1, Math.abs(v) / 4) * 0.85 + 0.1}"/>`;
+    }
+    s += `<text x="200" y="34" font-size="10.5" fill="${C.fg}">bias(q, key) = by[h][q][key / bgw]</text>`;
+    s += `<text x="200" y="50" font-size="10.5" fill="${C.fg}">             + bx[h][q][key % bgw]</text>`;
+    s += `<text x="200" y="66" font-size="10" fill="${C.muted}">two loads per score in mask_score, from the</text>`;
+    s += `<text x="200" y="80" font-size="10" fill="${C.muted}">[8][201][72] tables that rpb_mlp fills per layer</text>`;
+    s += `<text x="200" y="100" font-size="10" fill="${C.muted}">yellow: keys inside this query's box get a boost;</text>`;
+    s += `<text x="200" y="116" font-size="10" fill="${C.muted}">blue: keys far outside are pushed down</text>`;
+    s += `<text x="200" y="140" font-size="10" fill="${C.muted}">row 0 (the presence token) has no bias</text>`;
+  } else {
+    $('maplabel').textContent = 'Where the output goes';
+    $('mapsub').textContent = `row q → O[q][h·${u.hd < 64 ? 32 : 64} …]`;
+    s += `<text x="20" y="40" font-size="10.5" fill="${C.fg}">no windows: query q is output row q</text>`;
+    s += `<text x="20" y="62" font-size="10" fill="${C.muted}">columns h · dout … h · dout + dout − 1 of a row of ostride halves:</text>`;
+    s += `<text x="20" y="80" font-size="10" fill="${C.muted}">${u.hd < 64 ? '32-dim heads: dout = 32, ostride = 256 — only n-tiles 0–3 are stored' : '64-dim heads: dout = 64, ostride = ' + (u.bh === 16 ? 1024 : 1024)}</text>`;
+    s += `<text x="20" y="104" font-size="10" fill="${C.muted}">rows ≥ lq (${Atlas.int(u.lq)}) of the last block are computed but not stored</text>`;
+    if (u.flags & 2) s += `<text x="20" y="128" font-size="10" fill="${C.muted}">causal: key j counts for query i only if j ≤ i (the hatched triangle)</text>`;
+    if (u.flags & 1) s += `<text x="20" y="128" font-size="10" fill="${C.muted}">33 keys: 1 tile, keys 33–63 are padding, 3–31 the prompt's padding tokens</text>`;
+  }
+  $('map').setAttribute('viewBox', `0 0 ${W} ${H}`); $('map').innerHTML = s;
+}
+sg.hook(p => { $('status').textContent = `query ${p.r}, key ${p.c} (tile ${p.c >> 6}) — click to follow the row and tile`; },
+  p => { S.row = p.r; S.tile = p.c >> 6; draw(); }, () => {});
+fg.hook(p => { const lane = ((p.r & 7) << 2) | ((p.c & 7) >> 1); $('status').textContent = `row ${p.r}, key ${p.c} of the tile: lane ${lane}, register s[${p.c >> 3}][${(p.r >> 3) * 2 + (p.c & 1)}]`; },
+  p => { S.lane = ((p.r & 7) << 2) | ((p.c & 7) >> 1); draw(); }, () => {});
+function facts() {
+  const u = use();
+  Atlas.facts($('facts'), [[`(${Atlas.int(Math.ceil(u.lq / 64))}, ${u.bh})`, 'grid'], ['128', 'threads (4 warps × 16 rows)'], ['40 KB', 'shared: Q + 2 × (K + V)'], [`${Math.ceil(u.lk / 64)}`, 'key tiles of 64'], ['64 mma', 'per warp per tile'], [u.launches, 'launches']]);
+}
+$('use').addEventListener('change', () => { S.use = +$('use').value; cache = null; S.tile = 0; facts(); draw(); });
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1300 });
+facts();
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

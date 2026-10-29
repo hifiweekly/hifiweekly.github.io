@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>gn_stats Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.figs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 700px) { .figs { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">SAM 3 · <a href="src/sam3.html#gn_stats">sam3.ptx</a> · two kernels: block partial sums with f64 atomics, then normalize + ReLU</div>
+    <h1>Inside <code>gn_stats</code> and <code>gn_apply</code></h1>
+    <p>SAM 3's pixel decoder upsamples the fused image features twice, from 72² to 144² to 288². After each 3 × 3 convolution comes a GroupNorm with 8 groups and a ReLU. A group is 32 of the 256 channels at every pixel of the map: at 288² that is 2.65 million values per group, normalized together. A row-wise norm like <a href="layernorm.html">layernorm</a> cannot do this; it is a reduction over the whole map. <code>gn_stats</code> spreads the map over all SMs. Each block sums its rows, and lane 0 of each warp adds the block's sums for its group to a global f64 accumulator. Then <code>gn_apply</code> turns the 8 sums into means and inverse deviations and normalizes, scales, shifts and clamps every value.</p>
+    <div class="formula"><span class="y">y</span>[p][c] = relu( (<span class="x">x</span>[p][c] − μ<sub>g</sub>) / √(σ<sub>g</sub>² + ε) · <span class="w">w</span>[c] + <span class="w">b</span>[c] ), &nbsp;g = c / 32, &nbsp;μ<sub>g</sub>, σ<sub>g</sub>² over all pixels p and the 32 channels of g &nbsp;&nbsp;<span class="muted">// ε = 10⁻⁵</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">Thread t = channel t, so warp g = group g</h2>
+      <p>A gn_stats block has 256 threads, one per channel, and owns a contiguous range of pixels (rows of the [pixels][256] map). Each thread walks its rows down its channel and keeps a sum and a sum of squares in f32. Warp g holds exactly the 32 channels of group g, so one butterfly gives the block's totals for that group, and one lane adds them to the group's f64 accumulator. The map here is a toy of 24 × 24 pixels split over 6 blocks, with the real 8 groups. Pick a map size and click a block or a group.</p>
+    </div>
+    <div class="controls">
+      <span class="seg" id="sizeSeg" role="group" aria-label="Map size"></span>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x">The map: pixels (rows) × 256 channels, toy 576 pixels</b><span id="mapsub"></span></div>
+        <canvas id="map"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="card"></dl>
+        <div class="figure"><svg id="acc" role="img" aria-label="the 8 group accumulators, built from the blocks' partial sums"></svg></div>
+      </div>
+    </div>
+    <div class="figs">
+      <div class="panel">
+        <div class="cvlabel"><b class="s">Why the accumulators are f64</b><span>a sum of 2.65 M values per group</span></div>
+        <div class="figure"><svg id="prec" role="img" aria-label="f32 vs f64 accumulation error"></svg></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b class="y">gn_apply: one group's values before and after</b><span id="applysub"></span></div>
+        <div class="figure"><svg id="apply" role="img" aria-label="values of the selected group before and after normalization and ReLU"></svg></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Two launches, because the statistics need everything</h3>
+        <p>No value of a group can be normalized before every value of the group has been summed, and the group spans the whole map. A single kernel would need a grid-wide barrier. Two launches give one for free: <code>gn_stats</code> finishes before <code>gn_apply</code> starts, in the same stream. The cost is one more read of the map (85 MB at 288²) and a memset of the 128-byte accumulator first. Each gn_stats thread reads its channel with a stride of 1 KB from row to row, but the 256 threads of a block read one whole row (1 KB, contiguous) together, so the loads coalesce.</p>
+        <h3>The groups line up with the warps</h3>
+        <p>Channels are contiguous within a pixel and a group is 32 consecutive channels, so with 256 threads per block thread t is channel t and warp g is group g. The per-block reduction is then a plain warp butterfly per group, with no shared memory and no barrier. The kernel checks nothing about that alignment: the host only launches it for maps of 256 channels and 8 groups.</p>
+      </div>
+      <div class="panel">
+        <h3>f64 for the totals, f32 for the work</h3>
+        <p>Each thread's own sum covers at most a few hundred values (rows / grid), which f32 handles. The group totals add 2.65 million values in an arbitrary order across 448 blocks. The variance comes from E[x²] − μ², two totals that nearly cancel when the mean is not small next to the spread. So the totals and that subtraction are done in f64 (<code>atom.global.add.f64</code>, <code>div.rn.f64</code>), 16 atomics per block. The figure above shows what an f32 total would lose on data like this. gn_apply converts each group's mean and 1/σ to f32 once per block, in shared memory; everything per value is f32.</p>
+        <h3>Fused outputs</h3>
+        <p><code>gn_apply</code> writes f32 (needed after the first stage, whose output the next stage upsamples and adds) and/or f16 (after the second, as the input of the instance-embedding product). The ReLU is part of the same expression. After the first stage the f32 output overwrites its input in place.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <a href="src/sam3.html"><code>sam3/sam3.ptx</code></a>, kernels <a href="src/sam3.html#gn_stats"><code>gn_stats</code></a> and <a href="src/sam3.html#gn_apply"><code>gn_apply</code></a>; launched by <code>group_norm_relu()</code> in <code>sam3.c</code> (memset, then each with 8 × 56 blocks of 256 threads), twice per prompt, at 144² and 288². Checked by <code>sam3_demo test</code> against a GroupNorm in double (max relative error 1.8 · 10<sup>−7</sup>); the pixel decoder's output matches PyTorch's to 3.8 · 10<sup>−3</sup> relative. The values here are generated.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('gn_stats');
+const P = 576, NB = 6, CH = 256, G = 8;
+const S = { block: 2, group: 3, size: 288 };
+const xv = (p, c) => fr(Atlas.gauss(Atlas.rng(Atlas.h32(p * 1031 + c * 7 + 11))) * (0.6 + 0.15 * (c >> 5)) + 1.5 + 0.4 * (c >> 5) + 0.6 * Math.sin(p / 40));
+const wv = c => fr(0.8 + 0.4 * Atlas.rng(Atlas.h32(c * 5 + 3))());
+const bv = c => fr(Atlas.gauss(Atlas.rng(Atlas.h32(c * 17 + 9))) * 0.3);
+$('sizeSeg').innerHTML = [[144, 'stage 1: 144² = 20,736 pixels'], [288, 'stage 2: 288² = 82,944 pixels']].map(([v, t]) => `<button type="button" data-v="${v}" aria-pressed="${v === 288}">${t}</button>`).join('');
+$('sizeSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.size = +b.dataset.v; $('sizeSeg').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); facts(); draw(); });
+const rowsOf = b => [Math.floor(P * b / NB), Math.floor(P * (b + 1) / NB)];
+let ST = null;
+function stats() {
+  if (ST) return ST;
+  const part = [];   // part[b][g] = [sum, sumsq] (f32 per thread, f32 butterfly)
+  for (let b = 0; b < NB; b++) {
+    const [r0, r1] = rowsOf(b), pg = [];
+    for (let g = 0; g < G; g++) {
+      let s = 0, q = 0;
+      for (let c = g * 32; c < g * 32 + 32; c++) { let ts = 0, tq = 0; for (let p = r0; p < r1; p++) { const v = xv(p, c); ts = fr(ts + v); tq = fr(tq + fr(v * v)); } s = fr(s + ts); q = fr(q + tq); }
+      pg.push([s, q]);
+    }
+    part.push(pg);
+  }
+  const acc = [], mean = [], inv = [];
+  for (let g = 0; g < G; g++) {
+    let s = 0, q = 0; for (let b = 0; b < NB; b++) { s += part[b][g][0]; q += part[b][g][1]; }   // f64
+    acc.push([s, q]);
+    const n = P * 32, m = s / n, vr = Math.max(q / n - m * m, 0);
+    mean.push(fr(m)); inv.push(fr(1 / fr(Math.sqrt(fr(fr(vr) + 1e-5)))));
+  }
+  return (ST = { part, acc, mean, inv });
+}
+const steps = [
+  { tag: 'I', short: 'roles', title: 'gn_stats: 256 threads, thread t = channel t; warp g = channels 32g … 32g + 31 = group g', text: 'Launched with 8 blocks per SM (448 on the 4070 SUPER), after a memset of the 8 × 2 f64 accumulators.' },
+  { tag: 'R', short: 'rows', title: 'block b owns rows ⌊n·b / grid⌋ … ⌊n·(b + 1) / grid⌋', text: 'Computed in 64-bit (n · b can exceed 2³²) and divided once. At 288² each block gets 185 pixels.' },
+  { tag: 'S', short: 'sum', title: 'each thread: Σ x and Σ x² of its channel over the block\'s rows, in f32', text: 'One 4-byte load per row per thread; the block\'s 256 loads of a row are one contiguous kilobyte.' },
+  { tag: 'W', short: 'butterfly', title: 'per warp: two 5-round butterflies, Σ and Σ x² of the group over the block', text: 'Every lane ends with the totals of its warp, which are the block\'s totals for group g.' },
+  { tag: 'A', short: 'f64 atomics', title: 'lane 0 of warp g: atom.global.add.f64 of both into acc[g]', text: 'cvt.f64.f32 first. 16 atomics per block, 7,168 per launch, all to the same 128 bytes; they finish in microseconds.' },
+  { tag: 'F', short: 'μ, 1/σ', title: 'gn_apply: threads 0–7 turn acc[g] into μ_g and 1/√(σ_g² + ε) in shared memory', text: 'μ = Σ / (32 n), σ² = Σx² / (32 n) − μ², in f64, clamped at 0; then f32 sqrt.rn and rcp.rn. A barrier, then every thread can read all 8.' },
+  { tag: 'N', short: 'normalize', title: 'per float4: y = relu((x − μ_g) · (1/σ_g) · w + b)', text: 'Grid-stride over the map, 4 channels per step; the 4 channels of a float4 are always in one group (8 float4 per group).' },
+  { tag: 'O', short: 'store', title: 'store y as f32 (y32), f16 (y16), or both', text: 'Stage 1 writes f32 in place over x (the next stage reads it). Stage 2 writes f16 only, the input of the 1 × 1 instance product; f32 only when dumping.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `I|extern "C" __global__ void gn_stats(const float *x, double *acc, unsigned n)   // 256 threads, 8 groups
+I|{
+I|    unsigned c = threadIdx.x, lane = c & 31, g = c >> 5;
+R|    unsigned r0 = (unsigned)((unsigned long long)n * blockIdx.x / gridDim.x);
+R|    unsigned r1 = (unsigned)((unsigned long long)n * (blockIdx.x + 1) / gridDim.x);
+S|    float s = 0, q = 0;
+S|    for (unsigned r = r0; r < r1; r++) { float v = x[(size_t)r * 256 + c]; s += v; q += v * v; }
+W|    for (int o = 16; o; o >>= 1) { s += __shfl_xor_sync(~0u, s, o); q += __shfl_xor_sync(~0u, q, o); }
+A|    if (lane == 0) { atomicAdd(&acc[2 * g], (double)s); atomicAdd(&acc[2 * g + 1], (double)q); }
+I|}
+F|extern "C" __global__ void gn_apply(const float *x, const double *acc, const float *w, const float *b,
+F|                                    float *y32, __half *y16, unsigned n, float eps)
+F|{
+F|    __shared__ float2 st[8];                                  // mean, 1/std per group
+F|    if (threadIdx.x < 8) {
+F|        double cnt = n * 32.0, m = acc[2 * threadIdx.x] / cnt, v = fmax(acc[2 * threadIdx.x + 1] / cnt - m * m, 0.0);
+F|        st[threadIdx.x] = make_float2((float)m, 1.f / sqrtf((float)v + eps));
+F|    }
+F|    __syncthreads();
+N|    for (unsigned i = blockIdx.x * blockDim.x + threadIdx.x; i < n * 64; i += gridDim.x * blockDim.x) {
+N|        unsigned c4 = i & 63;  float2 s = st[c4 >> 3];          // 8 float4 per group
+N|        float4 v = ((const float4 *)x)[i], ww = __ldg((const float4 *)w + c4), bb = __ldg((const float4 *)b + c4);
+N|        v.x = fmaxf(fmaf((v.x - s.x) * s.y, ww.x, bb.x), 0.f);   // .y .z .w alike
+O|        if (y32) ((float4 *)y32)[i] = v;
+O|        if (y16) { ((__half2 *)y16)[2 * i] = __floats2half2_rn(v.x, v.y); ((__half2 *)y16)[2 * i + 1] = __floats2half2_rn(v.z, v.w); }
+N|    }
+F|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `R|    mul.wide.u32    %rd2, %r0, %r2;         // n * b
+R|    cvt.u64.u32     %rd3, %r3;
+R|    div.u64         %rd2, %rd2, %rd3;       // / grid
+S|ROWS:
+S|    shl.b32         %r6, %r4, 8;
+S|    add.u32         %r6, %r6, %r1;          // row * 256 + channel
+S|    ld.global.nc.f32 %f2, [%rd4];
+S|    add.f32         %f0, %f0, %f2;
+S|    fma.rn.f32      %f1, %f2, %f2, %f1;
+S|    @... bra        ROWS;
+W|    shfl.sync.bfly.b32 %f2, %f0, 16, 31, 0xffffffff;
+W|    add.f32         %f0, %f0, %f2;
+W|    ...                                     // 8, 4, 2, 1; then the same for %f1
+A|    setp.ne.u32     %p1, %r7, 0;            // lane 0 only
+A|    @%p1 bra        DONE;
+A|    cvt.f64.f32     %d0, %f0;
+A|    cvt.f64.f32     %d1, %f1;
+A|    atom.global.add.f64 %d2, [%rd5], %d0;
+A|    atom.global.add.f64 %d3, [%rd5+8], %d1;
+F|// gn_apply
+F|    ld.global.f64   %d0, [%rd6];
+F|    ld.global.f64   %d1, [%rd6+8];
+F|    mul.f64         %d2, %d2, 0d4040000000000000;   // n * 32
+F|    div.rn.f64      %d3, %d0, %d2;          // mean
+F|    div.rn.f64      %d4, %d1, %d2;
+F|    mul.f64         %d5, %d3, %d3;
+F|    sub.f64         %d4, %d4, %d5;          // variance
+F|    st.shared.v2.f32 [%r2], {%f0, %f1};
+F|    bar.sync        0;
+N|    shr.u32         %r10, %r9, 3;           // group of the float4
+N|    ld.shared.v2.f32 {%f0, %f1}, [%r11];
+N|    sub.f32         %f4, %f4, %f0;
+N|    mul.f32         %f4, %f4, %f1;
+N|    fma.rn.f32      %f4, %f4, %f8, %f12;
+N|    max.f32         %f4, %f4, 0f00000000;   // relu
+O|    st.global.v4.f32 [%rd11], {%f4, %f5, %f6, %f7};
+O|    cvt.rn.f16x2.f32 %r13, %f5, %f4;
+O|    st.global.v2.b32 [%rd12], {%r13, %r14};` },
+});
+const mg = Atlas.grid($('map'), P / 8, CH / 4);
+$('map').style.aspectRatio = '64 / 30';
+const BCOL = b => [C.x, C.w, C.y, C.sync, C.x, C.w][b];
+const ORDER = steps.map(s => s.tag);
+function draw() {
+  const st = stepper.step, si = ORDER.indexOf(st.tag), T = stats();
+  // map: 72 rows of 8 pixels × 64 columns of 4 channels
+  const g = mg.prep();
+  for (let r = 0; r < P / 8; r++) for (let c = 0; c < CH / 4; c++) {
+    const p = r * 8, b = Math.min(NB - 1, Math.floor(p * NB / P)), grp = (c * 4) >> 5;
+    const on = si <= 4 ? (si >= 1 ? b === S.block : true) : grp === S.group;
+    const col = si >= 5 ? C.y : BCOL(b);
+    g.cell(r, c, col, on ? (grp === S.group ? 0.85 : 0.5) : 0.12, 0.04);
+  }
+  for (let k = 1; k < G; k++) mg.vline(k * 8, C.fg, 1);
+  $('mapsub').textContent = `${NB} toy blocks of ${P / NB} pixels; columns grouped by 32 channels`;
+  Atlas.legend($('legend'), si >= 5 ? [['--y', `group ${S.group} (gn_apply normalizes it with μ, 1/σ of the group)`]] : [['--x', 'blocks 0, 4'], ['--w', '1, 5'], ['--y', '2'], ['--sync', '3']]);
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`, [r0, r1] = rowsOf(S.block), real = S.size * S.size;
+  $('thlabel').textContent = si >= 5 ? `gn_apply, group ${S.group}` : `gn_stats block ${S.block}, warp ${S.group} (group ${S.group})`;
+  let c = row('real map', `${Atlas.int(real)} pixels × 256 channels = ${(real * 1024 / 1e6).toFixed(1)} MB f32; ${Atlas.int(Math.ceil(real / 448))} pixels per block`);
+  if (si >= 1) c += row('toy rows', `${r0} … ${r1 - 1} (${r1 - r0} pixels)`);
+  if (si >= 3) c += row('block partial', `Σ ${T.part[S.block][S.group][0].toFixed(2)}, Σx² ${T.part[S.block][S.group][1].toFixed(2)}`);
+  if (si >= 4) c += row('acc[g] after all', `Σ ${T.acc[S.group][0].toFixed(3)}, Σx² ${T.acc[S.group][1].toFixed(3)} (f64)`);
+  if (si >= 5) c += row('μ, 1/σ', `${T.mean[S.group].toFixed(5)}, ${T.inv[S.group].toFixed(5)}`);
+  if (si >= 6) { const p = r0, ch = S.group * 32; const y = Math.max(0, fr(fr(fr(xv(p, ch) - T.mean[S.group]) * T.inv[S.group]) * wv(ch) + bv(ch))); c += row(`y[${p}][${ch}]`, `relu((${xv(p, ch).toFixed(3)} − μ) · 1/σ · ${wv(ch).toFixed(3)} + ${bv(ch).toFixed(3)}) = ${y.toFixed(4)}`); }
+  $('card').innerHTML = c;
+  $('status').textContent = 'Click the map to pick a block (by row) and a group (by column).';
+  drawAcc(T, si); drawPrec(); drawApply(T, si);
+}
+function drawAcc(T, si) {
+  const W = 340, H = 220, x0 = 30, bw = 36;
+  let s = `<text x="8" y="14" font-size="10.5" fill="${C.fg}">acc[g].Σ, built block by block (stacked)</text>`;
+  const mx = Math.max(...T.acc.map(a => a[0]));
+  for (let g = 0; g < G; g++) {
+    let y = 190;
+    for (let b = 0; b < NB; b++) {
+      const h = T.part[b][g][0] / mx * 150, shown = si >= 4 || (si >= 3 && b === S.block);
+      s += `<rect x="${x0 + g * bw}" y="${y - h}" width="${bw - 6}" height="${h}" fill="${BCOL(b)}" opacity="${shown ? (b === S.block && g === S.group ? 1 : 0.6) : 0.1}"/>`;
+      y -= h;
+    }
+    s += `<text x="${x0 + g * bw + (bw - 6) / 2}" y="205" font-size="9.5" text-anchor="middle" fill="${g === S.group ? C.fg : C.muted}">g${g}</text>`;
+  }
+  $('acc').setAttribute('viewBox', `0 0 ${W} ${H}`); $('acc').innerHTML = s;
+}
+const precCache = {};
+function precPoints(n) { // running f32 vs f64 totals over n values with the toy's mean and spread (cached per size)
+  if (precCache[n]) return precCache[n];
+  const mean = 2.7, sd = 1.1, r = Atlas.rng(7), pts = [], step = Math.max(1, Math.floor(n / 60));
+  let f = 0, d = 0, fq = 0, dq = 0;
+  for (let i = 0; i < n; i++) {
+    const v = fr(mean + sd * (r() + r() + r() - 1.5) * 2);
+    f = fr(f + v); d += v; fq = fr(fq + fr(v * v)); dq += v * v;
+    if ((i % step === 0 && i >= 4096) || i === n - 1) pts.push([i, (f - d) / d, ((fq / (i + 1) - (f / (i + 1)) ** 2) - (dq / (i + 1) - (d / (i + 1)) ** 2)) / (dq / (i + 1) - (d / (i + 1)) ** 2)]);
+  }
+  return (precCache[n] = pts);
+}
+function drawPrec() {
+  const W = 520, H = 200, n = S.size * S.size * 32, pts = precPoints(n);
+  const ml = 50, mr = 10, mt = 14, mb = 34, X = i => ml + i / n * (W - ml - mr);
+  const vmax = Math.max(...pts.map(p => Math.abs(p[2])), 1e-9), Y = v => mt + (1 - Math.min(1, Math.abs(v) / vmax)) * (H - mt - mb);
+  let s = `<line x1="${ml}" x2="${W - mr}" y1="${H - mb}" y2="${H - mb}" stroke="${C.line}"/>`;
+  s += `<path d="M${pts.map(p => `${X(p[0]).toFixed(1)},${Y(p[2]).toFixed(1)}`).join(' L')}" fill="none" stroke="${C.x}" stroke-width="2"/>`;
+  const last = pts[pts.length - 1];
+  s += `<text x="${ml}" y="${H - mb + 14}" font-size="9.5" fill="${C.muted}">values added: 0 … ${Atlas.int(n)} (one group of a ${S.size}² map)</text>`;
+  s += `<text x="${ml}" y="${H - 6}" font-size="9.5" fill="${C.muted}">variance from f32 running totals: ${(Math.abs(last[2]) * 100).toFixed(2)}% off at the end; f64: ~10⁻¹²</text>`;
+  s += `<text x="${ml - 4}" y="${mt + 4}" font-size="9" text-anchor="end" fill="${C.muted}">${(vmax * 100).toFixed(1)}%</text><text x="${ml - 4}" y="${H - mb}" font-size="9" text-anchor="end" fill="${C.muted}">0</text>`;
+  $('prec').setAttribute('viewBox', `0 0 ${W} ${H}`); $('prec').innerHTML = s;
+}
+function drawApply(T, si) {
+  const W = 520, H = 200, bins = 40, lo = -3, hi = 7, g = S.group;
+  const a = new Array(bins).fill(0), b = new Array(bins).fill(0);
+  const bin = v => Math.floor((Math.max(lo, Math.min(hi - 1e-6, v)) - lo) / (hi - lo) * bins);
+  for (let p = 0; p < P; p += 2) for (let c = g * 32; c < g * 32 + 32; c += 2) {
+    const x = xv(p, c), y = Math.max(0, fr(fr(fr(x - T.mean[g]) * T.inv[g]) * wv(c) + bv(c)));
+    a[bin(x)]++; b[bin(y)]++;
+  }
+  const mx = Math.max(...a, ...b), bw = (W - 40) / bins;
+  let s = '';
+  for (let k = 0; k < bins; k++) {
+    s += `<rect x="${20 + k * bw}" y="${80 - a[k] / mx * 60}" width="${bw - 1}" height="${a[k] / mx * 60}" fill="${C.x}" opacity="0.7"/>`;
+    if (si >= 6) s += `<rect x="${20 + k * bw}" y="${170 - b[k] / mx * 60}" width="${bw - 1}" height="${b[k] / mx * 60}" fill="${C.y}" opacity="0.7"/>`;
+  }
+  const z = 20 + (0 - lo) / (hi - lo) * (W - 40);
+  s += `<line x1="${z}" x2="${z}" y1="14" y2="172" stroke="${C.line}" stroke-dasharray="3 3"/>`;
+  s += `<text x="20" y="14" font-size="10" fill="${C.fg}">x, group ${g}: μ = ${T.mean[g].toFixed(2)}</text><text x="20" y="104" font-size="10" fill="${C.fg}">y = relu(norm · w + b)${si >= 6 ? ': everything below 0 lands on 0' : ' (step 7)'}</text>`;
+  s += `<text x="20" y="${H - 6}" font-size="9" fill="${C.muted}">${lo}</text><text x="${W - 20}" y="${H - 6}" font-size="9" text-anchor="end" fill="${C.muted}">${hi}</text>`;
+  $('applysub').textContent = `${P / 2 * 16} sampled values`;
+  $('apply').setAttribute('viewBox', `0 0 ${W} ${H}`); $('apply').innerHTML = s;
+}
+mg.hook(p => { const px = p.r * 8, b = Math.min(NB - 1, Math.floor(px * NB / P)); $('status').textContent = `pixels ${px} … ${px + 7}, channels ${p.c * 4} … ${p.c * 4 + 3}: block ${b}, group ${(p.c * 4) >> 5}`; },
+  p => { S.block = Math.min(NB - 1, Math.floor(p.r * 8 * NB / P)); S.group = (p.c * 4) >> 5; draw(); }, () => {});
+function facts() {
+  const real = S.size * S.size;
+  Atlas.facts($('facts'), [['448 × 256', 'both launches'], ['8 groups × 32', 'channels'], [`${(real * 32 / 1e6).toFixed(2)} M`, 'values per group'], ['16', 'f64 atomics per block'], ['2 × ' + (real * 1024 / 1e6).toFixed(0) + ' MB', 'map reads (stats, apply)'], ['2 per prompt', 'GroupNorms (144², 288²)']]);
+}
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1300 });
+facts();
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

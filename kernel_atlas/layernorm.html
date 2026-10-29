@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>layernorm Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.figs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 700px) { .figs { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">SAM 3 · <a href="src/sam3.html#layernorm">sam3.ptx</a> · one warp per row, three passes, up to three outputs</div>
+    <h1>Inside <code>layernorm</code></h1>
+    <p>SAM 3's transformers use LayerNorm: subtract the row's mean, divide by its standard deviation, then scale and shift each channel. The language models in this atlas use RMSNorm instead (<a href="rmsnorm.html">rmsnorm</a>), which skips the mean and the shift. This kernel normalizes 1024-wide rows in the ViT and text encoder and 256-wide rows everywhere after them, 276 launches for an image and two prompts. It also writes the result in the form the next kernel reads: f16 for a matrix product, f16 with the position embedding already added for the attention layers whose queries and keys get it, or f32 back into the stream for the decoder's post-norm layers.</p>
+    <div class="formula"><span class="y">y</span>[i] = (<span class="x">x</span>[i] − μ) / √(σ² + ε) · <span class="w">w</span>[i] + <span class="w">b</span>[i], &nbsp;μ = mean(<span class="x">x</span>), σ² = mean((<span class="x">x</span> − μ)²), ε = 10⁻⁵ &nbsp;&nbsp;<span class="muted">// outputs: y32 (f32), y16 = f16(y), yp16 = f16(y + pos)</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">A warp per row: sum, then squared deviations, then the output</h2>
+      <p>Lane l reads 4 floats at columns 4l, 4l + 128, 4l + 256, …: the whole warp covers 512 contiguous bytes per access. Each pass re-reads the row from global memory; after the first pass it comes from L1. The two reductions are warp butterflies, with no shared memory and no barrier. Pick the row width and a lane.</p>
+    </div>
+    <div class="controls">
+      <span class="seg" id="widthSeg" role="group" aria-label="Row width"></span>
+      <label>lane <input id="lane" type="range" min="0" max="31" value="6"> <span id="lanev" class="mono"></span></label>
+      <label>row offset <input id="off" type="range" min="0" max="300" value="0"> <span id="offv" class="mono"></span></label>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x" id="rowlabel"></b><span id="rowsub"></span></div>
+        <canvas id="row"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="cvlabel"><b class="s" id="bflabel"></b><span>shfl.sync.bfly 16, 8, 4, 2, 1</span></div>
+        <div class="figure"><svg id="bfly" role="img" aria-label="warp butterfly reduction"></svg></div>
+        <div class="status" id="status"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="card"></dl>
+        <div class="figure"><svg id="hist" role="img" aria-label="values of the row before and after"></svg></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="w">Where the 276 launches go (an image and two prompts)</b><span>outputs requested</span></div>
+      <div class="tablewrap"><table class="list" id="uses"></table></div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Two passes for the variance</h3>
+        <p>The variance could come from one pass as E[x²] − E[x]², but that subtracts two large, nearly equal numbers whenever a row's mean is large next to its spread. SAM 3's residual streams are not centred, and the ViT's has channels near 200. Raise the row offset above: for a row with a spread of 2.5, the f32 one-pass variance is off by about 0.05% at +100, 0.7% at +200 and 2% at +300, while the two-pass result stays exact. The kernel first computes the mean, then sums (x − μ)². The extra pass re-reads 4 KB from L1. The reference is PyTorch's <code>nn.LayerNorm</code>, which is two-pass as well; in the per-stage comparison the normalized stream matches it to 1.5 · 10<sup>−3</sup> relative, most of which is f16 rounding of the inputs before it.</p>
+        <h3>A warp, not a block</h3>
+        <p>A row of 256 or 1024 floats is 8 or 32 values per lane, which is too little work to spread over a block of 1024 threads. That is what <a href="rmsnorm.html">rmsnorm</a> does for the LLMs' 4096-wide rows of one token. Here there are thousands of rows (5184 image tokens), so a warp per row keeps every SM full, and each reduction is 5 butterfly steps with no <code>bar.sync</code>.</p>
+      </div>
+      <div class="panel">
+        <h3>The outputs are what comes next</h3>
+        <p>Before a matrix product the next kernel wants f16 (y16), so no separate conversion runs. Before the attention layers whose queries and keys carry a position embedding (the fusion encoder's self-attention, the decoder's three), it wants f16(y + pos) as well: yp16 adds the f32 position row and converts, while y16 gives the plain value input. The decoder's layers are post-norm (Add &amp; Norm after each sub-layer), so there the result also replaces the stream itself (y32 = x, in place: each lane reads its 4 values before it writes them). Any of the three can be 0 and is then skipped.</p>
+        <h3>LayerNorm in SAM 3</h3>
+        <p>Every norm in SAM 3 is a LayerNorm with weight and bias, ε = 10⁻⁵, from <code>ln_pre</code> after the patch embedding to the decoder's <code>presence_token_out_norm</code>. The only other norm is the pixel decoder's GroupNorm (<a href="gn_stats.html">gn_stats</a>), which normalizes over all pixels of 32 channels instead of over one token's channels.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <a href="src/sam3.html"><code>sam3/sam3.ptx</code></a>, kernel <a href="src/sam3.html#layernorm"><code>layernorm</code></a>; launched by <code>layernorm()</code> in <code>sam3.c</code> with ⌈rows / 8⌉ blocks of 256 threads. Checked by <code>sam3_demo test</code> against a double-precision LayerNorm (f32 output within 2 · 10<sup>−7</sup>, f16 outputs within one rounding). The row values here are generated, with a few large channels as the ViT stream has.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('layernorm');
+const S = { n: 1024, lane: 6, off: 0 };
+const xv = i => fr(Atlas.gauss(Atlas.rng(Atlas.h32(i * 31 + 3))) * 2.5 + 0.8 + S.off + ((i * 2654435761) % 997 < 4 ? 60 : 0));
+const wv = i => fr(0.6 + 0.5 * Atlas.rng(Atlas.h32(i * 7 + 1))());
+const bv = i => fr(Atlas.gauss(Atlas.rng(Atlas.h32(i * 13 + 2))) * 0.2);
+$('widthSeg').innerHTML = [[1024, 'n = 1024 (ViT, text)'], [256, 'n = 256 (encoder, decoder, heads)']].map(([v, t]) => `<button type="button" data-v="${v}" aria-pressed="${v === 1024}">${t}</button>`).join('');
+$('widthSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.n = +b.dataset.v; $('widthSeg').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); draw(); });
+function stats() {
+  const n = S.n, lanes = [], dev = [];
+  for (let l = 0; l < 32; l++) { let s = 0; for (let c = 4 * l; c < n; c += 128) for (let k = 0; k < 4; k++) s = fr(s + xv(c + k)); lanes.push(s); }
+  const t1 = Atlas.bflyTable(lanes, (a, b) => fr(a + b)), mean = fr(t1[5][0] / n);
+  for (let l = 0; l < 32; l++) { let s = 0; for (let c = 4 * l; c < n; c += 128) for (let k = 0; k < 4; k++) { const d = fr(xv(c + k) - mean); s = fr(s + fr(d * d)); } dev.push(s); }
+  const t2 = Atlas.bflyTable(dev, (a, b) => fr(a + b)), vr = fr(t2[5][0] / n), rstd = fr(1 / fr(Math.sqrt(fr(vr + 1e-5))));
+  // the naive one-pass variance in f32, for comparison
+  let s1 = 0, s2 = 0; for (let i = 0; i < n; i++) { s1 = fr(s1 + xv(i)); s2 = fr(s2 + fr(xv(i) * xv(i))); }
+  const naive = fr(fr(s2 / n) - fr(fr(s1 / n) * fr(s1 / n)));
+  let em = 0, ev = 0; for (let i = 0; i < n; i++) em += xv(i); em /= n; for (let i = 0; i < n; i++) ev += (xv(i) - em) ** 2; ev /= n;
+  return { t1, t2, mean, vr, rstd, naive, ev };
+}
+const steps = [
+  { tag: 'I', short: 'roles', title: 'row = 8 · blockIdx.x + warp; lane l owns columns 4l … 4l + 3, + 128, + 256, …', text: 'A block of 256 threads normalizes 8 rows. Rows past the end return at once. Every load below is one ld.global.v4.f32 of 16 bytes per lane.' },
+  { tag: 'M', short: 'mean', title: 'pass 1: each lane sums its n/32 values; 5 butterfly rounds; μ = Σ / n', text: 'shfl.sync.bfly.b32 with offsets 16, 8, 4, 2, 1 leaves the row sum in every lane, so all 32 can use μ without a broadcast.' },
+  { tag: 'V', short: 'variance', title: 'pass 2: each lane sums (x − μ)²; butterfly; σ² = Σ / n; 1 / √(σ² + ε)', text: 'The row is read again, from L1 this time. sqrt.rn and rcp.rn give the reciprocal standard deviation; no rsqrt.approx.' },
+  { tag: 'N', short: 'normalize', title: 'pass 3: y = (x − μ) · (1/σ) · w + b, four values per load', text: 'w and b come through the read-only cache (ld.global.nc.v4); every row reads the same 2 × n floats.' },
+  { tag: 'O', short: 'outputs', title: 'store the requested outputs: y32 (f32), y16 (f16), yp16 = f16(y + pos)', text: 'Predicates set once per row skip the outputs that are 0. y16 and yp16 are two cvt.rn.f16x2 and one 8-byte store each.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `I|extern "C" __global__ void layernorm(const float *x, const float *w, const float *b, float *y32, __half *y16,
+I|                                     const float *pos, __half *yp16, unsigned rows, unsigned n, float eps)
+I|{
+I|    unsigned lane = threadIdx.x & 31, row = blockIdx.x * 8 + (threadIdx.x >> 5);
+I|    if (row >= rows) return;
+I|    const float4 *xr = (const float4 *)(x + (size_t)row * n);
+M|    float s = 0;
+M|    for (unsigned c = lane; c < n / 4; c += 32) { float4 v = xr[c]; s += v.x + v.y + v.z + v.w; }
+M|    for (int o = 16; o; o >>= 1) s += __shfl_xor_sync(~0u, s, o);
+M|    float mean = s / n;
+V|    float q = 0;
+V|    for (unsigned c = lane; c < n / 4; c += 32) {
+V|        float4 v = xr[c];
+V|        q += (v.x - mean) * (v.x - mean) + (v.y - mean) * (v.y - mean) + (v.z - mean) * (v.z - mean) + (v.w - mean) * (v.w - mean);
+V|    }
+V|    for (int o = 16; o; o >>= 1) q += __shfl_xor_sync(~0u, q, o);
+V|    float inv = 1.f / sqrtf(q / n + eps);
+N|    for (unsigned c = lane; c < n / 4; c += 32) {
+N|        float4 v = xr[c], ww = __ldg((const float4 *)w + c), bb = __ldg((const float4 *)b + c), r;
+N|        r.x = (v.x - mean) * inv * ww.x + bb.x;  r.y = (v.y - mean) * inv * ww.y + bb.y;
+N|        r.z = (v.z - mean) * inv * ww.z + bb.z;  r.w = (v.w - mean) * inv * ww.w + bb.w;
+O|        size_t o = (size_t)row * n + 4 * c;
+O|        if (y32) *(float4 *)(y32 + o) = r;                          // may be x itself
+O|        if (y16) { *(__half2 *)(y16 + o) = __floats2half2_rn(r.x, r.y); *(__half2 *)(y16 + o + 2) = __floats2half2_rn(r.z, r.w); }
+O|        if (yp16) { float4 p = *(const float4 *)(pos + o);
+O|                    *(__half2 *)(yp16 + o) = __floats2half2_rn(r.x + p.x, r.y + p.y);
+O|                    *(__half2 *)(yp16 + o + 2) = __floats2half2_rn(r.z + p.z, r.w + p.w); }
+N|    }
+I|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    shl.b32         %r3, %r3, 3;
+I|    add.u32         %r3, %r3, %r2;          // row
+I|    setp.ge.u32     %p0, %r3, %r4;
+I|    @%p0 bra        DONE;
+I|    shl.b32         %r7, %r1, 2;            // first column of this lane
+M|SUM:
+M|    ld.global.v4.f32 {%f4, %f5, %f6, %f7}, [%rd3];
+M|    add.f32         %f0, %f0, %f4;
+M|    ...
+M|    add.u32         %r8, %r8, 128;
+M|    @%p1 bra        SUM;
+M|    shfl.sync.bfly.b32 %f1, %f0, 16, 31, 0xffffffff;
+M|    add.f32         %f0, %f0, %f1;
+M|    ...                                     // 8, 4, 2, 1
+M|    div.rn.f32      %f3, %f0, %f2;          // mean
+V|VAR:
+V|    ld.global.v4.f32 {%f4, %f5, %f6, %f7}, [%rd3];
+V|    sub.f32         %f4, %f4, %f3;
+V|    fma.rn.f32      %f0, %f4, %f4, %f0;
+V|    ...
+V|    div.rn.f32      %f0, %f0, %f2;
+V|    add.f32         %f0, %f0, %f1;          // + eps
+V|    sqrt.rn.f32     %f0, %f0;
+V|    rcp.rn.f32      %f8, %f0;               // 1 / std
+N|OUT:
+N|    ld.global.nc.v4.f32 {%f12, %f13, %f14, %f15}, [%rd11];   // w
+N|    ld.global.nc.v4.f32 {%f16, %f17, %f18, %f19}, [%rd11];   // b
+N|    sub.f32         %f4, %f4, %f3;
+N|    mul.f32         %f4, %f4, %f8;
+N|    fma.rn.f32      %f4, %f4, %f12, %f16;
+O|    @!%p2 bra       OUT16;
+O|    st.global.v4.f32 [%rd11], {%f4, %f5, %f6, %f7};          // y32
+O|OUT16:
+O|    cvt.rn.f16x2.f32 %r9, %f5, %f4;
+O|    cvt.rn.f16x2.f32 %r10, %f7, %f6;
+O|    st.global.v2.b32 [%rd13], {%r9, %r10};                   // y16
+O|OUTP:
+O|    ld.global.v4.f32 {%f20, %f21, %f22, %f23}, [%rd13];      // pos
+O|    add.f32         %f20, %f20, %f4;
+O|    ...
+O|    st.global.v2.b32 [%rd13], {%r9, %r10};                   // yp16` },
+});
+const ORDER = steps.map(s => s.tag);
+const USES = [
+  ['vision', 'ln_pre', '1', 'y32 (in place)', 'after the patch embedding and position'],
+  ['vision', 'ViT norm1, norm2', '64', 'y16', 'inputs of qkv and fc1'],
+  ['text', 'ln_1, ln_2, ln_final', '49 per prompt', 'y16', 'inputs of the text products'],
+  ['geometry', 'norm, norm1–3, encode_norm', '11', 'y32 or y16', 'the CLS token (1 row)'],
+  ['encoder', 'norm1', '6 per prompt', 'y16 + yp16 (pos)', 'v from y16, q and k from yp16'],
+  ['encoder', 'norm2, norm3', '12 per prompt', 'y16', 'cross-attention query, FFN'],
+  ['decoder', 'norm2, catext_norm', '12 per prompt', 'y32 (in place) + yp16 (query pos)', 'post-norm; next query = tgt + pos'],
+  ['decoder', 'norm1, norm3', '12 per prompt', 'y32 (in place) (+ y16)', 'post-norm'],
+  ['decoder', 'dec norm, presence norm', '7 per prompt', 'y32 + y16', 'box head input, presence head'],
+  ['heads', 'prompt_mlp out_norm, cross_attn_norm', '2 per prompt', 'y32 or y16', 'scoring, mask head'],
+];
+const rg = Atlas.grid($('row'), 8, 128);
+function draw() {
+  const st = stepper.step, si = ORDER.indexOf(st.tag), n = S.n, it = n / 128, T = stats();
+  $('lanev').textContent = S.lane; $('offv').textContent = '+' + S.off;
+  rg.resize(it, 128); $('row').style.aspectRatio = n === 1024 ? '128 / 14' : '128 / 7';
+  const g = rg.prep(), span = 6;
+  for (let r = 0; r < it; r++) for (let c = 0; c < 128; c++) {
+    const i = r * 128 + c, lane = c >> 2, v = si >= 3 ? fr(fr(fr(xv(i) - T.mean) * T.rstd) * wv(i) + bv(i)) : xv(i);
+    const mine = lane === S.lane;
+    g.cell(r, c, v >= 0 ? C.x : C.y, (Math.min(1, Math.abs(v) / span) * 0.8 + 0.12) * (mine || si === 0 ? 1 : 0.55), 0.05);
+  }
+  for (let r = 0; r < it; r++) g.box(r, 4 * S.lane, 1, 4, C.fg, 1.5);
+  $('rowlabel').textContent = `one row of ${n}: ${it} loads per lane (rows of the canvas), 4 floats each`;
+  $('rowsub').textContent = si >= 3 ? 'after normalization' : 'input x';
+  Atlas.legend($('legend'), [['--x', 'positive'], ['--y', 'negative'], ['--fg', `lane ${S.lane}'s columns`]]);
+  const stage = st.tag === 'M' ? 5 : st.tag === 'V' ? 5 : 0, tab = st.tag === 'V' ? T.t2 : T.t1;
+  $('bflabel').textContent = st.tag === 'V' ? 'pass 2: Σ (x − μ)² per lane, then the butterfly' : 'pass 1: Σ x per lane, then the butterfly';
+  Atlas.butterfly($('bfly'), tab, si >= 1 ? stage : 0, { sel: S.lane, color: st.tag === 'V' ? C.w : C.y, fmt: v => Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1) });
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`;
+  $('thlabel').textContent = `lane ${S.lane}: columns ${4 * S.lane} … ${4 * S.lane + 3} + 128 k, k < ${it}`;
+  let c = row('lane sum (pass 1)', T.t1[0][S.lane].toFixed(3));
+  if (si >= 1) c += row('row sum, μ', `${T.t1[5][0].toFixed(3)}, ${T.mean.toFixed(5)}`);
+  if (si >= 2) {
+    c += row('σ² (two passes)', `${T.vr.toFixed(5)} (exact: ${T.ev.toFixed(5)})`);
+    c += row('σ² one-pass in f32', `${T.naive.toFixed(5)}: E[x²] − E[x]², off by ${(Math.abs(T.naive - T.ev) / T.ev * 100).toPrecision(2)}%${S.off ? '' : ' (raise the row offset)'}`);
+    c += row('1 / √(σ² + ε)', T.rstd.toFixed(6));
+  }
+  if (si >= 3) { const i = 4 * S.lane; c += row(`y[${i}]`, `(${xv(i).toFixed(3)} − μ) · ${T.rstd.toFixed(4)} · ${wv(i).toFixed(3)} + ${bv(i).toFixed(3)} = ${fr(fr(fr(xv(i) - T.mean) * T.rstd) * wv(i) + bv(i)).toFixed(4)}`); }
+  if (si >= 4) c += row('outputs', 'y32 (f32) · y16 = f16(y) · yp16 = f16(y + pos), each skipped when 0');
+  $('card').innerHTML = c;
+  $('status').textContent = 'The outlined columns are the selected lane\'s; drag the lane slider or click the row.';
+  drawHist(T, si);
+  $('uses').innerHTML = '<thead><tr><th>where</th><th>norms</th><th>launches</th><th>outputs</th><th>for</th></tr></thead><tbody>' + USES.map(u => `<tr><td>${u[0]}</td><td><code>${u[1]}</code></td><td class="num">${u[2]}</td><td>${u[3]}</td><td>${u[4]}</td></tr>`).join('') + '</tbody>';
+}
+function drawHist(T, si) {
+  const W = 340, H = 200, n = S.n, bins = 40, lo = -8, hi = 8;
+  const hx = new Array(bins).fill(0), hy = new Array(bins).fill(0);
+  for (let i = 0; i < n; i++) {
+    const a = xv(i), b = fr(fr(fr(a - T.mean) * T.rstd) * wv(i) + bv(i));
+    const ba = Math.floor((Math.max(lo, Math.min(hi - 1e-6, a)) - lo) / (hi - lo) * bins), bb = Math.floor((Math.max(lo, Math.min(hi - 1e-6, b)) - lo) / (hi - lo) * bins);
+    hx[ba]++; hy[bb]++;
+  }
+  const mx = Math.max(...hx, ...hy), bw = (W - 20) / bins;
+  let s = '';
+  for (let k = 0; k < bins; k++) {
+    s += `<rect x="${10 + k * bw}" y="${90 - hx[k] / mx * 70}" width="${bw - 1}" height="${hx[k] / mx * 70}" fill="${C.x}" opacity="0.7"/>`;
+    if (si >= 3) s += `<rect x="${10 + k * bw}" y="${180 - hy[k] / mx * 70}" width="${bw - 1}" height="${hy[k] / mx * 70}" fill="${C.y}" opacity="0.7"/>`;
+  }
+  s += `<text x="10" y="14" font-size="10" fill="${C.fg}">x: μ = ${T.mean.toFixed(2)}, σ = ${Math.sqrt(T.vr).toFixed(2)} (a few channels near 60, clipped)</text>`;
+  s += `<text x="10" y="104" font-size="10" fill="${C.fg}">y${si >= 3 ? '' : ' (pass 3)'}</text>`;
+  s += `<text x="10" y="${H - 4}" font-size="9" fill="${C.muted}">−8</text><text x="${W - 10}" y="${H - 4}" font-size="9" text-anchor="end" fill="${C.muted}">8</text>`;
+  $('hist').setAttribute('viewBox', `0 0 ${W} ${H}`); $('hist').innerHTML = s;
+}
+rg.hook(p => { $('status').textContent = `column ${p.r * 128 + p.c}: lane ${p.c >> 2}, load ${p.r}`; }, p => { S.lane = p.c >> 2; $('lane').value = S.lane; draw(); }, () => {});
+$('lane').addEventListener('input', () => { S.lane = +$('lane').value; draw(); });
+$('off').addEventListener('input', () => { S.off = +$('off').value; draw(); });
+Atlas.facts($('facts'), [['⌈rows / 8⌉', 'blocks of 256'], ['1 warp', 'per row'], ['3', 'passes over the row'], ['2', 'butterflies (5 rounds each)'], ['0 B', 'shared memory'], ['276', 'launches: image + 2 prompts']]);
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1300 });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

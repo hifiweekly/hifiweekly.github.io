@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAM 3 Graph</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script src="atlas.js"></script>
+<script src="model.js"></script>
+<style>#newKernels td, #tensors td, #checks td, #perf td { white-space: normal; }</style>
+
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Model graph · sam3/sam3-image-f32.gguf · engine <a href="src/sam3.html">sam3.ptx</a></div>
+    <h1>SAM 3 (image, text prompt)</h1>
+    <p>Meta's Segment Anything 3, the first vision model in this atlas. Given an image and a noun phrase it returns every instance of the phrase: a box, a score and a mask each. It has two encoders: a ViT-L over 72 × 72 patches of the 1008-pixel image, and a CLIP text transformer over the prompt. A fusion encoder lets the image tokens attend to the prompt, and a DETR-style decoder turns 200 learned queries into boxes, refined after every layer. A dot product with the pooled prompt scores each query, gated by a presence token, and a pixel decoder plus a per-query embedding gives each query a 288 × 288 mask. The engine runs it with 21 new kernels; every matrix product is one tensor-core GEMM (<a href="gemm_f16.html">gemm_f16</a>) and every attention one flash-attention kernel (<a href="flash_attn.html">flash_attn</a>). This page draws the model's dataflow with the kernel the engine launches at each step. Click any box for details.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="h-fig">
+    <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017). Panels: (a) the vision backbone and its feature-pyramid neck, (b) the text encoder, (c) the fusion encoder, (d) the decoder with its scoring and mask heads. Boxes whose kernel has a page link to it.</p></div>
+    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/sam3.svg" width="1700" height="1154" style="aspect-ratio: 1700 / 1154" aria-label="SAM 3 architecture: a ViT-L vision backbone with windowed attention and a feature-pyramid neck; a CLIP text encoder; a fusion encoder where image tokens attend to the prompt; a DETR-style decoder with box refinement, a dot-product score and a mask head."><img src="figures/sam3.svg" width="1700" height="1154" alt="SAM 3 architecture."></object><figcaption class="muted"><a href="figures/sam3.svg">Open the figure full size</a></figcaption></figure>
+  </section>
+
+  <section aria-labelledby="h-ov">
+    <div class="sechead"><h2 id="h-ov">Whole model</h2><p class="muted">Everything above the prompt runs once per image; the text encoder and everything after it once per prompt. Click a stack of layers to show one layer below.</p></div>
+    <div class="mgrid">
+      <div class="panel graph" id="ovGraph" aria-label="Whole-model graph"></div>
+      <div class="panel side" aria-live="polite"><div id="detail"><h3>Details</h3><p class="muted">Click a box in either graph.</p></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-ly">
+    <div class="sechead"><h2 id="h-ly">One layer</h2><p class="muted" id="lyTitle"></p></div>
+    <div class="controls">
+      <span class="seg" id="passSeg" role="group" aria-label="Pass"></span>
+      <span class="seg" id="kindSeg" role="group" aria-label="Layer kind"></span>
+      <label>Highlight kernel <select id="hotSel"></select></label>
+    </div>
+    <div class="key">
+      <span><i style="border-color:var(--sync)"></i>kernel with a walkthrough</span>
+      <span><i style="border-color:var(--muted);border-style:dashed"></i>kernel, no page yet</span>
+      <span><i style="border-color:var(--w)"></i>model tensor</span>
+      <span><i style="border-color:var(--x);border-radius:8px"></i>activations</span>
+      <span><i style="border-color:var(--line)"></i>host (CPU) step</span>
+    </div>
+    <div class="panel graph" id="lyGraph" aria-label="Layer graph"></div>
+  </section>
+
+  <section aria-labelledby="h-ln">
+    <div class="sechead"><h2 id="h-ln">Launch order</h2><p class="muted" id="launchCount"></p></div>
+    <div class="panel tablewrap"><table class="list" id="launches"></table></div>
+  </section>
+
+  <section aria-labelledby="h-new">
+    <div class="sechead"><h2 id="h-new">What is new in sam3.ptx</h2><p class="muted">Everything: hashing every <code>.entry</code> with its comments stripped against the eight other files finds no shared kernel. The language-model engines decode one token at a time with quantized matrix–vector products. SAM 3 runs thousands of tokens per product, so it is built around two tensor-core kernels and a set of small reshaping kernels that feed them.</p></div>
+    <div class="two">
+      <div class="panel">
+        <h3>The 21 kernels</h3>
+        <div class="tablewrap"><table class="list" id="newKernels"></table></div>
+      </div>
+      <div class="panel">
+        <h3>Convolutions as products</h3>
+        <p>The neck and the pixel decoder are convolutions, and the engine has no convolution kernel: each becomes a matrix product. A 3 × 3 convolution reads <code>im2col3</code>'s matrix (each row the 9 × 256 neighbourhood of a pixel, in the weight's [out][ky][kx][in] order). A 1 × 1 convolution is a product of the feature map as it is. A 2 × 2 stride-2 transposed convolution is a product to 4 · out columns, which <code>depth2space</code> scatters to the doubled map. The weights are stored MLX-style, [out][kh][kw][in], so every weight is already the B operand of <a href="gemm_f16.html">gemm_f16</a>.</p>
+        <h3>Hashed tensor names</h3>
+        <p>The GGUF (converted from the MLX port of <code>facebook/sam3</code>) names its 1368 tensors <code>t_</code> + 12 hex digits: the start of SHA-1 of the PyTorch parameter name, with <code>nn.MultiheadAttention</code>'s in_proj split into query, key and value. <code>sam3.c</code> carries a SHA-1 and hashes the names it needs. Every one of the 1122 tensors of the image model was checked bit-equal to the PyTorch checkpoint.</p>
+        <h3>Not a language model</h3>
+        <p>There is no KV cache, no sampling, no decode step. A prompt costs 24 ms after the image's 95 ms, because the image features are computed once and reused. The CLIP tokenizer is the only text-side code. Its merges come from CLIP's vocabulary file, since the GGUF has none, and its cleaning matches the Python code's (ftfy's character fixes, Unicode lower-casing).</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-t">
+    <div class="sechead"><h2 id="h-t">Tensors of one layer of each kind, plus the shared ones</h2><p class="muted">PyTorch parameter names (the GGUF stores SHA-1 hashes of them). Shapes are rows × cols, output × input; convolutions as [out][kh][kw][in]. The file is f32. Matrices go to the GPU as f16, norms, biases and the small heads stay f32, and the text embedding stays in host memory.</p></div>
+    <div class="panel tablewrap"><table class="list" id="tensors"></table></div>
+  </section>
+
+  <section aria-labelledby="h-m">
+    <div class="sechead"><h2 id="h-m">Measured</h2><p class="muted">RTX 4070 SUPER. The reference is Meta's PyTorch code with the same weights (the facebook/sam3 checkpoint).</p></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Speed</h3>
+        <div class="tablewrap"><table class="list" id="perf"></table></div>
+        <p class="muted" id="perfNote"></p>
+      </div>
+      <div class="panel">
+        <h3>Checked against PyTorch</h3>
+        <div class="tablewrap"><table class="list" id="checks"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Sources: <code>vision()</code>, <code>text()</code>, <code>encoder()</code>, <code>decoder()</code>, <code>scoring()</code> and <code>masks()</code> in <code>sam3/sam3.c</code> (kernels, buffers, launch shapes) and <a href="src/sam3.html"><code>sam3/sam3.ptx</code></a>; tensor shapes from <code>sam3-image-f32.gguf</code>; the model semantics follow Meta's <code>sam3</code> package (<code>model_builder.py</code>, <code>vitdet.py</code>, <code>encoder.py</code>, <code>decoder.py</code>, <code>maskformer_segmentation.py</code>). Kernels without a page yet: im2col_patch, add_pos, im2col3, depth2space, upsample_add, split_heads, add_cast, box_sine, box_update, linear_small, masked_mean, mask_resize and f32_to_f16 — each a few dozen lines of data movement, in the <a href="src/sam3.html">PTX listing</a>. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+const GS = '≤ 448 blocks · 256 · grid-stride';
+const gm = (n, m) => `grid (${Atlas.int(n / 128)}, ${Atlas.int(Math.ceil(m / 128))}) · 256`;
+const LN = rows => ({ any: `${Atlas.int(Math.ceil(rows / 8))} blocks · 256 (warp per row)` });
+const GN = 'gemm_f16: 128 × 128 tiles of f16 mma.m16n8k16 with f32 accumulators, a 3-stage cp.async ring, then the epilogue mode (bias; f32 / f16 / GELU / ReLU / residual add).';
+const FA = 'flash_attn: 64 queries per block, key tiles of 64, online softmax in base 2, P kept in registers.';
+const M = {
+  id: 'sam3', engine: 'SAM 3', nLayers: 32,
+  passes: [['image', 'image: once'], ['prompt', 'prompt: each']],
+  kinds: [['vit', 'ViT block'], ['text', 'text block'], ['enc', 'fusion encoder layer'], ['dec', 'decoder layer']],
+  layersOf: k => ({ vit: 32, text: 24, enc: 6, dec: 6 })[k],
+  facts: [['1008²', 'input, 72 × 72 patches'], ['32 × 1024', 'ViT blocks × width'], ['24 × 1024', 'text blocks × width'], ['6 + 6', 'encoder, decoder layers (256 wide)'], ['200 + 1', 'queries + presence'], ['288²', 'mask resolution'], ['0.85 B', 'parameters (f32 file 3.4 GB)'], ['1.66 GB', 'f16 weights on the GPU'], ['95 + 24 ms', 'image + each prompt']],
+  layerTitle: (p, k) => ({
+    vit: 'One of the 32 ViT blocks (pre-norm). Windowed blocks attend inside 24 × 24 windows (144 sequences of 576), blocks 7, 15, 23 and 31 over all 5184 tokens. Runs once per image.',
+    text: 'One of the 24 CLIP text blocks (pre-norm, causal), 32 tokens. Runs once per prompt.',
+    enc: 'One of the 6 fusion-encoder layers (pre-norm): the 5184 image tokens attend to each other, then to the 33 prompt tokens. Runs once per prompt.',
+    dec: 'One of the 6 decoder layers (post-norm): presence token + 200 queries. Self-attention, text cross-attention, image cross-attention with the box bias, feed-forward, then the boxes are refined. Runs once per prompt.',
+  })[k],
+  overview() {
+    return {
+      nodes: [
+        { id: 'img', kind: 'io', label: 'image', sub: 'any size, RGB' },
+        { id: 'pre', kind: 'op', label: 'preprocess', sub: 'CPU: antialiased resize to 1008², (x/255 − 0.5)/0.5' },
+        { id: 'pe', kind: 'op', kernel: 'im2col_patch', sub: '14 × 14 × 3 patches → 5184 × 608 f16', launch: { any: GS } },
+        { id: 'pp', kind: 'op', kernel: 'gemm_f16', sub: 'patch embedding 5184 × 1024 × 608, no bias', launch: { any: gm(1024, 5184) }, note: GN },
+        { id: 'ap', kind: 'op', kernel: 'add_pos', sub: '+ 24 × 24 position embedding, tiled 3 × 3', launch: { any: GS } },
+        { id: 'lp', kind: 'op', kernel: 'layernorm', sub: 'ln_pre, in place', launch: LN(5184) },
+        { id: 'vit', kind: 'blk', label: 'ViT block × 32', sub: 'window / global attention, 2-D RoPE, GELU MLP', layerKind: 'vit' },
+        { id: 'neck', kind: 'op', kernel: 'gemm_f16', sub: 'neck: deconv 2×2 (+ depth2space), 1×1, 3×3 (im2col3)<br/>→ 288², 144², 72² × 256', launch: { any: '15 launches' }, note: GN },
+        { id: 'geo', kind: 'op', kernel: 'flash_attn', sub: 'geometry CLS token: 3 layers attending to the 72² level', launch: { any: 'grid (1, 8) · 128 per layer' }, note: FA },
+        { id: 'txt', kind: 'io', label: 'prompt', sub: 'noun phrase' },
+        { id: 'tok', kind: 'op', label: 'CLIP tokenizer', sub: 'CPU: 32 ids, ⟨sot⟩ … ⟨eot⟩, padding 0' },
+        { id: 'emb', kind: 'op', label: 'embedding lookup', sub: 'CPU: rows + position → f32' },
+        { id: 'tb', kind: 'blk', label: 'text block × 24', sub: 'causal attention, GELU MLP', layerKind: 'text' },
+        { id: 'tr', kind: 'op', kernel: 'gemm_f16', sub: 'ln_final, resizer 1024 → 256', launch: { any: gm(256, 32) }, note: GN },
+        { id: 'pr', kind: 'io', label: 'prompt tokens', sub: '32 text + 1 geometry, 33 × 256, padding masked' },
+        { id: 'enc', kind: 'blk', label: 'fusion encoder × 6', sub: 'self-attention + cross-attention to the prompt', layerKind: 'enc' },
+        { id: 'dec', kind: 'blk', label: 'decoder × 6', sub: '200 queries + presence; boxes refined per layer', layerKind: 'dec' },
+        { id: 'sc', kind: 'op', kernel: 'masked_mean', sub: 'score = query · pooled prompt / 16, × presence<br/>(gemm_f16, masked_mean, linear_small)', launch: { any: '1 block · 256' } },
+        { id: 'pd', kind: 'op', kernel: 'gn_stats', sub: 'pixel decoder: up + conv 3×3 + GroupNorm + ReLU,<br/>72² → 144² → 288²', launch: { any: '448 · 256' }, note: 'gn_stats then gn_apply per stage; upsample_add, im2col3 and gemm_f16 before them.' },
+        { id: 'mk', kind: 'op', kernel: 'gemm_f16', sub: 'masks = MLP(query) · pixel embeddings<br/>200 × 82944 × 256', launch: { any: gm(82944, 200) }, note: GN },
+        { id: 'rs', kind: 'op', kernel: 'mask_resize', sub: 'kept queries: bilinear to the image, > 0', launch: { any: GS } },
+        { id: 'out', kind: 'io', label: 'boxes, scores, masks', sub: 'score > threshold (0.5)' },
+      ],
+      edges: [['img', 'pre'], ['pre', 'pe', '1008² f32'], ['pe', 'pp'], ['pp', 'ap', 'x'], ['ap', 'lp'], ['lp', 'vit', 'x'], ['vit', 'neck', '72² × 1024'],
+        ['neck', 'geo', '72² level'], ['geo', 'pr', 'CLS'], ['txt', 'tok'], ['tok', 'emb'], ['emb', 'tb'], ['tb', 'tr'], ['tr', 'pr', '32 × 256'],
+        ['neck', 'enc', '72² level + position'], ['pr', 'enc'], ['enc', 'dec', 'memory'], ['pr', 'dec'], ['dec', 'sc', 'queries'], ['pr', 'sc'],
+        ['enc', 'pd', 'memory'], ['neck', 'pd', '288², 144²'], ['pd', 'mk'], ['dec', 'mk', 'queries'], ['sc', 'out'], ['mk', 'rs'], ['dec', 'out', 'boxes'], ['rs', 'out']],
+    };
+  },
+  layer(pass, kind) {
+    const g = (id, sub, n, m, mode, io, extra) => ({ id, kind: 'op', kernel: 'gemm_f16', sub: `${sub}<br/>${Atlas.int(m)} × ${Atlas.int(n)} · mode ${mode}`, launch: { any: gm(n, m) }, io, note: GN, ...extra });
+    const ln = (id, sub, rows, io) => ({ id, kind: 'op', kernel: 'layernorm', sub, launch: LN(rows), io });
+    const sh = (id, sub, io) => ({ id, kind: 'op', kernel: 'split_heads', sub, launch: { any: GS }, io });
+    const fa = (id, sub, launch, io) => ({ id, kind: 'op', kernel: 'flash_attn', sub, launch: { any: launch }, io, note: FA });
+    if (kind === 'vit') return {
+      nodes: [
+        { id: 'x', kind: 'io', label: 'x', sub: '5184 × 1024 f32 residual stream' },
+        ln('n1', 'norm1 → f16', 5184, 'x → xn'),
+        { id: 'w1', kind: 'w', label: 'attn.qkv', t: 'blocks.N.attn.qkv.weight', sub: '3072 × 1024 → f16, + bias' },
+        g('qkv', 'q | k | v, f32 out', 3072, 5184, 0, 'xn → qkv'),
+        { id: 'rp', kind: 'op', kernel: 'rope_vit', sub: 'per head; 2-D RoPE on q, k;<br/>window partition → f16 Q, K, V', launch: { any: GS }, io: 'qkv, cs → Q, K, V', note: 'cs: the window table (576 positions) or the global one (5184, positions × 24/72).' },
+        fa('at', 'softmax(QKᵀ/8)V, 16 heads × 64<br/>windows: 144 × 576 · global: 16 × 5184', 'grid (9, 144) or (81, 16) · 128', 'Q, K, V → att'),
+        { id: 'w2', kind: 'w', label: 'attn.proj', t: 'blocks.N.attn.proj.weight', sub: '1024 × 1024 → f16' },
+        g('pj', 'proj, residual add', 1024, 5184, 4, 'att → x'),
+        ln('n2', 'norm2 → f16', 5184, 'x → xn'),
+        { id: 'w3', kind: 'w', label: 'mlp.fc1, mlp.fc2', t: 'blocks.N.mlp.fc1.weight', sub: '4736 × 1024, 1024 × 4736 → f16' },
+        g('f1', 'fc1 + GELU (erf), f16 out', 4736, 5184, 2, 'xn → hid'),
+        g('f2', 'fc2, residual add', 1024, 5184, 4, 'hid → x'),
+        { id: 'y', kind: 'io', label: 'x', sub: 'to the next block' },
+      ],
+      edges: [['x', 'n1'], ['n1', 'qkv', 'xn'], ['w1', 'qkv'], ['qkv', 'rp'], ['rp', 'at', 'Q, K, V'], ['at', 'pj', 'att'], ['w2', 'pj'], ['x', 'pj', 'x +='],
+        ['pj', 'n2', 'x'], ['n2', 'f1', 'xn'], ['w3', 'f1'], ['f1', 'f2', 'hid'], ['w3', 'f2'], ['f2', 'y']],
+    };
+    if (kind === 'text') return {
+      nodes: [
+        { id: 'x', kind: 'io', label: 'x', sub: '32 × 1024 f32' },
+        ln('n1', 'ln_1 → f16', 32, 'x → xn'),
+        { id: 'w1', kind: 'w', label: 'attn q ‖ k ‖ v', t: 'resblocks.N.attn.query_proj.weight', sub: 'stacked 3072 × 1024 → f16, + bias' },
+        g('qkv', 'q | k | v', 3072, 32, 0, 'xn → qkv'),
+        sh('sp', '16 heads × 64, three times', 'qkv → Q, K, V'),
+        fa('at', 'causal (flags 2), 32 tokens', 'grid (1, 16) · 128', 'Q, K, V → att'),
+        g('o', 'out_proj, residual add', 1024, 32, 4, 'att → x'),
+        ln('n2', 'ln_2 → f16', 32, 'x → xn'),
+        g('fc', 'c_fc + GELU', 4096, 32, 2, 'xn → hid'),
+        g('pj', 'c_proj, residual add', 1024, 32, 4, 'hid → x'),
+        { id: 'y', kind: 'io', label: 'x', sub: 'to the next block' },
+      ],
+      edges: [['x', 'n1'], ['n1', 'qkv', 'xn'], ['w1', 'qkv'], ['qkv', 'sp'], ['sp', 'at'], ['at', 'o', 'att'], ['x', 'o', 'x +='], ['o', 'n2', 'x'], ['n2', 'fc', 'xn'], ['fc', 'pj', 'hid'], ['pj', 'y']],
+    };
+    if (kind === 'enc') return {
+      nodes: [
+        { id: 'x', kind: 'io', label: 'x', sub: '5184 × 256 f32 (starts as the 72² level)' },
+        { id: 'pos', kind: 'io', label: 'position', sub: 'sine embedding of the 72² grid' },
+        ln('n1', 'norm1 → f16 x̂ and f16 x̂ + pos', 5184, 'x, pos → xn, xp'),
+        g('qk', 'q | k from x̂ + pos', 512, 5184, 0, 'xp → qk'),
+        g('v', 'v from x̂', 256, 5184, 0, 'xn → v'),
+        sh('sp', '8 heads × 32, zero-padded to 64', 'qk, v → Q, K, V'),
+        fa('sa', 'self-attention, 5184 × 5184', 'grid (81, 8) · 128', 'Q, K, V → att'),
+        g('o1', 'out_proj, residual add', 256, 5184, 4, 'att → x'),
+        ln('n2', 'norm2 → f16', 5184, 'x → xn'),
+        { id: 'pr', kind: 'io', label: 'prompt', sub: '33 × 256 f16, padding mask' },
+        g('cq', 'q', 256, 5184, 0, 'xn → q'),
+        g('ckv', 'k | v of the prompt', 512, 33, 0, 'prompt → kv'),
+        fa('ca', 'cross-attention to 33 keys, key mask (flags 1)', 'grid (81, 8) · 128', 'q, kv → att'),
+        g('o2', 'out_proj, residual add', 256, 5184, 4, 'att → x'),
+        ln('n3', 'norm3 → f16', 5184, 'x → xn'),
+        g('l1', 'linear1 + ReLU', 2048, 5184, 3, 'xn → hid'),
+        g('l2', 'linear2, residual add', 256, 5184, 4, 'hid → x'),
+        { id: 'y', kind: 'io', label: 'x', sub: 'after layer 6: the memory' },
+      ],
+      edges: [['x', 'n1'], ['pos', 'n1'], ['n1', 'qk', 'x̂ + pos'], ['n1', 'v', 'x̂'], ['qk', 'sp'], ['v', 'sp'], ['sp', 'sa'], ['sa', 'o1'], ['o1', 'n2', 'x'],
+        ['n2', 'cq'], ['pr', 'ckv'], ['cq', 'ca'], ['ckv', 'ca'], ['ca', 'o2'], ['o2', 'n3', 'x'], ['n3', 'l1'], ['l1', 'l2'], ['l2', 'y']],
+    };
+    return {
+      nodes: [
+        { id: 't', kind: 'io', label: 'tgt', sub: '201 × 256: presence + 200 queries' },
+        { id: 'ref', kind: 'io', label: 'boxes', sub: '200 × 4 (cx, cy, w, h), sigmoid space' },
+        { id: 'bs', kind: 'op', kernel: 'box_sine', sub: 'sine embedding of each box, 512', launch: { any: GS }, io: 'ref → sine' },
+        g('qp', 'ref_point_head (2 products) → query position', 256, 200, 0, 'sine → qpos'),
+        { id: 'rpb', kind: 'op', kernel: 'rpb_mlp', sub: 'box bias tables bx, by: [8][201][72]', launch: { any: '113 blocks · 256' }, io: 'ref → bx, by' },
+        { id: 'ac', kind: 'op', kernel: 'add_cast', sub: 'f16 tgt and tgt + qpos', launch: { any: GS }, io: 'tgt, qpos → t16, tp16' },
+        fa('sa', 'self-attention, 201 tokens', 'grid (4, 8) · 128', 'tp16, t16 → att'),
+        ln('n2', 'norm2 (post-norm, in place) + f16 tgt + pos', 201, 'tgt += att → tgt, tp16'),
+        fa('ta', 'text cross-attention, 33 keys, key mask', 'grid (4, 8) · 128', 'tp16, prompt → att'),
+        ln('nc', 'catext_norm (post-norm)', 201, 'tgt += att → tgt, tp16'),
+        { id: 'mem', kind: 'io', label: 'memory', sub: '5184 × 256 f16, and + position' },
+        fa('ia', 'image cross-attention, 5184 keys,<br/>box bias (flags 4)', 'grid (4, 8) · 128', 'tp16, memory, bx, by → att'),
+        ln('n1', 'norm1 (post-norm)', 201, 'tgt += att → tgt, t16'),
+        g('ff', 'linear1 + ReLU, linear2 + residual', 2048, 201, 3, 't16 → tgt'),
+        ln('n3', 'norm3 (post-norm)', 201, 'tgt'),
+        ln('dn', 'decoder norm of the queries', 200, 'tgt → hs'),
+        g('bb', 'bbox MLP (2 products) then linear_small → 4', 256, 200, 3, 'hs → delta'),
+        { id: 'bu', kind: 'op', kernel: 'box_update', sub: 'ref = σ(logit(ref) + delta)', launch: { any: '4 blocks · 256' }, io: 'ref, delta → ref' },
+        { id: 'y', kind: 'io', label: 'tgt, boxes', sub: 'to the next layer' },
+      ],
+      edges: [['ref', 'bs'], ['bs', 'qp'], ['ref', 'rpb'], ['t', 'ac'], ['qp', 'ac', 'qpos'], ['ac', 'sa'], ['sa', 'n2'], ['n2', 'ta', 'tgt + pos'], ['ta', 'nc'], ['nc', 'ia', 'tgt + pos'],
+        ['mem', 'ia'], ['rpb', 'ia', 'bx, by'], ['ia', 'n1'], ['n1', 'ff'], ['ff', 'n3'], ['n3', 'dn'], ['dn', 'bb'], ['bb', 'bu', 'delta'], ['ref', 'bu'], ['bu', 'y'], ['n3', 'y']],
+    };
+  },
+  tensors: [
+    { name: 'trunk.patch_embed.proj.weight', file: '1024 × [14][14][3] · F32', engine: 'f16 [1024][608], padded from 588 columns', by: 'gemm_f16 (on im2col_patch\'s matrix)' },
+    { name: 'trunk.pos_embed', file: '577 × 1024 · F32', engine: 'F32 (row 0: the unused class token)', by: 'add_pos' },
+    { name: 'trunk.blocks.N.norm1 / norm2', file: '1024 · F32 (+ bias)', engine: 'F32', by: 'layernorm' },
+    { name: 'trunk.blocks.N.attn.qkv.weight', file: '3072 × 1024 · F32', engine: 'f16; bias F32', by: 'gemm_f16' },
+    { name: 'trunk.blocks.N.attn.proj.weight', file: '1024 × 1024 · F32', engine: 'f16', by: 'gemm_f16 (mode 4)' },
+    { name: 'trunk.blocks.N.mlp.fc1 / fc2', file: '4736 × 1024, 1024 × 4736 · F32', engine: 'f16', by: 'gemm_f16 (modes 2, 4)' },
+    { name: 'convs.0.dconv_2x2_0 / _1', file: '[512][2][2][1024], [256][2][2][512] · F32', engine: 'f16 [4·out][in]; bias repeated 4 ×', by: 'gemm_f16 + depth2space' },
+    { name: 'convs.k.conv_1x1, conv_3x3', file: '[256][1][1][in], [256][3][3][256] · F32', engine: 'f16 [256][in], [256][2304]', by: 'gemm_f16 (3×3 on im2col3)' },
+    { name: 'language_backbone.encoder.token_embedding', file: '49,408 × 1024 · F32', engine: 'stays on the host: 32 rows per prompt', by: 'embedding lookup on the CPU' },
+    { name: 'resblocks.N.attn.query_proj / key_proj / value_proj', file: '1024 × 1024 each · F32 (in_proj split)', engine: 'f16, stacked into one 3072 × 1024 matrix', by: 'gemm_f16' },
+    { name: 'resblocks.N.mlp.c_fc / c_proj', file: '4096 × 1024, 1024 × 4096 · F32', engine: 'f16', by: 'gemm_f16' },
+    { name: 'language_backbone.resizer', file: '256 × 1024 · F32', engine: 'f16', by: 'gemm_f16' },
+    { name: 'geometry_encoder.cls_embed, final_proj, encode.N.*', file: '256, 256 × 256, … · F32', engine: 'f16 matrices, F32 norms', by: 'gemm_f16, flash_attn, layernorm' },
+    { name: 'transformer.encoder.layers.N.self_attn.{query,key,value}_proj', file: '256 × 256 each · F32', engine: 'f16; q ‖ k stacked (512 × 256), v alone', by: 'gemm_f16' },
+    { name: 'transformer.encoder.layers.N.cross_attn_image.*', file: '256 × 256 each · F32', engine: 'f16; k ‖ v stacked for the prompt', by: 'gemm_f16' },
+    { name: 'transformer.decoder.query_embed, reference_points', file: '200 × 256, 200 × 4 · F32', engine: 'host: copied in per prompt (σ of the points)', by: 'decoder()' },
+    { name: 'transformer.decoder.boxRPB_embed_x / _y', file: '256 × 2, 256, 8 × 256, 8 · F32 each', engine: 'F32', by: 'rpb_mlp' },
+    { name: 'transformer.decoder.ref_point_head, bbox_embed', file: '256 × 512, 256 × 256; 256 × 256 ×2, 4 × 256 · F32', engine: 'f16 (last bbox layer F32)', by: 'gemm_f16, linear_small' },
+    { name: 'transformer.decoder.presence_token(_head)', file: '256; 256 × 256 ×2, 1 × 256 · F32', engine: 'F32', by: 'linear_small' },
+    { name: 'dot_prod_scoring.prompt_mlp, prompt_proj, hs_proj', file: '2048 × 256, 256 × 2048; 256 × 256 ×2 · F32', engine: 'f16 (prompt_proj F32)', by: 'gemm_f16, linear_small' },
+    { name: 'segmentation_head.pixel_decoder.conv_layers.0/1, norms.0/1', file: '[256][3][3][256] · F32; 256', engine: 'f16 [256][2304]; F32', by: 'gemm_f16, gn_stats, gn_apply' },
+    { name: 'segmentation_head.instance_seg_head, mask_embed', file: '[256][1][1][256]; 256 × 256 ×3 · F32', engine: 'f16', by: 'gemm_f16' },
+  ],
+};
+Atlas.model(M);
+
+(() => {
+  const $ = Atlas.$, row = r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`, pg = (k, t) => `<a href="${k}.html">${t || k}</a>`;
+  $('newKernels').innerHTML = '<thead><tr><th>kernel</th><th>does</th></tr></thead><tbody>' + [
+    [pg('gemm_f16'), 'every matrix product and convolution (f16 mma, f32 accumulate, fused epilogue)'],
+    [pg('flash_attn'), 'every attention: windows, global, causal, key mask, box bias'],
+    [pg('rope_vit'), 'ViT: q/k/v split, 2-D RoPE, window partition'],
+    [pg('rpb_mlp'), 'decoder: the box relative-position bias tables'],
+    [pg('layernorm'), 'LayerNorm, f32 / f16 / f16 + position outputs'],
+    [pg('gn_stats') + ', gn_apply', 'GroupNorm(8) + ReLU of the pixel decoder'],
+    ['im2col_patch, add_pos', 'patch embedding input, tiled absolute position'],
+    ['im2col3, depth2space, upsample_add', 'convolutions as products; the pixel decoder\'s upsampling'],
+    ['split_heads, add_cast, f32_to_f16', 'heads for flash_attn (32-dim heads padded), f16 casts, weights at load'],
+    ['box_sine, box_update, linear_small, masked_mean', 'decoder and scoring heads (small)'],
+    ['mask_resize', 'kept masks at the image size'],
+  ].map(row).join('') + '</tbody>';
+  $('perf').innerHTML = '<thead><tr><th></th><th>image</th><th>each prompt</th><th>GPU memory</th></tr></thead><tbody>' +
+    [['sam3_demo', '95 ms (+ 29 ms CPU preprocessing)', '24 ms', '2.6 GB'], ['PyTorch, TF32 (default)', '248 ms', '97 ms', '4.2 GB peak'], ['PyTorch, bf16 autocast', '114 ms', '80 ms', '5.7 GB peak']].map(row).join('') + '</tbody>';
+  $('perfNote').innerHTML = 'dog.png (576 × 324), one prompt; PyTorch figures are the median of 10 runs after 3 warm-ups. Per prompt the engine spends 5.9 ms on text, 7.3 on the encoder, 5.9 on the decoder and 5.0 on the masks. Over an image and two prompts <a href="gemm_f16.html">gemm_f16</a> takes 67% of the GPU time, <a href="flash_attn.html">flash_attn</a> 20% and <a href="rope_vit.html">rope_vit</a> 4.5% (nsys).';
+  $('checks').innerHTML = '<thead><tr><th>check</th><th>result</th></tr></thead><tbody>' + [
+    ['20 prompts on 4 images, same pixels', 'all 71 instances, same kept queries; scores ≤ 2.6e-3, boxes ≤ 0.08 px, mask IoU ≥ 0.994'],
+    ['the same, own decoding and resize', 'same kept queries; scores ≤ 9.4e-3, boxes ≤ 0.33 px, IoU ≥ 0.979'],
+    ['per stage (dog, "dog")', 'ViT output 2.0e-2 relative (PyTorch TF32 vs f32: 3.0e-3); masks identical pixel for pixel'],
+    ['weights', 'all 1122 tensors bit-equal to the checkpoint'],
+    ['tokenizer', '0 of 6,000 fuzzed lines differ from SimpleTokenizer'],
+    ['kernels', '29 self-tests vs CPU references'],
+  ].map(row).join('') + '</tbody>';
+})();
+</script>

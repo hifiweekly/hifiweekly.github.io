@@ -15,7 +15,9 @@ window.Atlas = A;
 // (gemm_q's page has a section on Qwen 3.5's older version). mistral03.ptx (Mistral 7B
 // v0.3) is llama31.ptx unchanged, so every Llama 3.1 kernel also lists 'mistral03'. glm46v.ptx
 // (GLM-4.6V-Flash) keeps every llama31.ptx kernel but rope_kv, takes add_rmsnorm from gemma3.ptx
-// and adds bias_rope_kv, so those kernels list 'glm46v'. Kernels that share an .entry
+// and adds bias_rope_kv, so those kernels list 'glm46v'. sam3.ptx (SAM 3, the one vision
+// model) shares no kernel with the others; its pages are gemm_f16, flash_attn, rope_vit,
+// rpb_mlp, layernorm and gn_stats (which also covers gn_apply). Kernels that share an .entry
 // name but not the code get pages of their own: qk_norm_rope_qwen, quant_q8_qwen,
 // attention_oss, rope_kv_llama and attention_llama; `entry` gives the .entry name when the
 // id differs from it.
@@ -27,6 +29,7 @@ A.MODELS = [
   { id: 'llama31', name: 'Llama 3.1 8B', engine: 'Llama 3.1' },
   { id: 'mistral03', name: 'Mistral 7B v0.3', engine: 'Mistral 7B' },
   { id: 'glm46v', name: 'GLM-4.6V-Flash 9.4B', engine: 'GLM-4.6V' },
+  { id: 'sam3', name: 'SAM 3', engine: 'SAM 3' },
 ];
 A.KERNELS = [
   { id: 'rmsnorm', name: 'rmsnorm', engine: 'shared', models: ['gptoss', 'gemma3', 'gemma_emb2', 'qwen35', 'llama31', 'mistral03', 'glm46v'], family: 'Norms & activations' },
@@ -66,6 +69,12 @@ A.KERNELS = [
   { id: 'gdn_recur', name: 'gdn_recur', engine: 'Qwen 3.5', models: ['qwen35'], family: 'Linear attention' },
   { id: 'argmax', name: 'argmax', engine: 'shared', models: ['gptoss', 'gemma3', 'qwen35', 'llama31', 'mistral03', 'glm46v'], family: 'Routing & sampling' },
   { id: 'compact_logits', name: 'compact_logits', engine: 'shared', models: ['gptoss', 'gemma3', 'qwen35', 'llama31', 'mistral03', 'glm46v'], family: 'Routing & sampling' },
+  { id: 'gemm_f16', name: 'gemm_f16', engine: 'SAM 3', models: ['sam3'], family: 'Matrix products' },
+  { id: 'flash_attn', name: 'flash_attn', engine: 'SAM 3', models: ['sam3'], family: 'Attention' },
+  { id: 'rope_vit', name: 'rope_vit', engine: 'SAM 3', models: ['sam3'], family: 'Attention' },
+  { id: 'rpb_mlp', name: 'rpb_mlp', engine: 'SAM 3', models: ['sam3'], family: 'Attention' },
+  { id: 'layernorm', name: 'layernorm', engine: 'SAM 3', models: ['sam3'], family: 'Norms & activations' },
+  { id: 'gn_stats', name: 'gn_stats', engine: 'SAM 3', models: ['sam3'], family: 'Norms & activations' },
 ];
 A.engineLabel = e => e === 'shared' ? 'gpt-oss + Gemma 3' : e;
 
@@ -80,14 +89,18 @@ A.SRC = {
   attention_oss: [['gptoss', 'attention']],
   bias_rope_kv: [['glm46v', 'bias_rope_kv']],
   compact_logits: [['gptoss', 'compact_logits'], ['gemma3', 'compact_logits'], ['qwen35', 'compact_logits'], ['qwen38', 'compact_logits'], ['llama31', 'compact_logits'], ['mistral03', 'compact_logits'], ['glm46v', 'compact_logits']],
+  flash_attn: [['sam3', 'flash_attn']],
   gated_norm: [['qwen35', 'gated_norm'], ['qwen38', 'gated_norm']],
   gdn_conv: [['qwen35', 'gdn_conv'], ['qwen35', 'conv_save'], ['qwen38', 'gdn_conv'], ['qwen38', 'conv_save']],
   gdn_recur: [['qwen35', 'gdn_recur'], ['qwen38', 'gdn_recur']],
   geglu: [['gemma3', 'geglu'], ['emb2', 'geglu']],
   gelu_mul: [['emb2', 'gelu_mul']],
+  gemm_f16: [['sam3', 'gemm_f16']],
   gemm_q: [['llama31', 'gemm_q'], ['qwen35', 'gemm_q'], ['qwen38', 'gemm_q'], ['mistral03', 'gemm_q'], ['glm46v', 'gemm_q']],
   gemm_q8: [['gptoss', 'gemm_q8'], ['gemma3', 'gemm_q8'], ['emb2', 'gemm_q8']],
+  gn_stats: [['sam3', 'gn_stats'], ['sam3', 'gn_apply']],
   head_norm_rope: [['emb2', 'head_norm_rope']],
+  layernorm: [['sam3', 'layernorm']],
   moe_combine: [['gptoss', 'moe_combine']],
   moe_sort: [['gptoss', 'moe_sort']],
   mv_f32: [['gptoss', 'mv_f32']],
@@ -106,7 +119,9 @@ A.SRC = {
   rmsnorm: [['gptoss', 'rmsnorm'], ['gemma3', 'rmsnorm'], ['emb2', 'rmsnorm'], ['qwen35', 'rmsnorm'], ['qwen38', 'rmsnorm'], ['llama31', 'rmsnorm'], ['mistral03', 'rmsnorm'], ['glm46v', 'rmsnorm']],
   rope_kv: [['gptoss', 'rope_kv']],
   rope_kv_llama: [['llama31', 'rope_kv'], ['mistral03', 'rope_kv']],
+  rope_vit: [['sam3', 'rope_vit']],
   router_topk: [['gptoss', 'router_topk']],
+  rpb_mlp: [['sam3', 'rpb_mlp']],
   swiglu: [['qwen35', 'swiglu'], ['qwen38', 'swiglu'], ['llama31', 'swiglu'], ['mistral03', 'swiglu'], ['glm46v', 'swiglu']],
   swiglu_oai: [['gptoss', 'swiglu_oai']],
 };
@@ -119,6 +134,7 @@ A.SRC_FILES = {
   llama31: ['rmsnorm', 'quant_q8', 'iq4_lut', 'iq3s_word', 'unpack16', 'mv_q', 'gm_out', 'gemm_q', 'swiglu', 'rope_kv', 'attention', 'argmax', 'compact_logits', 'sample_logits'],
   mistral03: ['rmsnorm', 'quant_q8', 'iq4_lut', 'iq3s_word', 'unpack16', 'mv_q', 'gm_out', 'gemm_q', 'swiglu', 'rope_kv', 'attention', 'argmax', 'compact_logits', 'sample_logits'],
   glm46v: ['rmsnorm', 'add_rmsnorm', 'quant_q8', 'iq4_lut', 'iq3s_word', 'unpack16', 'mv_q', 'gm_out', 'gemm_q', 'swiglu', 'bias_rope_kv', 'attention', 'argmax', 'compact_logits', 'sample_logits'],
+  sam3: ['layernorm', 'add_pos', 'im2col_patch', 'gelu', 'store_pair', 'gemm_f16', 'rope_vit', 'split_heads', 'mask_score', 'out_token', 'flash_attn', 'add_cast', 'depth2space', 'im2col3', 'upsample_add', 'gn_stats', 'gn_apply', 'linear_small', 'box_sine', 'log_delta', 'rpb_mlp', 'box_update', 'masked_mean', 'mask_resize', 'f32_to_f16'],
 };
 // </src-xref>
 // Links to the full listings: one per file holding the page's kernel (a page that explains two

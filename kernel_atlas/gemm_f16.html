@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>gemm_f16 Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.figs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 700px) { .figs { grid-template-columns: minmax(0, 1fr); } }
+#tile { max-width: 430px; display: block; margin: 0 auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">SAM 3 · <a href="src/sam3.html#gemm_f16">sam3.ptx</a> · f16 tensor cores, cp.async ring, swizzled shared memory</div>
+    <h1>Inside <code>gemm_f16</code></h1>
+    <p>Every matrix product of SAM 3 runs in this one kernel: the ViT's qkv, projection and MLP products, the text encoder's, the fusion encoder's and decoder's, every convolution of the neck and the pixel decoder (as an im2col matrix), and the final product of 200 mask embeddings with 82,944 pixel embeddings. It computes C = A · B<sup>T</sup> with A the f16 activations [M][K] and B the weights [N][K] exactly as a PyTorch <code>Linear</code> stores them, on the tensor cores: <code>mma.sync.m16n8k16</code> takes a 16 × 16 f16 tile of A and a 16 × 8 tile of B and adds their product into a 16 × 8 tile of f32 accumulators. Around it are the three things that keep the tensor cores fed: a 3-stage <code>cp.async</code> ring that copies the next k-tiles while this one is computed, a swizzled shared-memory layout that <code>ldmatrix</code> reads without bank conflicts, and an epilogue that applies the bias and the next operation (GELU, ReLU, a residual add) as it stores.</p>
+    <div class="formula"><span class="y">C</span>[m][n] = mode( Σ<sub>k</sub> <span class="x">A</span>[m][k] · <span class="w">B</span>[n][k] + bias[n] ) &nbsp;&nbsp;<span class="muted">// f16 × f16 → f32; mode: f32 · f16 · GELU · ReLU · += C · ReLU f32</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">A 128 × 128 tile per block, 64 × 32 per warp, 16 × 8 per mma</h2>
+      <p>The grid has one block per 128 × 128 tile of C. Its 8 warps split the tile 2 × 4: warp w owns rows 64·(w &amp; 1) … +63 and columns 32·(w &gt;&gt; 1) … +31, which is 4 × 4 mma tiles of 16 × 8, 64 f32 accumulators per thread. The k dimension goes by in k-tiles of 32 (two mma steps of 16). Pick a product, then click a warp's tile, or a lane in the fragment view.</p>
+    </div>
+    <div class="controls">
+      <label>product <select id="shape"></select></label>
+      <label>epilogue <select id="mode"></select></label>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="y">C tile of one block: 128 × 128, cells of 8 × 8</b><span id="tilesub"></span></div>
+        <canvas id="tile"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="cvlabel"><b class="x" id="smlabel"></b><span id="smsub"></span></div>
+        <canvas id="smem"></canvas>
+        <div class="status" id="status"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="card"></dl>
+        <div class="figure"><svg id="frag" role="img" aria-label="mma.m16n8k16 fragments of the selected lane"></svg></div>
+      </div>
+    </div>
+    <div class="figs">
+      <div class="panel">
+        <div class="cvlabel"><b class="s">The 3-stage ring: copies in flight while a k-tile is computed</b><span id="pipesub"></span></div>
+        <div class="figure"><svg id="pipe" role="img" aria-label="cp.async pipeline over the k-tiles"></svg></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b class="w">Bank groups of one ldmatrix phase</b><span>8 rows × 16 bytes</span></div>
+        <div class="figure"><svg id="banks" role="img" aria-label="shared memory bank groups hit by an ldmatrix phase, with and without the swizzle"></svg></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>f16 in, f32 out</h3>
+        <p>The GGUF holds f32 weights; the engine converts them to f16 once at load (<code>f32_to_f16</code>) and halves both the memory (1.6 GB on the GPU) and the bytes every product reads. The inputs of every product are f16 as well: LayerNorm, GELU, ReLU and the attention kernel write f16 copies directly. f16 keeps 11 significant bits; the reference run with <code>--ranges</code> found the largest value entering any product to be 214, far below f16's 65,504, so nothing overflows. The accumulators are f32, and so are the residual streams that mode 4 adds into: the error of one product stays at f16 rounding of its inputs, about 5 · 10<sup>−4</sup> relative.</p>
+        <h3>The ring of three stages</h3>
+        <p><code>cp.async.cg.shared.global</code> copies 16 bytes from global to shared memory without passing through registers, and returns immediately; <code>cp.async.commit_group</code> closes a group of them and <code>cp.async.wait_group n</code> waits until at most n groups are still in flight. The prologue issues k-tiles 0 and 1. In each iteration a thread waits until only one group is pending (k-tile kt has landed), the block synchronizes, it issues k-tile kt + 2 into the stage that k-tile kt − 1 used, and computes k-tile kt. Two copies are always in flight under one tile of mma work. The barrier at the top of the iteration also guarantees that no warp still reads the stage being refilled. Groups are committed even when there is nothing left to load, so the counting stays the same at the end.</p>
+        <h3>Every product of the model in one kernel</h3>
+        <p>The epilogue mode covers all the uses: mode 0 for q, k, v (f32, for <code>rope_vit</code> and <code>split_heads</code>), 1 for f16 inputs of the next product, 2 for fc1 + GELU, 3 for the ReLU feed-forwards, 4 for every output projection that adds into the residual stream, 5 for the box head's f32 ReLU. Convolutions become products: the patch embedding and the 3 × 3 layers through im2col (<code>im2col_patch</code>, <code>im2col3</code>), the 1 × 1 layers directly, the 2 × 2 stride-2 deconvolutions as a product to 4 · out columns followed by <code>depth2space</code>. The requirements are N % 128 = 0 and K % 32 = 0, which every SAM 3 matrix meets once the 588-wide patch rows are padded to 608.</p>
+      </div>
+      <div class="panel">
+        <h3>The swizzle</h3>
+        <p>A shared-memory row of the stage is 32 halves, 64 bytes, four 16-byte chunks. <code>ldmatrix</code> reads an 8 × 8 matrix as 8 rows of 16 bytes, one address per lane of a group of 8 lanes. Stored plainly, rows r and r + 2 are 128 bytes apart and fall in the same 4 banks: the 8 rows of one phase would hit 2 bank groups, a 4-way conflict. Storing chunk c of row r at chunk c ^ ((r &gt;&gt; 1) &amp; 3) spreads the 8 rows over the 8 bank groups of a 128-byte line (the figure above). The loader writes with the same XOR, so the data is where the reads expect it. Within any 16-row group the swizzle depends only on the lane, so each thread computes it once for all its fragments.</p>
+        <h3>ldmatrix and the fragments</h3>
+        <p><code>ldmatrix.x4</code> loads four 8 × 8 matrices at once and hands every lane two halves of each, laid out exactly as <code>mma</code> wants its operands: for A, lanes 0–15 give the rows of k 0–7 and lanes 16–31 the rows of k 8–15, which makes registers a0 … a3 (rows g and g + 8, k 2t … 2t + 1 and + 8). B is stored [n][k], the "col" layout of <code>mma.row.col</code>, so the same non-transposed <code>ldmatrix</code> gives b0, b1 for two n-tiles. Per k16 step a warp issues 4 loads for A, 2 for B and 16 <code>mma</code>; the A fragments are reused across 4 n-tiles and the B fragments across 4 m-tiles.</p>
+        <h3>What it reaches</h3>
+        <p>On the RTX 4070 SUPER the ViT's products reach about 50 TFLOPS (4.6 TFLOP of products per image in under 0.1 s, nsys). gemm_f16 is 67% of the engine's GPU time; flash_attn is most of the rest. It has no split-k and computes whole 128-row tiles even for the decoder's 201 rows and the text encoder's 32 (rows past M are computed and dropped), which costs little next to the image products.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <a href="src/sam3.html"><code>sam3/sam3.ptx</code></a>, kernel <a href="src/sam3.html#gemm_f16"><code>gemm_f16</code></a> with the device functions <a href="src/sam3.html#store_pair"><code>store_pair</code></a> and <a href="src/sam3.html#gelu"><code>gelu</code></a>; launched by <code>gemm_raw()</code> in <code>sam3.c</code> with grid (N / 128, ⌈M / 128⌉) and 256 threads. Checked by <code>sam3_demo test</code> in all six modes against a CPU product in double (f32 outputs within 2 · 10<sup>−5</sup>, f16 outputs within one f16 rounding). The values here are generated; the fragment and swizzle layouts are the kernel's.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('gemm_f16');
+const SHAPES = [
+  ['ViT qkv: 5184 × 3072 × 1024', 5184, 3072, 1024, 0],
+  ['ViT fc1 + GELU: 5184 × 4736 × 1024', 5184, 4736, 1024, 2],
+  ['ViT fc2 + residual: 5184 × 1024 × 4736', 5184, 1024, 4736, 4],
+  ['neck conv 3×3 (im2col): 82944 × 256 × 2304', 82944, 256, 2304, 0],
+  ['decoder FFN + ReLU: 201 × 2048 × 256', 201, 2048, 256, 3],
+  ['masks: 200 × 82944 × 256', 200, 82944, 256, 0],
+];
+const MODES = ['0: C f32 = v', '1: C f16 = v', '2: C f16 = gelu(v)', '3: C f16 = relu(v)', '4: C f32 += v (residual)', '5: C f32 = relu(v)'];
+$('shape').innerHTML = SHAPES.map((s, i) => `<option value="${i}">${s[0]}</option>`).join('');
+$('mode').innerHTML = MODES.map((s, i) => `<option value="${i}">${s}</option>`).join('');
+const S = { shape: 0, mode: 0, warp: 3, mi: 1, ni: 2, lane: 5, kt: 2 };
+// generated operands: the first 128 rows / columns of A and B (f16), the bias, a residual
+const KMAX = 4736;
+const aVal = (m, k) => Atlas.f16(Atlas.gauss(Atlas.rng(Atlas.h32(m * 7919 + k * 31 + 1))) * 0.7);
+const bVal = (n, k) => Atlas.f16(Atlas.gauss(Atlas.rng(Atlas.h32(n * 4111 + k * 17 + 9))) * 0.05);
+const biasV = n => fr(Atlas.gauss(Atlas.rng(Atlas.h32(n * 13 + 777))) * 0.1);
+const resV = (m, n) => fr(Atlas.gauss(Atlas.rng(Atlas.h32(m * 97 + n * 3 + 55))));
+const gelu = x => { const z = Math.abs(x) / Math.SQRT2, t = 1 / (1 + 0.3275911 * z);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z);
+  return fr(0.5 * x * (1 + (x < 0 ? -y : y))); };
+function dot(m, n, K, upto) { let s = 0; for (let k = 0; k < Math.min(K, upto); k++) s = fr(s + fr(aVal(m, k) * bVal(n, k))); return s; }
+function epi(v, mode, m, n) {
+  v = fr(v + biasV(n));
+  if (mode === 2) v = gelu(v); if (mode === 3 || mode === 5) v = Math.max(0, v);
+  if (mode === 4) v = fr(v + resV(m, n));
+  return mode >= 1 && mode <= 3 ? Atlas.f16(v) : v;
+}
+const swz = r => (r >> 1) & 3;
+
+const steps = [
+  { tag: 'I', short: 'roles', title: 'block (n0, m0) = 128 · (ctaid.x, ctaid.y); warp w → rows 64·(w & 1), columns 32·(w >> 1)', text: 'Each thread keeps 64 f32 accumulators: 4 × 4 mma tiles of 16 × 8, four values each. They start at 0 and stay in registers until the epilogue.' },
+  { tag: 'L', short: 'loader', title: 'thread t copies chunk t & 3 of rows t >> 2 and (t >> 2) + 64 of the A tile and of the B tile', text: '256 threads × 2 chunks × 16 bytes = 8 KB per operand per k-tile (128 rows × 64 bytes). The destination chunk is swizzled: chunk c of row r goes to chunk c ^ ((r >> 1) & 3).' },
+  { tag: 'P', short: 'prologue', title: 'k-tiles 0 and 1 into stages 0 and 1, one commit group each', text: 'Four cp.async.cg per thread per k-tile (two rows of A, two of B). Nothing waits yet: the copies run while the threads compute their ldmatrix offsets.' },
+  { tag: 'W', short: 'wait', title: 'cp.async.wait_group 1, bar.sync: k-tile kt is in shared memory', text: 'At most one group (k-tile kt + 1) may still be in flight. The barrier makes every thread\'s copies visible to every warp, and means no warp still reads stage (kt + 2) % 3.' },
+  { tag: 'F', short: 'refill', title: 'issue k-tile kt + 2 into stage (kt + 2) % 3, commit', text: 'The stage computed in the previous iteration is reused. An empty group is committed past the last k-tile, so wait_group 1 keeps meaning "this k-tile has landed".' },
+  { tag: 'A', short: 'ldmatrix A', title: 'ldmatrix.x4 per m-tile: 16 rows × 16 k of A → a0 … a3', text: 'Lane l gives the address of row 16·mi + (l & 15), chunk 2·kk + (l >> 4), swizzled. Four loads cover the warp\'s 64 rows for one k16 step.' },
+  { tag: 'B', short: 'ldmatrix B', title: 'ldmatrix.x4 per pair of n-tiles: 16 columns × 16 k of B → b0, b1 twice', text: 'B is stored [n][k], which is what mma.row.col expects: no transpose. Lane l gives row 16·nj + (l & 7) + 8·(l >> 4), chunk 2·kk + ((l >> 3) & 1).' },
+  { tag: 'M', short: '16 mma', title: 'mma.sync.m16n8k16.row.col.f32.f16.f16.f32, 4 m-tiles × 4 n-tiles', text: 'Each mma adds a 16 × 16 by 16 × 8 product into 16 × 8 f32 accumulators. Two k16 steps per k-tile: 32 mma per warp, 256 per block, then the next iteration.' },
+  { tag: 'E', short: 'epilogue', title: 'store_pair for each mma tile and half: bias, mode, store two adjacent outputs', text: 'Lane l holds rows g = l >> 2 and g + 8, columns 2·(l & 3) and + 1 of each tile. Rows ≥ M are dropped. Mode 2 calls gelu (erf form), mode 4 reads and adds the residual.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `I|extern "C" __global__ void __launch_bounds__(256) gemm_f16(const __half *A, const __half *B, const float *bias,
+I|        void *C, unsigned M, unsigned N, unsigned K, unsigned ldc, unsigned mode)
+I|{
+I|    __shared__ __align__(128) uint4 sa[3][128][4], sb[3][128][4];      // 3 stages x 128 rows x 64 B
+I|    unsigned t = threadIdx.x, lane = t & 31, w = t >> 5, wm = w & 1, wn = w >> 1;
+I|    unsigned n0 = blockIdx.x * 128, m0 = blockIdx.y * 128;
+I|    float acc[4][4][4] = {};                                            // [mi][ni][c0..c3]
+L|    unsigned row = t >> 2, ch = t & 3, sw = ch ^ ((row >> 1) & 3);      // swizzled chunk
+L|    const uint4 *ga = (const uint4 *)(A + (size_t)(m0 + row) * K) + ch; // + 4 per k-tile, + 8K for row + 64
+L|    const uint4 *gb = (const uint4 *)(B + (size_t)(n0 + row) * K) + ch;
+P,F|    auto load = [&](unsigned kt, unsigned s) {                         // one k-tile, one group
+P,F|        if (kt < K / 32) {
+P,F|            cp_async16(&sa[s][row][sw], ga + kt * 4);  cp_async16(&sa[s][row + 64][sw], ga + kt * 4 + 8 * K);
+P,F|            cp_async16(&sb[s][row][sw], gb + kt * 4);  cp_async16(&sb[s][row + 64][sw], gb + kt * 4 + 8 * K);
+P,F|        }
+P,F|        cp_async_commit();
+P,F|    };
+P|    load(0, 0); load(1, 1);
+W|    for (unsigned kt = 0; kt < K / 32; kt++) {
+W|        cp_async_wait_group<1>(); __syncthreads();
+F|        load(kt + 2, (kt + 2) % 3);
+M|        for (unsigned kk = 0; kk < 2; kk++) {
+A|            uint32_t a[4][4], b[4][2];
+A|            for (unsigned mi = 0; mi < 4; mi++) {                       // lanes: row l & 15, chunk 2kk + (l >> 4)
+A|                unsigned r = wm * 64 + mi * 16 + (lane & 15), c = 2 * kk + (lane >> 4);
+A|                ldmatrix_x4(a[mi], &sa[kt % 3][r][c ^ ((r >> 1) & 3)]);
+A|            }
+B|            for (unsigned nj = 0; nj < 2; nj++) {                       // two n-tiles per load
+B|                unsigned r = wn * 32 + nj * 16 + (lane & 7) + 8 * (lane >> 4), c = 2 * kk + ((lane >> 3) & 1);
+B|                ldmatrix_x4(&b[2 * nj][0], &sb[kt % 3][r][c ^ ((r >> 1) & 3)]);
+B|            }
+M|            for (unsigned mi = 0; mi < 4; mi++)
+M|                for (unsigned ni = 0; ni < 4; ni++)
+M|                    mma_m16n8k16(acc[mi][ni], a[mi], b[ni]);           // f16 x f16 -> f32
+M|        }
+W|    }
+E|    unsigned g = lane >> 2, c2 = 2 * (lane & 3);
+E|    for (unsigned mi = 0; mi < 4; mi++)
+E|        for (unsigned ni = 0; ni < 4; ni++)
+E|            for (unsigned h = 0; h < 2; h++)                             // rows g and g + 8
+E|                store_pair(C, ldc, m0 + wm * 64 + mi * 16 + g + 8 * h, n0 + wn * 32 + ni * 8 + c2,
+E|                           acc[mi][ni][2 * h], acc[mi][ni][2 * h + 1], bias, M, mode);
+I|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    mov.u32         %r4, %ctaid.x;
+I|    shl.b32         %r4, %r4, 7;            // n0
+I|    mov.u32         %r5, %ctaid.y;
+I|    shl.b32         %r5, %r5, 7;            // m0
+L|    shr.u32         %r6, %r1, 2;            // row
+L|    and.b32         %r7, %r1, 3;            // chunk
+L|    shr.u32         %r8, %r6, 1;
+L|    and.b32         %r8, %r8, 3;
+L|    xor.b32         %r8, %r8, %r7;          // chunk ^ ((row >> 1) & 3)
+L|    shl.b32         %r8, %r8, 4;
+L|    shl.b32         %r9, %r6, 6;
+L|    add.u32         %r9, %r9, %r8;          // shared offset of (row, chunk)
+P|LOAD_PRO:
+P,F|    cp.async.cg.shared.global [%r33], [%rd2], 16;
+P,F|    cp.async.cg.shared.global [%r33+4096], [%rd5], 16;      // row + 64
+P,F|    cp.async.cg.shared.global [%r34], [%rd3], 16;
+P,F|    cp.async.cg.shared.global [%r34+4096], [%rd6], 16;
+P,F|    cp.async.commit_group;
+W|KLOOP:
+W|    cp.async.wait_group 1;                  // k-tile kt has landed
+W|    bar.sync        0;
+F|    add.u32         %r31, %r36, 2;          // stage (kt + 2) % 3
+F|    setp.ge.u32     %p1, %r31, 3;
+F|    @%p1 sub.u32    %r31, %r31, 3;
+A|    add.u32         %r41, %r39, %r21;       // A stage + oA (kk = 0)
+A|    ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%fa0, %fa1, %fa2, %fa3}, [%r41+0];
+A|    ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%fa4, %fa5, %fa6, %fa7}, [%r41+1024];
+A|    ...                                     // m-tiles 2, 3 at +2048, +3072
+B|    add.u32         %r42, %r40, %r27;       // B stage + oB (kk = 0)
+B|    ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%fb0, %fb1, %fb2, %fb3}, [%r42+0];
+B|    ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%fb4, %fb5, %fb6, %fb7}, [%r42+1024];
+M|    mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {%acc0, %acc1, %acc2, %acc3},
+M|        {%fa0, %fa1, %fa2, %fa3}, {%fb0, %fb1}, {%acc0, %acc1, %acc2, %acc3};
+M|    ...                                     // 16 per k16 step, 32 per k-tile
+W|    setp.lt.u32     %p0, %r35, %r29;
+W|    @%p0 bra        KLOOP;
+E|    call.uni store_pair, (%rd8, %r44, %r30, %r31, %acc0, %acc1, %rd7, %r43, %r45);
+E|    ...                                     // 32 calls: 16 tiles x 2 rows
+E|// store_pair: v += bias[col]; mode 2: gelu; 3, 5: max(v, 0); 4: v += C
+E|    cvt.rn.f16x2.f32 %sr1, v1, v0;          // modes 1-3: two halves, one store
+E|    st.global.b32   [%sd1], %sr1;` },
+});
+
+const tg = Atlas.grid($('tile'), 16, 16), sg = Atlas.grid($('smem'), 4, 32);
+const WARPCOL = w => [C.x, C.w, C.y, C.sync][w >> 1];
+function shape() { return SHAPES[S.shape]; }
+function draw() {
+  const st = stepper.step, [name, M, N, K, defMode] = shape(), KT = K / 32;
+  S.kt = Math.min(S.kt, KT - 1);
+  const mode = S.mode, wm = S.warp & 1, wn = S.warp >> 1;
+  // C tile: 16 x 16 cells of 8 x 8; warps 2 x 4
+  const g = tg.prep();
+  for (let r = 0; r < 16; r++) for (let c = 0; c < 16; c++) {
+    const w = (r >> 3) | ((c >> 2) << 1), sel = w === S.warp;
+    const active = st.tag === 'E' || st.tag === 'M' || st.tag === 'I';
+    g.cell(r, c, WARPCOL(w), sel ? (active ? 0.9 : 0.55) : (w & 1 ? 0.22 : 0.32), 0.08);
+  }
+  for (let w = 0; w < 8; w++) g.box((w & 1) * 8, (w >> 1) * 4, 8, 4, C.line, 1);
+  // selected mma tile: rows 16 mi .. +15 (2 cells), columns 8 ni (1 cell)
+  const tr = wm * 8 + S.mi * 2, tc = wn * 4 + S.ni;
+  g.box(tr, tc, 2, 1, C.fg, 2);
+  if (tg.cw > 22) for (let w = 0; w < 8; w++) g.text((w & 1) * 8 + 4, (w >> 1) * 4 + 2, 'w' + w, C.fg, 11);
+  $('tilesub').textContent = `${name.split(':')[0]}: grid ${Atlas.int(N / 128)} × ${Atlas.int(Math.ceil(M / 128))} = ${Atlas.int(N / 128 * Math.ceil(M / 128))} blocks`;
+  Atlas.legend($('legend'), [['--x', 'warps 0, 1 (columns 0–31)'], ['--w', 'warps 2, 3'], ['--y', 'warps 4, 5'], ['--sync', 'warps 6, 7']]);
+  // shared memory: rows 0..31 of the A stage, 4 chunks each; colour = logical chunk; the
+  // selected lane's loader chunk or ldmatrix rows outlined
+  const s = sg.prep(), stage = S.kt % 3;
+  $('smlabel').textContent = `A stage ${stage} (k-tile ${S.kt}): rows 0–31 of 128, the 4 physical chunks of each row`;
+  $('smsub').textContent = 'colour: the logical chunk (k 0–7, 8–15, 16–23, 24–31) stored there';
+  const kcol = [C.x, C.w, C.y, C.sync];
+  for (let r = 0; r < 32; r++) for (let p = 0; p < 4; p++) {
+    const c = p ^ swz(r);
+    s.cell(p, r, kcol[c], 0.5, 0.1);
+    if (sg.cw > 18) s.text(p, r, String(c), C.fg, 9);
+  }
+  const t = S.warp * 32 + S.lane;
+  if (st.tag === 'L' || st.tag === 'P' || st.tag === 'F') {
+    const row = t >> 2, ch = t & 3;
+    if (row < 32) s.box(ch ^ swz(row), row, 1, 1, C.fg, 2);
+  }
+  if (st.tag === 'A' || st.tag === 'M') {
+    // lanes 0..7 of the warp's first ldmatrix phase (mi = 0, kk = 0): rows 0..7, chunk 0
+    for (let l = 0; l < 8; l++) { const r = (wm * 64 + l) % 32, c = 0; s.box(c ^ swz(r), r, 1, 1, C.sync, 1.5); }
+    const r = (wm * 64 + S.mi * 16 + (S.lane & 15)) % 32, c = (S.lane >> 4);
+    s.box(c ^ swz(r), r, 1, 1, C.fg, 2.5);
+  }
+  // card
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`, gq = S.lane >> 2, t4 = S.lane & 3;
+  $('thlabel').textContent = `warp ${S.warp}, lane ${S.lane} (thread ${t}) · mma tile (${S.mi}, ${S.ni})`;
+  let cd = row('owns', `rows ${64 * wm} … ${64 * wm + 63}, columns ${32 * wn} … ${32 * wn + 31} of the block tile`);
+  cd += row('loader', `chunk ${t & 3} of rows ${t >> 2} and ${(t >> 2) + 64} → stored at chunk ${(t & 3) ^ swz(t >> 2)}`);
+  const ra = wm * 64 + S.mi * 16 + (S.lane & 15), ca = (S.lane >> 4);
+  cd += row('ldmatrix A', `row ${ra}, k ${8 * ca} … ${8 * ca + 7} (kk = 0), physical chunk ${ca ^ swz(ra)}`);
+  const rb = wn * 32 + (S.lane & 7) + 8 * (S.lane >> 4), cb = (S.lane >> 3) & 1;
+  cd += row('ldmatrix B', `row n = ${rb}, k ${8 * cb} … ${8 * cb + 7} (kk = 0, pair 0)`);
+  const m = 64 * wm + 16 * S.mi + gq, n = 32 * wn + 8 * S.ni + 2 * t4;
+  cd += row('accumulates', `C[${m}][${n}], C[${m}][${n + 1}], C[${m + 8}][${n}], C[${m + 8}][${n + 1}]`);
+  const upto = ['E'].includes(st.tag) ? K : (S.kt + (st.tag === 'M' ? 1 : 0)) * 32;
+  const v = dot(m, n, K, upto);
+  cd += row(`C[${m}][${n}] so far`, `${v.toFixed(5)} after ${Math.min(upto, K)} of ${K} k (${Math.min(upto, K) / 32} k-tiles)`);
+  if (st.tag === 'E') {
+    const full = dot(m, n, K, K);
+    cd += row('+ bias', `${fr(full + biasV(n)).toFixed(5)}`);
+    cd += row(`mode ${mode}`, `${epi(full, mode, m, n).toFixed(5)}${mode >= 1 && mode <= 3 ? ' (f16)' : ''}${mode === 4 ? ` (residual ${resV(m, n).toFixed(4)} added)` : ''}`);
+  }
+  $('card').innerHTML = cd;
+  $('status').textContent = st.tag === 'L' || st.tag === 'P' || st.tag === 'F' ? `thread ${t}'s chunk is outlined (rows 0–31 shown; rows 32–127 repeat the pattern)` :
+    st.tag === 'A' || st.tag === 'M' ? 'outlined: the 8 rows of the first ldmatrix phase (blue), and this lane\'s address (bold)' :
+    'Click a cell of the C tile to pick a warp and mma tile.';
+  drawFrag(st); drawPipe(st, KT); drawBanks();
+}
+function drawFrag(st) {
+  const W = 340, H = 250, cs = 6.5, gq = S.lane >> 2, t4 = S.lane & 3;
+  let s = '';
+  const grid = (x0, y0, rows, cols, own, col, lbl) => {
+    let o = `<text x="${x0}" y="${y0 - 7}" font-size="10" fill="${C.muted}">${lbl}</text>`;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const on = own(r, c);
+      o += `<rect x="${x0 + c * cs}" y="${y0 + r * cs}" width="${cs - 1}" height="${cs - 1}" fill="${on ? col : C.zero}" opacity="${on ? 0.95 : 0.35}"/>`;
+    }
+    return o;
+  };
+  // A 16 x 16: a0 (g, 2t..), a1 (g+8, 2t..), a2 (g, 8+2t..), a3 (g+8, 8+2t..)
+  s += grid(10, 28, 16, 16, (r, c) => (r === gq || r === gq + 8) && ((c >> 1) === t4 || (c >> 1) === t4 + 4), C.x, 'A 16×16: a0–a3');
+  // B 16 x 8 (k x n): b0 (k 2t.., n g), b1 (k 8+2t.., n g)
+  s += grid(150, 28, 16, 8, (r, c) => c === gq && ((r >> 1) === t4 || (r >> 1) === t4 + 4), C.w, 'B 16×8: b0, b1');
+  // C 16 x 8: c0 c1 (g, 2t..), c2 c3 (g+8, 2t..)
+  s += grid(250, 28, 16, 8, (r, c) => (r === gq || r === gq + 8) && (c >> 1) === t4, C.y, 'C 16×8: c0–c3');
+  const yb = 28 + 16 * cs;
+  s += `<text x="10" y="${yb + 20}" font-size="10.5" fill="${C.fg}">lane ${S.lane}: g = ${gq}, t = ${t4} (click to step the lane)</text>`;
+  s += `<text x="10" y="${yb + 36}" font-size="10" fill="${C.muted}">8 halves of A, 4 of B, 4 floats of C per lane:</text>`;
+  s += `<text x="10" y="${yb + 51}" font-size="10" fill="${C.muted}">rows g and g + 8, k / columns 2t, 2t + 1 (+ 8)</text>`;
+  s += `<text x="10" y="${yb + 70}" font-size="10" fill="${C.muted}">${st.tag === 'E' ? 'epilogue: c0, c1 → store_pair(row g), c2, c3 → (row g + 8)' : 'per k16 step: 4 + 2 ldmatrix, 16 mma for the warp'}</text>`;
+  $('frag').setAttribute('viewBox', `0 0 ${W} ${H}`); $('frag').innerHTML = s;
+}
+function drawPipe(st, KT) {
+  const W = 520, H = 210, x0 = 70, cw = 56, n = Math.min(KT, 8), y0 = 34, rh = 34;
+  $('pipesub').textContent = `${KT} k-tiles of 32 (K = ${Atlas.int(KT * 32)})`;
+  let s = '';
+  for (let st3 = 0; st3 < 3; st3++) s += `<text x="8" y="${y0 + st3 * rh + 20}" font-size="10" fill="${C.muted}">stage ${st3}</text>`;
+  for (let it = 0; it < n; it++) s += `<text x="${x0 + it * cw + cw / 2}" y="${y0 - 10}" font-size="9.5" text-anchor="middle" fill="${C.muted}">iter ${it}</text>`;
+  const kt = S.kt;
+  for (let k = 0; k < Math.min(KT, n + 2); k++) {
+    const stg = k % 3, issue = Math.max(0, k - 2), done = k;      // issued in iteration k - 2 (prologue for 0, 1), computed in iteration k
+    if (issue >= n) continue;
+    const xa = x0 + issue * cw + 2, xb = x0 + Math.min(done, n) * cw - 2, y = y0 + stg * rh + 6;
+    const hot = k === kt || (st.tag === 'F' && k === kt + 2) || (st.tag === 'P' && k < 2);
+    s += `<rect x="${xa}" y="${y}" width="${Math.max(xb - xa, 4)}" height="10" rx="2" fill="${C.w}" opacity="${hot ? 0.85 : 0.35}"/>`;
+    if (done < n) s += `<rect x="${x0 + done * cw + 2}" y="${y + 12}" width="${cw - 4}" height="12" rx="2" fill="${C.y}" opacity="${k === kt ? 0.95 : 0.4}"/><text x="${x0 + done * cw + cw / 2}" y="${y + 22}" font-size="9" text-anchor="middle" fill="${C.fg}">kt ${k}</text>`;
+  }
+  s += `<line x1="${x0 + kt * cw}" x2="${x0 + kt * cw}" y1="${y0 - 4}" y2="${y0 + 3 * rh}" stroke="${C.fg}" stroke-dasharray="3 3"/>`;
+  s += `<rect x="${x0}" y="${H - 44}" width="14" height="8" fill="${C.w}" opacity="0.7"/><text x="${x0 + 20}" y="${H - 36}" font-size="10" fill="${C.muted}">cp.async in flight (issued … landed)</text>`;
+  s += `<rect x="${x0 + 250}" y="${H - 44}" width="14" height="10" fill="${C.y}" opacity="0.7"/><text x="${x0 + 270}" y="${H - 36}" font-size="10" fill="${C.muted}">ldmatrix + 32 mma</text>`;
+  s += `<text x="${x0}" y="${H - 16}" font-size="10" fill="${C.muted}">k-tile kt: copied during iterations kt − 2 and kt − 1, computed in kt</text>`;
+  $('pipe').setAttribute('viewBox', `0 0 ${W} ${H}`); $('pipe').innerHTML = s;
+}
+function drawBanks() {
+  const W = 520, H = 230, x0 = 100, bw = 50, bh = 13;
+  let s = `<text x="${x0}" y="14" font-size="10" fill="${C.muted}">16-byte slot of a 128-byte line (8 slots = all 32 banks)</text>`;
+  for (let b = 0; b < 8; b++) s += `<text x="${x0 + b * bw + bw / 2}" y="30" font-size="9.5" text-anchor="middle" fill="${C.muted}">${b}</text>`;
+  [['plain', 40], ['swizzled', 126]].forEach(([kind, y0], k) => {
+    s += `<text x="8" y="${y0 + 12}" font-size="10.5" fill="${C.fg}">${kind}</text>`;
+    const hits = new Array(8).fill(0);
+    for (let r = 0; r < 8; r++) {
+      const phys = k ? swz(r) : 0, slot = (r & 1) * 4 + phys, y = y0 + hits[slot] * (bh + 2);
+      hits[slot]++;
+      s += `<rect x="${x0 + slot * bw + 3}" y="${y}" width="${bw - 6}" height="${bh}" rx="2" fill="${k ? C.y : C.x}" opacity="0.75"/><text x="${x0 + slot * bw + bw / 2}" y="${y + 10}" font-size="9" text-anchor="middle" fill="${C.fg}">row ${r}</text>`;
+    }
+    s += `<text x="8" y="${y0 + 27}" font-size="9.5" fill="${C.muted}">${Math.max(...hits)}-way conflict${Math.max(...hits) === 1 ? ': none' : ''}</text>`;
+  });
+  s += `<text x="8" y="${H - 22}" font-size="10" fill="${C.muted}">rows 0–7, logical chunk 0. A row is 64 B, so rows r and r + 2 land in the same</text>`;
+  s += `<text x="8" y="${H - 8}" font-size="10" fill="${C.muted}">slot unless the chunk index is XORed with (r >> 1) & 3.</text>`;
+  $('banks').setAttribute('viewBox', `0 0 ${W} ${H}`); $('banks').innerHTML = s;
+}
+tg.hook(p => { const w = (p.r >> 3) | ((p.c >> 2) << 1); $('status').textContent = `rows ${p.r * 8} … ${p.r * 8 + 7}, columns ${p.c * 8} … ${p.c * 8 + 7}: warp ${w}, mma tile (${(p.r & 7) >> 1}, ${p.c & 3}) (click to follow)`; },
+  p => { S.warp = (p.r >> 3) | ((p.c >> 2) << 1); S.mi = (p.r & 7) >> 1; S.ni = p.c & 3; draw(); }, () => {});
+sg.hook(p => { const c = p.r ^ swz(p.c); $('status').textContent = `row ${p.c}, physical chunk ${p.r}: holds k ${8 * c} … ${8 * c + 7}, written by thread ${p.c * 4 + c}`; },
+  p => { const c = p.r ^ swz(p.c), t = (p.c * 4 + c); S.warp = t >> 5; S.lane = t & 31; draw(); }, () => {});
+$('frag').addEventListener('click', () => { S.lane = (S.lane + 1) % 32; draw(); });
+$('shape').addEventListener('change', () => { S.shape = +$('shape').value; S.mode = SHAPES[S.shape][4]; $('mode').value = S.mode; facts(); draw(); });
+$('mode').addEventListener('change', () => { S.mode = +$('mode').value; draw(); });
+function facts() {
+  const [, M, N, K] = shape();
+  Atlas.facts($('facts'), [[`(${Atlas.int(N / 128)}, ${Atlas.int(Math.ceil(M / 128))})`, 'grid'], ['256', 'threads (8 warps)'], ['128 × 128 × 32', 'block tile × k-tile'], ['48 KB', 'shared: 3 stages × (A + B)'], ['64', 'f32 accumulators per thread'], [`${(2 * M * N * K / 1e9).toFixed(1)} GFLOP`, 'this product']]);
+}
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1400 });
+$('shape').value = 0; $('mode').value = 0; facts();
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

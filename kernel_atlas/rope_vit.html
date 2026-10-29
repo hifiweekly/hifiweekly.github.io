@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>rope_vit Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+.figs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 700px) { .figs { grid-template-columns: minmax(0, 1fr); } }
+#grid { max-width: 440px; display: block; margin: 0 auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">SAM 3 · <a href="src/sam3.html#rope_vit">sam3.ptx</a> · one thread per (token, head, pair), table-driven 2-D rotation</div>
+    <h1>Inside <code>rope_vit</code></h1>
+    <p>Between the ViT's qkv product and its attention, this kernel does three jobs for every token. It splits the f32 qkv row into per-head q, k and v. It rotates q and k with a <i>2-D axial</i> rotary embedding: the first 16 pairs of each 64-dim head turn by the token's column, the last 16 by its row, so the attention scores depend on the horizontal and vertical offsets between two patches. And it writes them as f16 rows in the layout <a href="flash_attn.html">flash_attn</a> reads, window by window: in the 28 windowed blocks each 24 × 24 window becomes a sequence of 576 tokens of its own, in the 4 global blocks the 5184 tokens form one sequence.</p>
+    <div class="formula">(<span class="y">q′</span><sub>2j</sub>, <span class="y">q′</span><sub>2j+1</sub>) = (<span class="x">q</span><sub>2j</sub> cos θ<sub>j</sub> − <span class="x">q</span><sub>2j+1</sub> sin θ<sub>j</sub>, &nbsp;<span class="x">q</span><sub>2j</sub> sin θ<sub>j</sub> + <span class="x">q</span><sub>2j+1</sub> cos θ<sub>j</sub>), &nbsp;θ<sub>j</sub> = (j &lt; 16 ? x : y) · s · 10000<sup>−(j mod 16)/16</sup> &nbsp;&nbsp;<span class="muted">// s = 1 in a window, 24/72 globally; k alike, v copied</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">2.65 million threads: every token, head and pair</h2>
+      <p>The ViT works on the 72 × 72 grid of 14-pixel patches. A thread takes one rotary pair (2 of the 64 dims) of one head of one token. It reads 2 floats each of q, k and v from the token's qkv row (3072 floats), looks up the pair's cos and sin for the token's position, and writes 3 × 2 halves. Pick the block type, then click a token in the grid and a pair in the head.</p>
+    </div>
+    <div class="controls">
+      <span class="seg" id="kindSeg" role="group" aria-label="Block type"></span>
+      <label>head <input id="head" type="range" min="0" max="15" value="5"> <span id="headv" class="mono"></span></label>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x">The 72 × 72 token grid</b><span id="gridsub"></span></div>
+        <canvas id="grid"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="cvlabel"><b class="w" id="headlabel"></b><span>32 pairs: 16 turned by x, 16 by y</span></div>
+        <canvas id="pairs"></canvas>
+        <div class="status" id="status"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="card"></dl>
+        <div class="figure"><svg id="rot" role="img" aria-label="rotation of the selected pair"></svg></div>
+      </div>
+    </div>
+    <div class="figs">
+      <div class="panel">
+        <div class="cvlabel"><b class="s">Angles of the 32 pairs at this token</b><span>log scale</span></div>
+        <div class="figure"><svg id="freq" role="img" aria-label="rotation angle of each pair"></svg></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b class="y" id="dstlabel"></b><span id="dstsub"></span></div>
+        <div class="figure"><svg id="dst" role="img" aria-label="destination of the pair in the attention layout"></svg></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Two axes in one head</h3>
+        <p>Ordinary RoPE turns pair j of a head by pos · ω<sub>j</sub>, so q·k depends on the difference of two positions in a sequence. An image has two coordinates. SAM 3's ViT (from Meta's Perception Encoder, after <code>rope-vit</code>) gives the first half of each head's pairs the column and the second half the row, with the same 16 frequencies 10000<sup>−i/16</sup> for both. The score of two patches then depends on their horizontal and vertical offsets separately. The pairs are adjacent dims (2j, 2j + 1), the "interleaved" layout of <code>torch.view_as_complex</code>, so a thread needs no shuffle. The 2 floats it reads are next to each other.</p>
+        <h3>The global blocks extrapolate by scaling</h3>
+        <p>The RoPE was trained on a 24 × 24 grid (336-pixel images); at 1008 pixels there are 72 positions per axis. In a windowed block that is no problem: a window is 24 × 24, and positions run 0 … 23 inside it. The 4 global blocks see the whole 72 × 72 grid, and their positions are multiplied by 24/72 (<code>use_interp_rope</code>), so they stay in the 0 … 24 range the frequencies were trained on, at a third of a step per patch. The host builds both cos/sin tables once (<code>rope_table()</code>: 576 and 5184 positions × 32 pairs), in f32 exactly as the PyTorch code computes its <code>freqs_cis</code>, and the kernel takes the one for the block.</p>
+      </div>
+      <div class="panel">
+        <h3>The window partition happens here</h3>
+        <p>A windowed block attends within each 24 × 24 window. PyTorch reshapes the [72][72][1024] activations into 9 windows of [24][24] before attention and back after. Here the reshape costs nothing extra: the thread computes the token's window b = (y / 24) · 3 + x / 24 and position l = (y % 24) · 24 + x % 24, and writes q, k, v to row l of sequence b · 16 + h. flash_attn then sees 144 independent sequences of 576 tokens, and its <code>out_token</code> undoes the partition when it stores the output. A global block writes 16 sequences of 5184.</p>
+        <h3>Memory bound by design</h3>
+        <p>The kernel reads the 64 MB f32 qkv buffer and writes 32 MB of f16 heads: about 0.2 ms per block, near the GPU's 504 GB/s, for 6.5 ms per image (4.5% of the GPU time). Fusing it into the qkv GEMM's epilogue would save that traffic, but the epilogue writes C row by row in tiles, not in the per-window, per-head layout attention needs.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <a href="src/sam3.html"><code>sam3/sam3.ptx</code></a>, kernel <a href="src/sam3.html#rope_vit"><code>rope_vit</code></a>; launched by <code>vision()</code> in <code>sam3.c</code> for each of the 32 blocks as a grid-stride loop over 5184 × 16 × 32 threads; <code>rope_table()</code> builds the two cos/sin tables. Checked by <code>sam3_demo test</code> against rotations in double at both table sizes (max error one f16 rounding). The q, k, v values here are generated; the angles are the tables', computed the same way in float32.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('rope_vit');
+const G = 72, WIN = 24, NP = 32;
+const S = { global: false, tok: 26 * 72 + 31, head: 5, pair: 3 };
+const FREQ = Array.from({ length: 16 }, (_, i) => fr(1 / fr(Math.pow(10000, fr(4 * i / 64)))));
+function pos(t) {
+  const y = Math.floor(t / G), x = t % G;
+  if (S.global) { const s = fr(24 / 72); return { y, x, b: 0, l: t, L: G * G, px: fr(x * s), py: fr(y * s) }; }
+  return { y, x, b: Math.floor(y / WIN) * 3 + Math.floor(x / WIN), l: (y % WIN) * WIN + x % WIN, L: WIN * WIN, px: x % WIN, py: y % WIN };
+}
+const ang = (p, j) => fr((j < 16 ? p.px : p.py) * FREQ[j % 16]);
+const qv = (t, h, d, w) => fr(Atlas.gauss(Atlas.rng(Atlas.h32(t * 131 + h * 977 + d * 13 + w * 7))) * 1.5);
+
+$('kindSeg').innerHTML = ['windowed (28 blocks)', 'global (blocks 7, 15, 23, 31)'].map((t, i) => `<button type="button" data-v="${i}" aria-pressed="${i === 0}">${t}</button>`).join('');
+$('kindSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.global = b.dataset.v === '1'; $('kindSeg').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); facts(); draw(); });
+
+const steps = [
+  { tag: 'I', short: 'roles', title: 'thread i → pair j = i % 32, head h = (i / 32) % 16, token t = i / 512', text: 'A grid-stride loop over T · 16 · 32 = 2,654,208 items. Consecutive threads take consecutive pairs of one head: a warp reads one head\'s 64 q floats (256 bytes) in one go.' },
+  { tag: 'W', short: 'window', title: 'token t → (y, x) = (t / 72, t % 72); window b and position l in it', text: 'Windowed: b = (y / 24) · 3 + x / 24, l = (y % 24) · 24 + x % 24, L = 576. Global: b = 0, l = t, L = 5184. The (x, y) used for the angles is (x % 24, y % 24), or (x, y) · 24/72.' },
+  { tag: 'L', short: 'load', title: 'three ld.global.nc.v2.f32: q, k and v of pair j from the qkv row', text: 'qkv[t][h·64 + 2j], then 1024 and 2048 floats further on. The row was written by gemm_f16 with the qkv bias already added.' },
+  { tag: 'C', short: 'cos, sin', title: 'ld.global.nc.v2.f32 of cs[l][j]: the pair\'s cos and sin at this position', text: 'Pairs 0–15 use the x angle, pairs 16–31 the y angle, both with frequency 10000^(−(j mod 16)/16). The table is 256 bytes per position.' },
+  { tag: 'R', short: 'rotate', title: 'q′ = (q₀c − q₁s, q₀s + q₁c), k′ alike; v unchanged', text: 'Four multiplies and two FMAs per vector, in f32. The length of each pair is kept: RoPE only turns.' },
+  { tag: 'D', short: 'store f16', title: 'cvt.rn.f16x2 ×3; store to Q, K, V at [b·16 + h][l][2j]', text: 'One 4-byte store each. Every (window, head) is now its own 576 × 64 (or 5184 × 64) f16 matrix, the input of flash_attn.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `I|extern "C" __global__ void rope_vit(const float *qkv, const float2 *cs, __half *Q, __half *K, __half *V,
+I|                                    unsigned T, unsigned gw, unsigned wsz, unsigned H)
+I|{
+I|    unsigned C = H * 64;
+I|    for (unsigned i = blockIdx.x * blockDim.x + threadIdx.x; i < T * H * 32; i += gridDim.x * blockDim.x) {
+I|        unsigned j = i & 31, h = (i >> 5) % H, t = (i >> 5) / H;
+W|        unsigned b = 0, l = t, L = T;                       // global: one sequence of T
+W|        if (wsz) {                                          // windowed: window b, position l
+W|            unsigned y = t / gw, x = t % gw;
+W|            b = (y / wsz) * (gw / wsz) + x / wsz;
+W|            l = (y % wsz) * wsz + x % wsz;
+W|            L = wsz * wsz;
+W|        }
+L|        const float *r = qkv + (size_t)t * 3 * C + h * 64 + 2 * j;
+L|        float2 q = __ldg((const float2 *)r), k = __ldg((const float2 *)(r + C)), v = __ldg((const float2 *)(r + 2 * C));
+C|        float2 a = __ldg(cs + l * 32 + j);                  // {cos, sin} of pair j at position l
+R|        float q0 = q.x * a.x - q.y * a.y, q1 = q.x * a.y + q.y * a.x;
+R|        float k0 = k.x * a.x - k.y * a.y, k1 = k.x * a.y + k.y * a.x;
+D|        size_t o = (((size_t)b * H + h) * L + l) * 64 + 2 * j;
+D|        *(__half2 *)(Q + o) = __floats2half2_rn(q0, q1);
+D|        *(__half2 *)(K + o) = __floats2half2_rn(k0, k1);
+D|        *(__half2 *)(V + o) = __floats2half2_rn(v.x, v.y);
+I|    }
+I|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    and.b32         %r12, %r10, 31;         // pair j
+I|    shr.u32         %r13, %r10, 5;
+I|    rem.u32         %r14, %r13, %r3;        // head
+I|    div.u32         %r15, %r13, %r3;        // token t
+W|    @%p1 bra        POS_DONE;               // global: b = 0, l = t
+W|    div.u32         %r19, %r15, %r1;        // y
+W|    rem.u32         %r20, %r15, %r1;        // x
+W|    div.u32         %r21, %r19, %r2;        // wy
+W|    rem.u32         %r22, %r19, %r2;        // ly
+W|    div.u32         %r23, %r20, %r2;        // wx
+W|    rem.u32         %r24, %r20, %r2;        // lx
+W|    mad.lo.u32      %r16, %r21, %r25, %r23; // b
+W|    mad.lo.u32      %r17, %r22, %r2, %r24;  // l
+L|    mad.lo.u32      %r28, %r15, %r6, %r26;  // t * 3C + h * 64 + 2j
+L|    ld.global.nc.v2.f32 {%f0, %f1}, [%rd2];         // q
+L|    ld.global.nc.v2.f32 {%f2, %f3}, [%rd4];         // k
+L|    ld.global.nc.v2.f32 {%f4, %f5}, [%rd4];         // v
+C|    shl.b32         %r29, %r17, 5;
+C|    add.u32         %r29, %r29, %r12;       // l * 32 + j
+C|    ld.global.nc.v2.f32 {%f6, %f7}, [%rd5];         // cos, sin
+R|    mul.f32         %f8, %f0, %f6;
+R|    mul.f32         %f9, %f1, %f7;
+R|    sub.f32         %f8, %f8, %f9;          // q0 c - q1 s
+R|    mul.f32         %f9, %f0, %f7;
+R|    fma.rn.f32      %f9, %f1, %f6, %f9;     // q0 s + q1 c
+R|    ...                                     // k likewise
+D|    mad.lo.u32      %r30, %r16, %r3, %r14;  // b * H + h
+D|    mad.lo.u32      %r30, %r30, %r18, %r17; // * L + l
+D|    cvt.rn.f16x2.f32 %r31, %f9, %f8;
+D|    st.global.b32   [%rd7], %r31;           // Q (K, V likewise)` },
+});
+
+const gg = Atlas.grid($('grid'), G, G), pg = Atlas.grid($('pairs'), 2, NP);
+$('pairs').style.aspectRatio = '32 / 3';
+const ORDER = steps.map(s => s.tag);
+function draw() {
+  const st = stepper.step, si = ORDER.indexOf(st.tag), P = pos(S.tok), h = S.head;
+  $('headv').textContent = h;
+  // grid: windows (or the whole grid), the token, the tokens of the same sequence
+  const g = gg.prep();
+  for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) {
+    const t = y * G + x, Q = pos(t), same = Q.b === P.b;
+    const wcol = [C.x, C.w, C.y][(Math.floor(y / WIN) + Math.floor(x / WIN)) % 3];
+    g.cell(y, x, S.global ? C.x : wcol, si >= 1 && same ? 0.5 : 0.18, 0.05);
+  }
+  if (!S.global) for (let k = 1; k < 3; k++) { g.hline(k * WIN, C.fg, 1.5); g.vline(k * WIN, C.fg, 1.5); }
+  g.box(P.y, P.x, 1, 1, C.fg, 2);
+  $('gridsub').textContent = S.global ? 'one sequence of 5184 tokens' : '9 windows of 24 × 24 = 576 tokens';
+  Atlas.legend($('legend'), [['--x', S.global ? 'the sequence' : 'window colours'], ['--fg', 'the selected token']]);
+  // pairs of the head: row 0 = dim 2j, row 1 = dim 2j + 1; x pairs | y pairs
+  const p = pg.prep();
+  for (let j = 0; j < NP; j++) for (let e = 0; e < 2; e++) {
+    const v = si >= 4 ? rotated(S.tok, h, j)[e] : qv(S.tok, h, 2 * j + e, 0);
+    p.cell(e, j, j < 16 ? C.x : C.w, si >= 2 ? Math.min(1, Math.abs(v) / 3) * 0.8 + 0.15 : 0.15, 0.1);
+  }
+  p.vline(16, C.fg, 2);
+  p.box(0, S.pair, 2, 1, C.fg, 2);
+  $('headlabel').textContent = `head ${h} of token ${S.tok}: q, dims 0–63${si >= 4 ? ' (rotated)' : ''}`;
+  // card
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`, j = S.pair, a = ang(P, j);
+  $('thlabel').textContent = `thread for token ${S.tok}, head ${h}, pair ${j} (item ${Atlas.int((S.tok * 16 + h) * 32 + j)})`;
+  let c = row('token', `(y, x) = (${P.y}, ${P.x})`);
+  if (si >= 1) c += row('sequence', S.global ? `b = 0, l = ${P.l} of 5184` : `window b = ${P.b} (${Math.floor(P.y / WIN)}, ${Math.floor(P.x / WIN)}), position l = ${P.l} = (${P.py}, ${P.px})`);
+  if (si >= 2) c += row('q pair', `(${qv(S.tok, h, 2 * j, 0).toFixed(4)}, ${qv(S.tok, h, 2 * j + 1, 0).toFixed(4)}) at qkv[${S.tok}][${h * 64 + 2 * j}]`);
+  if (si >= 3) {
+    c += row('angle', `${j < 16 ? 'x' : 'y'} = ${(j < 16 ? P.px : P.py).toFixed(4)} × 10000^(−${j % 16}/16) = ${a.toPrecision(6)} rad`);
+    c += row('cos, sin', `${fr(Math.cos(a)).toFixed(5)}, ${fr(Math.sin(a)).toFixed(5)}`);
+  }
+  if (si >= 4) { const r = rotated(S.tok, h, j); c += row('q′ pair', `(${r[0].toFixed(4)}, ${r[1].toFixed(4)})`); }
+  if (si >= 5) c += row('stored', `Q[${P.b * 16 + h}][${P.l}][${2 * j}, ${2 * j + 1}] as f16: ${rotated(S.tok, h, j).map(v => Atlas.f16(v).toFixed(4)).join(', ')}`);
+  $('card').innerHTML = c;
+  $('status').textContent = 'Click a token in the grid, or a pair in the head.';
+  drawRot(si, P); drawFreq(P); drawDst(si, P);
+}
+function rotated(t, h, j) {
+  const P = pos(t), a = ang(P, j), c = fr(Math.cos(a)), s = fr(Math.sin(a)), q0 = qv(t, h, 2 * j, 0), q1 = qv(t, h, 2 * j + 1, 0);
+  return [fr(fr(q0 * c) - fr(q1 * s)), fr(fr(q0 * s) + fr(q1 * c))];
+}
+function drawRot(si, P) {
+  const W = 300, H = 230, cx = 150, cy = 118, j = S.pair, q0 = qv(S.tok, S.head, 2 * j, 0), q1 = qv(S.tok, S.head, 2 * j + 1, 0);
+  const r = rotated(S.tok, S.head, j), Lh = Math.max(Math.hypot(q0, q1), 0.01), k = Math.min(30, 95 / Lh), a = ang(P, j);
+  let s = `<line x1="10" x2="${W - 10}" y1="${cy}" y2="${cy}" stroke="${C.line}"/><line x1="${cx}" x2="${cx}" y1="8" y2="${H - 8}" stroke="${C.line}"/>`;
+  s += `<text x="${W - 12}" y="${cy - 5}" font-size="10" text-anchor="end" fill="${C.muted}">dim ${2 * j}</text><text x="${cx + 5}" y="16" font-size="10" fill="${C.muted}">dim ${2 * j + 1}</text>`;
+  if (si >= 2) s += `<line x1="${cx}" y1="${cy}" x2="${cx + q0 * k}" y2="${cy - q1 * k}" stroke="${C.x}" stroke-width="2.5"/><circle cx="${cx + q0 * k}" cy="${cy - q1 * k}" r="4" fill="${C.x}"/>`;
+  if (si >= 4) {
+    s += `<line x1="${cx}" y1="${cy}" x2="${cx + r[0] * k}" y2="${cy - r[1] * k}" stroke="${C.y}" stroke-width="2.5"/><circle cx="${cx + r[0] * k}" cy="${cy - r[1] * k}" r="4" fill="${C.y}"/>`;
+    const tm = ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), a0 = Math.atan2(q1, q0), rr = 24, a1 = a0 + tm;
+    s += `<path d="M${cx + rr * Math.cos(a0)} ${cy - rr * Math.sin(a0)} A${rr} ${rr} 0 ${tm > Math.PI ? 1 : 0} 0 ${cx + rr * Math.cos(a1)} ${cy - rr * Math.sin(a1)}" fill="none" stroke="${C.sync}" stroke-width="1.5"/>`;
+  }
+  s += `<text x="10" y="${H - 6}" font-size="10" fill="${C.muted}">pair ${j} (${j < 16 ? 'x' : 'y'} axis): θ mod 2π = ${(((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)).toFixed(3)}</text>`;
+  $('rot').setAttribute('viewBox', `0 0 ${W} ${H}`); $('rot').innerHTML = s;
+}
+function drawFreq(P) {
+  const W = 520, H = 210, ml = 44, mb = 30, mt = 18, mr = 12, X = j => ml + (j + 0.5) / NP * (W - ml - mr);
+  const th = Array.from({ length: NP }, (_, j) => Math.max(ang(P, j), 1e-4));
+  const lo = -4, hi = Math.log10(Math.max(...th, 30)), Y = v => mt + (hi - Math.log10(v)) / (hi - lo) * (H - mt - mb);
+  let s = `<rect x="${ml}" y="${mt}" width="${(W - ml - mr) / 2}" height="${H - mt - mb}" fill="${C.hl}" opacity="0.5"/>`;
+  s += `<text x="${ml + 6}" y="${mt + 12}" font-size="9.5" fill="${C.muted}">pairs 0–15: x = ${P.px.toFixed(3)}</text><text x="${(W + ml) / 2 + 6}" y="${mt + 12}" font-size="9.5" fill="${C.muted}">pairs 16–31: y = ${P.py.toFixed(3)}</text>`;
+  for (let e = lo; e <= Math.floor(hi); e++) s += `<line x1="${ml}" x2="${W - mr}" y1="${Y(10 ** e)}" y2="${Y(10 ** e)}" stroke="${C.line}" stroke-width="0.5"/><text x="${ml - 4}" y="${Y(10 ** e) + 3}" font-size="9" text-anchor="end" fill="${C.muted}">1e${e}</text>`;
+  th.forEach((v, j) => s += `<circle cx="${X(j)}" cy="${Y(v)}" r="${j === S.pair ? 5 : 2.8}" fill="${j === S.pair ? C.y : (j < 16 ? C.x : C.w)}"/>`);
+  for (let j = 0; j < NP; j += 4) s += `<text x="${X(j)}" y="${H - 14}" font-size="9" text-anchor="middle" fill="${C.muted}">${j}</text>`;
+  s += `<text x="${W - mr}" y="${H - 14}" font-size="9" text-anchor="end" fill="${C.muted}">pair</text>`;
+  s += `<text x="${ml}" y="${H - 2}" font-size="9.5" fill="${C.muted}">a coordinate of 0 gives angle 0 (no rotation), drawn at 1e−4</text>`;
+  $('freq').setAttribute('viewBox', `0 0 ${W} ${H}`); $('freq').innerHTML = s;
+}
+function drawDst(si, P) {
+  const W = 520, H = 210, x0 = 20, y0 = 40, bw = 480;
+  $('dstlabel').textContent = S.global ? 'Q: 16 sequences of 5184 × 64' : 'Q: 144 sequences (9 windows × 16 heads) of 576 × 64';
+  $('dstsub').textContent = 'f16, as flash_attn reads them';
+  const nseq = S.global ? 16 : 144, sel = P.b * 16 + S.head, per = bw / nseq;
+  let s = `<text x="${x0}" y="${y0 - 14}" font-size="10" fill="${C.fg}">sequence b · 16 + h = ${sel}${S.global ? '' : ` (window ${P.b}, head ${S.head})`}</text>`;
+  for (let i = 0; i < nseq; i++) s += `<rect x="${x0 + i * per}" y="${y0}" width="${Math.max(per - (per > 3 ? 1 : 0), 0.6)}" height="18" fill="${i === sel ? C.y : C.zero}" opacity="${i === sel ? 1 : 0.5}"/>`;
+  const y1 = y0 + 54, L = P.L;
+  s += `<path d="M${x0 + sel * per} ${y0 + 18} L${x0} ${y1} M${x0 + (sel + 1) * per} ${y0 + 18} L${x0 + bw} ${y1}" stroke="${C.line}" fill="none"/>`;
+  s += `<rect x="${x0}" y="${y1}" width="${bw}" height="18" fill="${C.zero}" opacity="0.5"/>`;
+  s += `<rect x="${x0 + P.l / L * bw - 1}" y="${y1}" width="3" height="18" fill="${C.y}"/>`;
+  s += `<text x="${x0}" y="${y1 + 34}" font-size="10" fill="${C.muted}">row l = ${P.l} of ${L}; this thread writes halves ${2 * S.pair}, ${2 * S.pair + 1} of its 64</text>`;
+  s += `<text x="${x0}" y="${y1 + 50}" font-size="10" fill="${C.muted}">byte offset ${Atlas.int(((sel * L + P.l) * 64 + 2 * S.pair) * 2)} of Q (K and V at the same offsets)</text>`;
+  s += `<text x="${x0}" y="${y1 + 74}" font-size="10" fill="${C.muted}">flash_attn: grid (${L / 64}, ${nseq}); out_token puts row l back at token ${S.tok}</text>`;
+  $('dst').setAttribute('viewBox', `0 0 ${W} ${H}`); $('dst').innerHTML = s;
+}
+gg.hook(p => { const t = p.r * G + p.c, Q = pos(t); $('status').textContent = `token ${t} = (${p.r}, ${p.c}): ${S.global ? `position (${Q.px.toFixed(2)}, ${Q.py.toFixed(2)}) after × 24/72` : `window ${Q.b}, position (${Q.px}, ${Q.py}) in it`}`; },
+  p => { S.tok = p.r * G + p.c; draw(); }, () => {});
+pg.hook(p => { $('status').textContent = `pair ${p.c}: dims ${2 * p.c}, ${2 * p.c + 1}, turned by ${p.c < 16 ? 'x' : 'y'} at 10000^(−${p.c % 16}/16)`; },
+  p => { S.pair = p.c; draw(); }, () => {});
+$('head').addEventListener('input', () => { S.head = +$('head').value; draw(); });
+function facts() {
+  Atlas.facts($('facts'), [['≤ 448 × 256', 'grid-stride launch'], ['2,654,208', 'items (5184 × 16 × 32)'], ['24 B → 12 B', 'per item: f32 q, k, v in, f16 out'], ['16 x + 16 y', 'pairs per 64-dim head'], [S.global ? '× 24/72' : '0 … 23', 'positions'], [S.global ? '16 × 5184' : '144 × 576', 'sequences for flash_attn']]);
+}
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1300 });
+facts();
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>
