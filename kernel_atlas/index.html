@@ -3,7 +3,38 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Kernel Atlas</title>
+<title>Kernel Atlas — GPU kernels of LLM inference, mapped thread by thread</title>
+<meta name="description" content="Interactive walkthroughs of the hand-written PTX kernels behind eight GPU inference engines (gpt-oss, Gemma 3, Qwen 3.5, Llama 3.1, Mistral 7B, GLM-4.6V, EmbeddingGemma, SAM 3): which thread touches which bytes, step by step.">
+<meta name="keywords" content="PTX, CUDA, GPU kernels, LLM inference, quantization, GGUF, flash attention, matrix multiplication, tensor cores, Triton, gpt-oss, Gemma 3, Qwen 3.5, Llama 3.1, Mistral 7B, GLM-4.6V, SAM 3">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f3ef" media="(prefers-color-scheme: light)">
+<!-- Once the site has a public address, add <link rel="canonical"> and
+     og:url, and make og:image / twitter:image absolute URLs. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Kernel Atlas">
+<meta property="og:title" content="Kernel Atlas — GPU kernels of LLM inference, mapped thread by thread">
+<meta property="og:description" content="Step-by-step walkthroughs of the hand-written PTX kernels behind eight GPU inference engines, from quantized matrix-vector products to flash attention.">
+<meta property="og:image" content="kernel_atlas_dark.png">
+<meta property="og:image:width" content="817">
+<meta property="og:image:height" content="187">
+<meta property="og:image:alt" content="kernel_atlas: GPU kernels, mapped thread by thread">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Kernel Atlas — GPU kernels of LLM inference, mapped thread by thread">
+<meta name="twitter:description" content="Step-by-step walkthroughs of the hand-written PTX kernels behind eight GPU inference engines, from quantized matrix-vector products to flash attention.">
+<meta name="twitter:image" content="kernel_atlas_dark.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "Kernel Atlas",
+  "description": "Interactive walkthroughs of the hand-written PTX kernels behind eight GPU inference engines: six text generators, one text-embedding encoder and the SAM 3 segmentation model.",
+  "inLanguage": "en",
+  "about": ["PTX", "CUDA", "GPU kernels", "Large language model inference", "Quantization", "Image segmentation"],
+  "learningResourceType": "Interactive walkthrough"
+}
+</script>
 <link rel="icon" type="image/png" href="favicon.ico">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
