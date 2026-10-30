@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>rms_mod Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+#seq { width: 100%; aspect-ratio: 541 / 26; display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">MiniMax-H3 · <a href="src/minimaxh3.html#rms_mod">minimaxh3.ptx</a> · one warp per row, the row's segment picks its modulation</div>
+    <h1>Inside <code>rms_mod</code></h1>
+    <p>MiniMax-H3's diffusion transformer runs text, audio and video tokens through the same 50 blocks as one sequence, but each kind of token gets its own AdaLN modulation: a shift and a scale for the norm in front of attention, another pair in front of the feed-forward, both computed from the timestep. This kernel does the RMS norm and the modulation in one pass over each row, and reads which modulation to use from a one-byte segment id per token, so the 541 rows of a 256 × 256 video (19 text, 74 audio, 448 video) are one launch instead of three. It is also the plain RMSNorm of the other three networks: leave out the modulation, the weight or the segments and the same code normalizes the text encoder's and the video decoder's rows.</p>
+    <div class="formula"><span class="y">v</span> = <span class="x">x</span> / √(mean(<span class="x">x</span>²) + ε) · <span class="w">w</span>, &nbsp; <span class="y">y</span> = <span class="y">v</span> + <span class="y">v</span> · <span class="w">scale</span>[s] + <span class="w">shift</span>[s], &nbsp;s = seg[row] &nbsp;&nbsp;<span class="muted">// outputs: y16 = f16(y · oscale), y32 = y; w, shift/scale, seg each optional</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">A warp per row, and a segment byte per row</h2>
+      <p>The strip is the diffusion transformer's sequence for a 256 × 256, 22-frame video: the refined prompt, the left and right audio channels, then 7 × 8 × 8 video patches. Each token's segment is <i>timestep row × 3 + modality</i>: video and text use the video timestep, audio its own (the audio schedule runs on a different sigma). Click a token to normalize its row. The modulation values are the model's own: block 0's shift and scale vectors, computed from its AdaLN weights at the first step (t = 0) or near the end (t = 0.99).</p>
+    </div>
+    <div class="controls">
+      <span class="seg" id="tSeg" role="group" aria-label="Timestep"></span>
+      <span class="seg" id="normSeg" role="group" aria-label="Which norm"></span>
+      <label>lane <input id="lane" type="range" min="0" max="31" value="3"> <span id="lanev" class="mono"></span></label>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="x">the packed sequence, 541 rows</b><span id="seqsub"></span></div>
+      <canvas id="seq"></canvas>
+      <div class="legend" id="seqlegend"></div>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x" id="rowlabel"></b><span id="rowsub"></span></div>
+        <canvas id="row"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="cvlabel"><b class="s">Σ x² across the warp</b><span>shfl.sync.bfly 16, 8, 4, 2, 1</span></div>
+        <div class="figure"><svg id="bfly" role="img" aria-label="warp butterfly reduction"></svg></div>
+        <div class="status" id="status"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="card"></dl>
+        <div class="cvlabel"><b class="w" id="modlabel"></b><span>first 64 channels, the model's values</span></div>
+        <div class="figure"><svg id="mod" role="img" aria-label="shift and scale vectors of the selected segment"></svg></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="w">Every launch of one generation</b><span>256 × 256, 22 frames, 20 steps: 2,217 launches</span></div>
+      <div class="tablewrap"><table class="list" id="uses"></table></div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>A byte per row instead of a launch per modality</h3>
+        <p>The reference implementation (stable-diffusion.cpp) slices the sequence into its text, audio and video spans and normalizes and modulates each slice separately, then concatenates the results for the shared q, k, v product. Here the slices never exist: the sequence stays one [541][5376] matrix, a u8 array says which (timestep, modality) row of the modulation table each token uses, and the shift and scale pointers plus a stride turn that byte into an address. The same byte feeds the gated residual add in <a href="gemm_f16_h3.html">gemm_f16</a>'s epilogue, so a block of the transformer is four norms-and-products over the whole sequence, never per modality.</p>
+        <h3>What the model does with it</h3>
+        <p>Block 0's scale vectors are near −0.9 for video tokens: (1 + scale) multiplies the normalized row by about 0.1, so the video tokens enter the first attention mostly through the shift, a learned per-channel offset. The gates, applied after attention and after the feed-forward, grow with depth (the <a href="adaln.html">adaln</a> page plots them), and in block 49 the text tokens' gates and their feed-forward modulation are exactly zero: the final layer only reads audio and video rows, so a text update in the last block would be thrown away, and this pruned checkpoint has none.</p>
+      </div>
+      <div class="panel">
+        <h3>One norm for four networks</h3>
+        <p>Every pointer is optional. The text encoder (Qwen3-VL) calls it with a weight and no modulation, ε = 10⁻⁶; the video VAE with a weight; the token refiner and the final layer write the f32 result (y32) back into the stream instead of an f16 copy; inside the 50 blocks it writes only the f16 operand of the next GEMM. Predicates set once per row skip what is absent, so the plain norm costs the same loop as the modulated one minus two loads.</p>
+        <h3>A warp, not a block</h3>
+        <p>The rows are 2048 to 5376 floats: 16 to 42 vector loads per lane. With 541 rows (or 1797 in the video decoder) there are enough warps to fill the 56 SMs, so each row is one warp and the reduction is five butterfly rounds with no shared memory and no barrier. The second pass re-reads the row from L1 rather than holding 168 floats per lane in registers.</p>
+        <h3>The f16 output is scaled</h3>
+        <p><code>oscale</code> multiplies the f16 copy only. The engine passes 1 everywhere today; it exists so an operand that would overflow f16's 65,504 can be scaled down and the GEMM's alpha can undo it, the same trick the feed-forward uses between <code>fc1</code>, <code>swiglu</code> and <code>fc2</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <a href="src/minimaxh3.html"><code>minimaxh3/minimaxh3.ptx</code></a>, kernel <a href="src/minimaxh3.html#rms_mod"><code>rms_mod</code></a>; launched by <code>rms_mod()</code> in <code>minimaxh3.c</code> with ⌈rows / 8⌉ blocks of 256 threads. Checked by <code>minimaxh3_demo test</code> against a double-precision norm with modulation (f32 output within 1.3 · 10<sup>−7</sup>, f16 within one rounding). The shift and scale vectors are block 0's, computed from <code>blocks.0.adaln_proj.linear</code> and <code>adaln_t_table</code> of minimax_h3_ref2va_pruned-Q4_K.gguf; the row values are generated.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('rms_mod');
+// block 0 modulation, [modality video, text, audio][shift1, scale1, gate1, shift2, scale2, gate2][64 channels]
+const MOD = {"early":[[[0.198,0.1609,-0.0001,-0.3255,0.1741,-0.0767,0.1821,-0.2624,-0.1063,-0.0216,0.3613,0.1951,-0.1563,0.0353,-0.2508,-0.0814,-0.0771,0.1116,0.0016,-0.2146,-0.2151,0.0743,0.1924,0.0594,0.0278,-0.0578,-0.0023,0.0609,-0.2791,0.0433,-0.1097,-0.0782,0.1073,-0.0482,-0.0023,-0.3092,0.0062,-0.1487,-0.1951,-0.0733,0.1267,0.0223,-0.0378,0.0815,0.1089,0.34,0.1798,-0.0582,-0.1051,-0.1217,0.0823,-0.2253,0.0781,0.3151,-0.1809,0.0751,0.1774,-0.065,-0.2481,-0.2006,0.0624,0.1425,-0.0089,-0.0861],[-0.8405,-0.9584,-0.5565,-0.8215,-0.9387,-0.6442,-0.8,-0.7521,-0.9647,-0.9283,-0.8821,-0.9243,-0.8713,-0.9764,-0.9226,-0.9065,-0.9663,-0.9693,-0.9134,-0.866,-0.918,-0.9855,-0.926,-0.5119,-0.743,-0.9217,-0.9903,-0.4026,-0.9885,-0.9527,-0.8639,-0.6265,-0.8651,-0.7632,-1.0115,-0.8367,-0.8489,-1.004,-0.8323,-1.0198,-0.7532,-1.0042,-0.9505,-0.9279,-0.9759,-0.9043,-0.9675,-0.6929,-0.9739,-0.9506,-0.9544,-0.9506,-0.9088,-0.848,-1.0252,-0.9334,-0.9864,-0.431,-0.9846,-0.6672,-0.8339,-0.6816,-0.7626,-0.7568],[0.0298,0.0033,0.2354,-0.0132,-0.006,0.0439,0.1394,-0.0735,-0.0395,-0.0024,0.0292,-0.0228,-0.0092,-0.0827,-0.001,-0.0244,-0.0193,0.0037,-0.0048,0.0258,-0.0116,-0.0019,0.0659,-0.0033,1.0037,0.0142,-0.0241,1.365,-0.0162,-0.1953,0.123,0.1617,0.0056,-0.0409,-0.0424,-0.3395,-0.0863,-0.0325,0.0713,0.0059,-0.002,0.0382,-0.0571,0.0006,0.0716,-0.0493,-0.046,-0.2815,-0.0766,-0.0338,0.0179,0.174,-0.0008,-0.059,0.026,-0.0045,0.1215,-0.1617,0.0153,-0.0516,0.0686,0.3269,-0.0529,0.2332],[0.0408,-0.0051,-0.0065,-0.0193,0.0064,0.0323,-0.0401,-0.0267,-0.0164,0.0563,0.0285,-0.0014,-0.0034,0.0192,-0.0013,-0.0691,-0.076,-0.0162,-0.0493,-0.0032,0.0332,0.0013,0.0006,0.0115,-0.0417,0.0143,0.0089,0.0208,0.0113,0.011,-0.0672,0.0029,-0.0652,-0.0322,0.001,-0.0381,-0.0101,0.0018,-0.0086,0.0057,-0.0115,-0.0293,-0.0026,0.0114,0.0333,0.0398,0.0091,-0.6359,0.0661,-0.0335,0.0356,-0.0061,-0.0243,-0.0493,0.0373,-0.0319,-0.0416,0.0485,-0.0129,-0.0393,0.0413,-0.0077,0.0278,0.0163],[-0.8147,-0.7935,-0.8484,-0.4374,-0.7284,-0.5323,-0.922,-0.9302,-0.6388,-0.9936,-0.9276,-0.834,-0.8174,-0.9343,-0.9282,-0.8793,-0.8221,-0.973,-0.8937,-0.6525,-0.8731,-0.8578,-0.8344,-0.9585,-0.9647,-0.9633,-0.7884,-0.9974,-0.8405,-0.918,-0.936,-0.9058,-0.8514,-0.7481,-1.0044,-0.8118,-0.8206,-0.9035,-0.8492,-0.9082,-0.8831,-0.948,-0.813,-0.9062,-0.8298,-0.7919,-0.953,-0.6227,-0.8055,-0.8531,-0.8886,-1.0062,-0.8708,-0.8155,-0.9573,-0.8498,-0.8676,-0.9433,-0.9125,-1.0226,-0.8197,-0.9435,-0.7708,-0.9392],[-0.0458,0.0118,-1.089,0.0506,-0.0201,0.4915,-0.0154,-0.0331,0.893,0.0368,-0.0557,0.0007,0.0393,0.0069,0.0009,-0.0577,-0.0323,-0.077,0.0041,0.0114,-0.0148,0.0367,0.0011,-0.0023,-0.6268,0.095,0.0131,-0.0834,-0.0023,-0.0432,0.0305,-0.0078,-0.0285,0.0766,-0.0326,-0.3459,-0.0193,-0.0467,-0.0572,0.0102,-0.034,-0.0382,-0.0888,0.0075,-0.0076,-0.117,-0.0291,0.064,0.0371,0.0708,-0.0064,-0.0194,-0.0894,-0.0292,0.0251,-0.0092,-0.0359,-0.0208,-0.0201,0.0058,-0.0196,0.0898,0.0157,0.0312]],[[-0.0193,0.0427,-0.4188,-0.5388,0.1606,-0.2501,0.0943,0.0769,-0.0698,-0.3527,0.3655,0.1296,-0.4402,0.2784,-0.1977,-0.1676,0.3594,-0.1709,0.0531,0.053,0.1161,0.0685,-0.2447,-0.1174,0.0454,-0.0208,0.1263,0.5432,0.215,0.0647,-0.3839,0.189,-0.3514,0.0573,0.1338,-0.0071,-0.225,0.1832,0.2638,0.438,-0.114,0.2279,0.2078,0.2986,0.0878,-0.0245,0.1438,-0.1864,-0.3845,-0.0163,0.1365,0.1829,-0.1142,0.2497,-0.3164,0.0846,0.3878,-0.0458,0.1295,-0.0428,-0.3372,0.0325,-0.3596,0.1319],[-0.3145,-0.0393,-0.4085,-0.2972,-0.7373,-0.4564,-0.1437,-0.761,-0.6809,-0.1827,-0.6436,-0.5823,-0.5433,-0.6881,-0.6022,-0.3957,-0.4162,-0.4849,-0.4556,-0.5007,-0.6442,-0.3124,-0.3495,-0.8838,-0.6229,-0.5417,-0.7046,-0.8229,-0.6871,-0.4679,-0.6116,-0.6449,-0.6167,-0.5967,-0.7049,-0.1925,-0.7815,-0.4968,-0.5247,-0.3205,-0.6293,-0.1965,-0.2341,0.0033,-0.3532,-0.5115,-0.5291,-0.1159,-0.5753,-0.6905,-0.3543,-0.4497,0.1001,-0.3675,-0.4651,-0.6981,-0.6559,-0.2804,-0.4941,-0.8233,-0.3617,-0.4667,-0.7804,-0.3278],[0.0439,0.1764,-0.117,-0.0691,0.0009,0.0163,0.012,-0.0623,0.0748,0.3019,0.0509,0.0619,0.0241,0.0239,-0.0274,-0.0304,0.0505,0.0751,0.0517,0.0797,0.0325,0.07,0.0513,0.0494,-0.0488,0.0181,0.0354,-0.019,-0.0069,0.0378,0.001,0.0001,-0.0673,0.0611,-0.078,-0.0403,0.0485,-0.016,-0.0022,-0.1044,-0.0061,0.093,0.0586,0.0616,0.1275,-0.064,-0.0127,0.0823,0.0111,0.0366,0.0113,-0.0384,0.0846,-0.0061,-0.0656,0.037,0.0186,0.0524,0.0461,-0.1213,-0.0587,0.0131,0.0306,-0.0496],[0.1871,0.0405,0.0214,-0.4119,0.0426,-0.0214,-0.0612,0.0954,0.0864,-0.244,0.1654,0.1524,-0.1344,-0.021,0.1235,0.0517,0.0627,-0.0977,0.0142,0.016,0.036,0.0438,-0.0853,-0.0403,0.1071,-0.0624,0.0233,0.073,0.0635,-0.0865,-0.2309,-0.1539,-0.0505,-0.1159,0.0257,-0.0083,0.0405,0.1946,0.228,-0.0274,-0.1862,0.0515,-0.0004,-0.0441,-0.0036,-0.071,0.0451,0.0588,0.1151,0.0396,-0.0196,0.2555,-0.0236,-0.0625,-0.0291,-0.0046,0.0316,-0.0485,-0.02,-0.0701,0.0163,0.0493,-0.0061,-0.0335],[0.189,-0.4921,0.0847,0.1609,0.3237,0.5255,0.4292,0.3407,0.6749,-0.6552,0.2983,0.3531,0.0706,0.3358,0.4707,0.271,-0.1606,0.0976,0.2419,0.2071,0.4252,-0.1089,0.346,0.6039,0.5963,0.045,0.3197,0.4536,0.2419,0.3542,0.5466,0.354,0.2851,0.1306,0.1276,0.2982,0.4103,0.1401,0.1769,0.0254,0.2505,0.4518,0.0705,0.1256,-0.2852,0.3155,0.4181,-0.393,0.3542,0.2727,0.5496,0.2648,0.7937,0.1131,0.1866,0.5584,0.2231,0.4087,0.5599,-0.0859,0.2633,0.2388,0.2435,0.3941],[0.1882,0.4008,-0.3814,-0.3522,0.2157,0.2249,-0.3632,-0.0219,-0.4932,0.1559,0.2055,0.1806,-0.2764,0.2134,-0.1391,-0.2335,0.3016,0.1283,0.3992,-0.3715,-0.1279,-0.3507,-0.3114,0.2616,-0.4911,-0.2464,-0.2879,-0.4147,0.231,0.2606,0.213,-0.2014,-0.1267,-0.2281,0.22,0.3421,0.1736,0.2209,0.2621,-0.2428,0.2088,-0.3031,0.1216,-0.3812,-0.2993,0.1886,0.1497,0.301,-0.2055,-0.2353,-0.1762,-0.2673,-0.2516,0.196,-0.129,0.2839,-0.3787,-0.3672,0.1734,0.2004,0.1953,0.2092,0.203,0.1642]],[[-0.0437,0.2928,0.0344,-0.0543,0.0939,0.1591,0.0265,0.1031,0.163,0.0959,0.0933,-0.1701,0.0364,0.0278,-0.2222,0.079,0.1584,0.0355,-0.3205,0.1197,-0.2342,0.1299,0.0247,0.0896,0.1951,-0.0586,-0.0609,0.1385,-0.1948,-0.2062,0.1774,-0.075,-0.0776,-0.0885,0.0095,-0.0912,-0.0353,0.1188,0.1133,-0.0607,-0.0026,-0.0324,-0.222,0.1248,0.0449,0.0215,0.1449,0.0233,-0.08,-0.02,0.0096,-0.0817,-0.1248,0.3125,-0.0828,0.2432,-0.0323,0.0703,-0.0745,0.1889,0.1619,-0.0539,0.1144,-0.2199],[-0.6231,-0.5756,-0.8166,-0.9536,-0.4125,-0.841,-0.3213,-0.8035,-0.7872,-0.7541,-0.5435,-0.9002,-0.8926,-0.5697,-0.7055,-0.3945,-0.6223,-0.7957,-0.8805,-0.5603,-0.8901,-0.9145,-0.7941,-0.6217,-0.7706,-0.5164,-0.6642,-1.0257,-0.9811,-0.7557,-0.4111,-0.5581,-0.8256,-0.7192,-0.534,-0.7482,-0.8529,-0.7389,-0.812,-0.8753,-0.7085,-0.9165,-0.7176,-0.6515,-0.7533,-0.4378,-0.8963,-0.6892,-0.632,-0.5651,-0.1238,-0.7905,-0.1806,-0.4846,-0.7918,-0.9334,-0.781,-0.6178,-0.6453,-0.4485,-0.416,-0.5398,-0.5905,-0.8847],[0.0488,0.0255,0.0141,-0.0092,0.0062,0.0164,0.0588,0.0092,-0.0339,0.0541,-0.2119,0.0161,-0.0006,-0.0186,0.0179,-0.342,-0.0157,-0.0665,0.0209,0.0462,0.0702,0.0388,0.0226,0.0249,-0.0637,-0.0128,-0.0166,0.0352,-0.0074,0.0307,-0.0265,0.0175,0.0868,0.0423,0.0005,0.0411,0.0043,-0.0286,0.0397,-0.0691,0.0857,0.0647,-0.137,-0.0006,-0.0118,0.0163,-0.0317,-0.5101,-0.0744,0.066,-0.0326,0.0103,-0.055,0.1085,0.3212,-0.0719,0.0393,-0.0616,0.053,0.0019,-0.0332,-0.0838,-0.0557,-0.0118],[0.0182,0.0167,-0.0012,-0.0201,-0.0175,-0.0035,0.0266,-0.0084,0.0019,0.0036,-0.0107,0.0081,0.0019,-0.0004,0.0022,-0.0208,-0.0323,-0.0093,-0.0313,0.0011,0.0149,-0.0003,0.0271,-0.0001,0.0028,0.0185,0.0015,0.0301,-0.012,-0.0194,0.0111,-0.0155,-0.0026,-0.0317,0.0192,0.0174,-0.0138,-0.0017,0.0111,-0.0229,-0.0083,0.0149,0.0239,-0.0244,0.0155,0.0067,-0.0034,-0.0143,0.0085,0.0236,-0.0189,-0.0203,-0.0179,-0.006,0.0113,-0.0096,0.0239,0.0413,0.0111,0.0004,0.0107,-0.0172,-0.0129,-0.0226],[-0.8588,-0.8971,-0.9279,-0.9482,-0.8471,-0.9742,-0.9506,-0.9547,-0.9184,-0.8907,-0.9681,-0.9422,-0.957,-0.9074,-0.8271,-1.0167,-0.9645,-0.9409,-0.9061,-0.9047,-0.8607,-0.9253,-0.9463,-0.9286,-0.9851,-0.9698,-0.7682,-0.9789,-0.9576,-0.9323,-0.8595,-0.9223,-1.02,-0.9649,-0.9703,-0.9018,-0.9622,-0.9223,-0.8733,-0.9777,-0.9893,-0.982,-0.9832,-0.9151,-0.8754,-0.965,-0.9123,-0.9807,-0.8818,-0.9047,-0.929,-1.0047,-0.9052,-0.9576,-0.9858,-0.978,-0.924,-0.9849,-1.004,-1.0143,-0.8599,-0.987,-0.9523,-0.8547],[0.0703,-0.0144,-0.0605,0.0095,-0.0045,0.0047,0.06,0.094,-0.0001,0.0471,0.0147,-0.0467,-0.0138,-0.0514,-0.0036,-0.0434,0.0039,0.0213,0.0452,-0.0387,0.0194,-0.0005,-0.0421,0.0361,-0.0151,0.0187,0.0388,0.0186,0.0174,0.0069,-0.0739,0.0107,-0.0201,0.014,0.0065,0.0572,-0.0014,-0.0284,-0.0386,-0.0035,0.0502,0.0217,0.1697,-0.0161,0.1011,0.0457,-0.0302,-0.0152,0.048,-0.0584,-0.0318,-0.0365,0.0545,0.0158,-0.0528,-0.0366,-0.0366,0.0448,0.0362,0.0328,0.0436,0.0598,0.0153,0.1041]]],"late":[[[0.229,0.1313,-0.183,-0.0134,-0.0188,0.0927,0.1882,-0.2004,0.0466,0.0727,0.2762,0.1754,-0.1784,0.096,-0.2874,-0.1116,-0.1308,0.2631,0.1106,-0.2212,-0.111,0.1865,0.1804,0.0217,0.0804,0.1305,-0.0885,0.0758,0.0034,0.3252,-0.1264,0.1358,-0.0114,0.0489,0.1086,-0.1588,0.1197,-0.0955,-0.0311,-0.1853,0.0576,0.1177,0.2042,0.1331,0.1203,0.3026,0.0816,0.0917,0.0299,-0.0926,-0.0423,-0.2508,0.0157,0.0455,-0.2164,-0.2497,0.1208,-0.1781,-0.2101,-0.1043,-0.0559,0.123,0.1111,-0.0034],[-0.9213,-0.9398,-0.2038,-0.8253,-0.8837,-0.4632,-0.8121,-0.8329,-0.8717,-0.8405,-1.0499,-1.0248,-1.1252,-1.1067,-1.0175,-0.9475,-0.9407,-1.0139,-0.9326,-0.8454,-0.9738,-1.0057,-1.0126,-0.965,-1.1131,-0.9309,-1.0125,-0.9027,-1.0123,-1.0195,-0.8969,-0.8947,-0.7949,-0.8932,-1.0893,-0.7619,-1.0417,-1.0555,-0.8078,-0.924,-0.7966,-1.0301,-1.0281,-0.9344,-0.8714,-1.0332,-1.0071,-0.7198,-0.9111,-0.9929,-0.9052,-1.0356,-0.8903,-1.0769,-0.9875,-0.9618,-1.0718,-0.5451,-0.9185,-0.8037,-0.9821,-0.8435,-0.779,-0.986],[0.049,0.0112,0.0266,-0.014,-0.0319,-0.0105,-0.0637,-0.0232,-0.0333,0.0751,0.0045,-0.0091,-0.0277,0.0291,0.0133,0.047,0.0039,-0.0127,-0.0014,0.0304,0.033,-0.0543,-0.2131,0.0101,0.6525,-0.0243,0.0586,1.1476,-0.0112,-0.1632,0.1063,0.0504,-0.0312,-0.0737,-0.0632,-0.1674,0.0921,-0.0269,0.0996,0.001,0.0442,0.0302,0.0529,0.0033,0.0724,-0.0858,-0.0875,-0.327,-0.0669,-0.1281,-0.0325,0.2682,0.0514,-0.0191,-0.0079,-0.018,-0.129,0.0172,0.0294,-0.0946,0.1075,0.3024,-0.0437,0.3361],[0.0309,0.0168,-0.0651,-0.0319,-0.0115,0.0932,0.0284,0.0597,-0.026,0.0734,0.0854,0.0865,0.0221,0.1986,-0.0153,-0.1286,-0.1124,0.085,-0.08,-0.0239,0.0142,-0.0385,0.0255,-0.0211,0.0042,0.0112,-0.0279,0.0271,-0.0023,-0.045,0.0124,0.0297,0.0386,0.0393,-0.0671,-0.0591,-0.0183,-0.0283,0.0559,-0.0688,0.0954,-0.1289,0.0363,0.0066,0.126,0.011,-0.0425,-0.5727,0.0986,-0.0896,0.0504,0.0085,-0.1512,0.0659,0.0124,-0.0679,-0.0763,-0.0656,0.0253,-0.0241,0.046,-0.0315,-0.0432,0.1231],[-0.8299,-0.6392,-0.7661,0.337,-0.688,-0.2099,-0.9551,-1.0304,0.1761,-1.0487,-0.9235,-0.9189,-0.9753,-0.9151,-0.961,-0.9289,-0.9211,-0.9417,-0.9751,-0.6186,-0.9304,-0.9448,-0.9656,-0.9917,-0.9552,-1.0768,-0.8889,-1.0046,-0.709,-1.0417,-0.9495,-0.9209,-0.8315,-0.8362,-1.0342,-0.8309,-0.9996,-0.9258,-0.9075,-0.569,-0.9127,-0.8782,-0.9465,-0.3045,-0.9178,-0.887,-0.9406,-0.6687,-0.9161,-1.0062,-0.8931,-0.9889,-0.8215,-0.9781,-0.8453,-0.9775,-0.9324,-1.0363,-0.8852,-1.0278,-0.9329,-1.0096,-0.9228,-0.9525],[-0.0125,-0.0118,-1.886,0.0055,-0.0087,0.5967,0.0167,-0.0307,1.7674,-0.0754,-0.124,-0.0412,0.0823,-0.0095,-0.0035,-0.1106,-0.0225,-0.1225,0.021,0.0229,0.0347,0.0605,0.1157,-0.0001,-1.4428,0.117,-0.1028,-0.0361,-0.0334,-0.0457,0.136,0.0387,0.0098,0.1543,0.0006,-0.71,-0.0366,0.051,-0.087,-0.0087,-0.0756,-0.0425,-0.0834,0.0303,-0.0605,-0.0969,0.0165,0.0468,0.0055,0.0779,-0.0181,-0.0557,-0.0343,0.017,-0.008,-0.0062,0.0767,0.0602,-0.004,0.0593,-0.0239,0.0509,-0.0081,0.2508]],[[0.1555,-0.0855,-0.3876,-0.5596,0.1948,-0.1971,0.0884,0.0331,-0.0624,-0.443,0.3419,0.125,-0.3544,0.3473,-0.0909,-0.1365,0.4507,-0.2788,-0.0218,0.0383,-0.0436,0.0953,-0.3855,-0.1364,0.1389,-0.0325,0.2611,0.3306,0.14,-0.0869,-0.4112,0.0051,-0.1928,-0.031,0.0332,0.0084,-0.0896,0.1371,-0.0061,0.3926,0.0278,0.2091,0.2072,0.0183,-0.0514,0.0002,0.1899,-0.0567,-0.2837,-0.0797,0.1721,0.2757,-0.0284,0.255,-0.1064,0.1159,0.3502,-0.1013,0.0619,-0.1365,-0.2387,0.0848,-0.1866,0.0064],[-0.0921,-0.091,-0.332,-0.346,-1.0397,-0.3862,-0.1467,-0.7306,-0.6213,-0.2148,-0.5061,-0.6148,-0.5975,-0.7166,-0.3424,-0.3405,-0.4106,-0.2916,-0.5977,-0.4209,-0.4674,-0.3834,-0.4607,-0.7172,-0.6264,-0.675,-0.7985,-0.8709,-0.5684,-0.5897,-0.6158,-0.7385,-0.4438,-0.7878,-0.772,-0.076,-0.7797,-0.5376,-0.4089,-0.0918,-0.6553,-0.0063,-0.0997,-0.1842,-0.4292,-0.3628,-0.6297,-0.119,-0.6949,-0.7382,-0.4063,-0.4764,0.0799,-0.2596,-0.7806,-0.4888,-0.8296,-0.5041,-0.5114,-0.523,-0.5785,-0.5577,-0.8029,-0.1607],[0.002,0.2506,-0.0718,-0.1387,0.039,0.054,0.0245,0.0419,0.0677,0.2769,0.0177,0.1301,0.1097,0.0133,0.0384,-0.0446,0.0437,0.0271,-0.0931,-0.0107,-0.0376,0.0355,-0.0301,0.0667,-0.0096,0.0581,0.0451,-0.0009,0.0555,0.0526,-0.0825,-0.0217,-0.0418,0.0511,-0.2716,-0.1382,-0.0148,-0.013,0.074,-0.0615,-0.0369,0.1196,0.0383,0.1696,0.1468,-0.0248,-0.0977,-0.0297,-0.075,0.042,0.074,-0.023,0.0302,0.0636,-0.0694,0.0347,-0.0023,0.0817,0.0902,-0.0168,-0.0336,0.0843,0.005,0.0125],[0.1735,0.0114,-0.0397,-0.2588,0.0787,0.0328,0.0047,0.03,0.1484,-0.0782,0.2676,0.1619,-0.1937,-0.0243,0.1536,0.0448,0.0004,0.0682,-0.007,0.0056,0.0195,0.0717,-0.0092,-0.0927,0.1162,-0.1115,-0.0638,0.1555,0.088,-0.15,-0.1515,-0.1618,-0.1767,-0.0639,-0.0049,-0.0876,0.0041,0.257,0.1142,0.0217,-0.2064,-0.0332,-0.0279,-0.0291,0.0258,-0.0287,-0.0576,0.1851,0.1394,-0.0089,0.0477,0.2338,-0.058,-0.0755,-0.0255,0.0482,0.0623,-0.0515,-0.0514,-0.0791,0.088,0.06,0.0224,-0.0348],[0.2523,-0.4611,0.1105,0.1323,0.2122,0.6543,0.4007,0.3927,0.5816,-0.661,0.2168,0.3572,0.0814,0.2729,0.5166,0.1965,-0.1298,0.1286,0.1997,0.0597,0.5421,-0.269,0.494,0.7093,0.6719,0.0382,0.2279,0.1833,0.3647,0.2808,0.4174,0.3099,0.0766,0.144,0.0452,0.43,0.4317,0.1121,0.238,0.065,0.243,0.359,0.1776,0.2428,-0.2492,0.181,0.559,-0.6642,0.5049,0.2664,0.6034,0.2894,0.736,0.2003,0.2395,0.6984,0.1524,0.4371,0.4913,-0.0537,0.378,0.3525,0.1936,0.3689],[0.2439,0.4149,-0.4938,-0.3123,0.1976,0.3431,-0.213,-0.1599,-0.4012,0.1205,0.2808,0.0596,-0.2779,0.3391,-0.2586,-0.2827,0.3226,-0.022,0.2184,-0.2873,-0.1271,-0.4032,-0.3499,0.2361,-0.4338,-0.2329,-0.2945,-0.3787,0.1405,0.2359,0.2254,-0.2159,-0.0783,-0.2215,0.23,0.3505,0.2354,0.2295,0.2144,-0.2073,0.1675,-0.4037,-0.0024,-0.223,-0.2305,0.1717,0.1723,0.3269,-0.1784,-0.281,-0.2594,-0.267,-0.1819,0.2361,-0.1127,0.2443,-0.2841,-0.3367,0.178,0.1354,0.183,0.1951,0.2317,0.117]],[[0.0405,0.3007,0.0755,-0.128,0.0118,0.0097,0.0079,0.1126,0.1287,0.0695,0.1365,-0.1355,-0.0732,0.0639,-0.214,0.1049,0.1715,0.0436,-0.3454,0.1179,-0.1675,0.1082,-0.0316,0.0366,0.2748,0.0001,-0.0643,0.1182,-0.2402,-0.3471,0.0596,-0.1251,-0.0825,0.0228,0.1011,-0.1508,-0.0335,-0.1159,0.0677,-0.0855,0.0316,0.0484,-0.2425,0.1354,-0.0742,0.1382,0.2928,0.0464,-0.2662,-0.0195,-0.1013,-0.0702,-0.0448,0.3784,-0.0783,0.1168,0.0976,-0.1024,0.0259,0.1254,0.2298,-0.0659,0.1218,-0.0964],[-0.6848,-0.7873,-0.9061,-1.2424,-0.582,-0.8695,-0.4626,-0.8186,-0.9243,-0.8818,-0.6872,-0.8998,-0.9439,-0.772,-0.8525,-0.6568,-0.9487,-0.9294,-0.9558,-1.1217,-1.0933,-1.0818,-0.9041,-1.0071,-0.9801,-0.8198,-0.681,-1.1459,-1.004,-0.7156,-0.657,-1.0425,-0.817,-0.7368,-0.9507,-1.0461,-0.9485,-0.9579,-0.8809,-0.9575,-0.8594,-1.0695,-0.7887,-0.9834,-0.8952,-0.7293,-0.9906,-0.9691,-0.8135,-0.5285,-0.3484,-0.7722,-0.3973,-0.6637,-1.149,-0.9765,-0.8254,-0.9647,-0.8548,-0.6568,-0.6653,-0.6623,-0.6228,-0.8695],[0.0611,0.0273,-0.036,-0.099,0.0144,0.0214,-0.0251,0.0847,0.0266,0.0598,-0.0335,0.04,0.0069,-0.1054,-0.0014,-0.0398,0.021,-0.0406,0.0039,0.0132,0.0526,-0.0949,-0.001,-0.0869,-0.0939,0.0156,-0.0182,0.0687,-0.0172,0.0126,-0.0114,0.0443,0.0989,0.1195,-0.0018,0.0222,-0.0063,-0.1274,-0.0342,-0.0762,0.0184,-0.0037,0.0101,-0.0024,0.0203,0.0653,-0.051,-0.0352,-0.0239,0.0621,0.0233,0.0376,-0.0612,-0.0526,0.0059,-0.0365,-0.044,-0.0287,0.0845,-0.0337,0.0062,-0.0428,-0.0798,-0.0158],[0.0129,0.0283,-0.0001,-0.0153,0.0268,0.0128,0.0163,-0.0293,0.0048,0.0132,0.0109,0.0012,-0.0125,0.0432,-0.0026,-0.0088,-0.0037,-0.0173,-0.0478,-0.0158,0.0236,-0.012,0.033,-0.0086,-0.0115,0.0102,0.0189,0.0455,-0.0075,-0.0137,0.0099,-0.0136,-0.0116,-0.0543,0.0229,0.0251,-0.0147,-0.0039,0.0129,-0.0056,-0.0274,0.0272,0.0322,-0.032,0.0019,0.0014,0.0145,-0.0025,-0.0068,0.0259,-0.0312,-0.021,-0.0122,-0.0061,-0.0192,-0.0237,0.0041,0.0657,0.0187,0.0088,0.0136,-0.0207,-0.0211,-0.0108],[-0.8595,-0.9037,-1.0089,-0.9018,-0.9301,-0.9271,-0.9313,-0.9828,-0.9803,-0.8735,-0.9502,-1.0249,-0.975,-0.9067,-0.9632,-1.0308,-0.9939,-0.9534,-0.9112,-0.8557,-0.9678,-0.9863,-0.9107,-0.9619,-0.9959,-0.977,-0.8383,-0.9407,-0.9374,-0.9428,-0.8935,-0.9469,-1.0478,-0.9481,-0.9679,-0.8399,-1.0262,-0.9516,-0.9624,-0.8889,-0.9921,-1.0154,-0.954,-0.9041,-0.9219,-1.0211,-0.9446,-1.0119,-0.8679,-0.8876,-0.9572,-0.9998,-1.0826,-1.0218,-1.0282,-0.9329,-0.8776,-0.9448,-1.0052,-1.0279,-0.759,-0.9682,-1.05,-0.9331],[-0.0067,-0.0627,-0.0227,-0.0005,0.052,-0.0282,0.0757,0.0228,-0.0326,0.0331,-0.0005,-0.0601,-0.0206,-0.0119,-0.0552,-0.0271,0.0105,0.0214,0.039,-0.0586,0.0353,-0.0046,-0.0857,0.0152,0.0104,-0.0033,0.0699,-0.0115,-0.0194,0.0622,-0.0514,0.0052,-0.0449,-0.023,0.0162,-0.0397,-0.0184,-0.0474,0.0399,-0.0218,0.0136,0.0088,0.1226,-0.0244,0.0483,0.0183,-0.0236,-0.0483,0.0261,-0.0156,-0.035,0.0106,0.0904,0.0742,-0.0643,-0.0082,0.0038,0.0039,0.0442,0.0734,0.0921,0.0499,0.0436,0.0531]]]};
+const N = 5376, TEXT = 19, AUD = 74, VID = 448, NSEQ = TEXT + AUD + VID;
+const S = { t: 'early', norm: 1, row: 120, lane: 3 };
+// segment of a row: (timestep row) * 3 + modality; timestep rows at the first step: 0 = t_v, 1 = t_a (equal there,
+// so deduplicated into one row), later steps keep them apart
+const MODN = ['video', 'text', 'audio'];
+const modality = r => r < TEXT ? 1 : r < TEXT + AUD ? 2 : 0;
+const tsRow = r => (S.t === 'early' || modality(r) !== 2) ? 0 : 1;
+const segOf = r => tsRow(r) * 3 + modality(r);
+const xv = (r, i) => fr(Atlas.gauss(Atlas.rng(Atlas.h32(r * 7919 + i * 31 + 5))) * (modality(r) === 1 ? 40 : 1.6) + ((i * 2654435761) % 1013 < 3 ? 25 : 0));
+const wv = i => fr(0.7 + 0.6 * Atlas.rng(Atlas.h32(i * 7 + 11))());
+const shiftV = (m, i) => MOD[S.t][m][S.norm === 1 ? 0 : 3][i % 64];
+const scaleV = (m, i) => MOD[S.t][m][S.norm === 1 ? 1 : 4][i % 64];
+$('tSeg').innerHTML = [['early', 'first step (t = 0)'], ['late', 'late step (t = 0.99)']].map(([v, t]) => `<button type="button" data-v="${v}" aria-pressed="${v === S.t}">${t}</button>`).join('');
+$('tSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.t = b.dataset.v; $('tSeg').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); draw(); });
+$('normSeg').innerHTML = [[1, 'norm1 (before attention)'], [2, 'norm2 (before the MLP)']].map(([v, t]) => `<button type="button" data-v="${v}" aria-pressed="${v === S.norm}">${t}</button>`).join('');
+$('normSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.norm = +b.dataset.v; $('normSeg').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); draw(); });
+
+function stats(r) {
+  const lanes = [];
+  for (let l = 0; l < 32; l++) { let s = 0; for (let c = 4 * l; c < N; c += 128) for (let k = 0; k < 4; k++) { const v = xv(r, c + k); s = fr(s + fr(v * v)); } lanes.push(s); }
+  const t = Atlas.bflyTable(lanes, (a, b) => fr(a + b)), ms = fr(t[5][0] / N), inv = fr(1 / fr(Math.sqrt(fr(ms + 1e-5))));
+  return { t, ms, inv };
+}
+const yv = (r, i, T) => { const m = modality(r), v = fr(fr(xv(r, i) * T.inv) * wv(i)); return fr(fr(fr(v * scaleV(m, i)) + v) + shiftV(m, i)); };
+const steps = [
+  { tag: 'I', short: 'roles', title: 'row = 8 · blockIdx.x + warp; lane l owns columns 4l … 4l + 3, + 128, + 256, …', text: 'A block of 256 threads is 8 rows. A 5376-wide row is 42 loads of 16 bytes per lane, the warp covering 512 contiguous bytes per load.' },
+  { tag: 'S', short: 'Σ x²', title: 'pass 1: each lane sums the squares of its 168 values; 5 butterfly rounds', text: 'After shfl.sync.bfly with offsets 16, 8, 4, 2, 1 every lane holds the row\'s sum, so no broadcast is needed.' },
+  { tag: 'R', short: '1 / rms', title: 'mean, + ε, sqrt.rn, rcp.rn: one reciprocal per row', text: 'ε = 10⁻⁵ in the diffusion transformer and the video VAE, 10⁻⁶ in the text encoder: the host passes it.' },
+  { tag: 'W', short: '× w', title: 'pass 2: v = x · (1/rms) · w, the norm weight through the read-only cache', text: 'w may be 0: the DiT\'s norms have a weight, but the call can drop it, and then the predicate skips the load.' },
+  { tag: 'M', short: 'segment', title: 'seg[row] → s; shift and scale of row s: v + v · scale + shift', text: 'One ld.global.nc.u8 per row picks the modulation row; s · mstride (6 · 5376 here: shift, scale, gate × 2) is added to the column. fma(v, scale, v) then + shift.' },
+  { tag: 'O', short: 'outputs', title: 'store y32 (f32) and/or y16 = f16(y · oscale)', text: 'Inside the blocks only y16 is written: it is the A operand of the next gemm_f16 (q, k, v or fc1). The refiner\'s and the final layer\'s norms write y32.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `I|extern "C" __global__ void rms_mod(const float *x, const float *w, const float *shift, const float *scale,
+I|                                   unsigned mstride, const uint8_t *seg, __half *y16, float *y32,
+I|                                   unsigned rows, unsigned n, float eps, float oscale)
+I|{
+I|    unsigned lane = threadIdx.x & 31, row = blockIdx.x * 8 + (threadIdx.x >> 5);
+I|    if (row >= rows) return;
+I|    const float4 *xr = (const float4 *)(x + (size_t)row * n);
+S|    float s = 0;
+S|    for (unsigned c = lane; c < n / 4; c += 32) { float4 v = xr[c]; s += v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w; }
+S|    for (int o = 16; o; o >>= 1) s += __shfl_xor_sync(~0u, s, o);
+R|    float inv = 1.f / sqrtf(s / n + eps);
+M|    unsigned off = (seg ? seg[row] : 0) * mstride;             // the row's modulation
+W|    for (unsigned c = lane; c < n / 4; c += 32) {
+W|        float4 v = xr[c];  v.x *= inv; v.y *= inv; v.z *= inv; v.w *= inv;
+W|        if (w) { float4 g = __ldg((const float4 *)w + c); v.x *= g.x; v.y *= g.y; v.z *= g.z; v.w *= g.w; }
+M|        if (shift) {
+M|            float4 sc = __ldg((const float4 *)(scale + off) + c), sh = __ldg((const float4 *)(shift + off) + c);
+M|            v.x = fmaf(v.x, sc.x, v.x) + sh.x;  v.y = fmaf(v.y, sc.y, v.y) + sh.y;
+M|            v.z = fmaf(v.z, sc.z, v.z) + sh.z;  v.w = fmaf(v.w, sc.w, v.w) + sh.w;
+M|        }
+O|        size_t o = (size_t)row * n + 4 * c;
+O|        if (y32) *(float4 *)(y32 + o) = v;
+O|        if (y16) { *(__half2 *)(y16 + o) = __floats2half2_rn(v.x * oscale, v.y * oscale);
+O|                   *(__half2 *)(y16 + o + 2) = __floats2half2_rn(v.z * oscale, v.w * oscale); }
+W|    }
+I|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    shl.b32         %r3, %r3, 3;
+I|    add.u32         %r3, %r3, %r2;          // row
+I|    setp.ge.u32     %p0, %r3, %r4;
+I|    @%p0 bra        DONE;
+I|    shl.b32         %r7, %r1, 2;            // first column of this lane
+S|SUMSQ:
+S|    ld.global.v4.f32 {%f4, %f5, %f6, %f7}, [%rd3];
+S|    fma.rn.f32      %f0, %f4, %f4, %f0;
+S|    ...                                     // f5, f6, f7
+S|    add.u32         %r8, %r8, 128;
+S|    @%p1 bra        SUMSQ;
+S|    shfl.sync.bfly.b32 %f1, %f0, 16, 31, 0xffffffff;
+S|    add.f32         %f0, %f0, %f1;
+S|    ...                                     // 8, 4, 2, 1
+R|    div.rn.f32      %f0, %f0, %f2;
+R|    add.f32         %f0, %f0, %f2;          // + eps
+R|    sqrt.rn.f32     %f0, %f0;
+R|    rcp.rn.f32      %f3, %f0;               // 1 / rms
+M|    ld.global.nc.u8 %h, [%rd8];             // seg[row]
+M|    cvt.u32.u16     %r9, %h;
+M|NOSEG:
+M|    mul.lo.u32      %r9, %r9, %r10;         // segment offset
+W|APPLY:
+W|    ld.global.v4.f32 {%f4, %f5, %f6, %f7}, [%rd3];
+W|    mul.f32         %f4, %f4, %f3;
+W|    ...
+W|    ld.global.nc.v4.f32 {%f8, %f9, %f10, %f11}, [%rd13];     // w
+W|    mul.f32         %f4, %f4, %f8;
+M|NOW:
+M|    ld.global.nc.v4.f32 {%f8, %f9, %f10, %f11}, [%rd15];     // scale
+M|    ld.global.nc.v4.f32 {%f12, %f13, %f14, %f15}, [%rd15];   // shift
+M|    fma.rn.f32      %f8, %f4, %f8, %f4;
+M|    add.f32         %f4, %f8, %f12;
+O|NOMOD:
+O|    @!%p6 bra       NO32;
+O|    st.global.v4.f32 [%rd16], {%f4, %f5, %f6, %f7};          // y32
+O|NO32:
+O|    mul.f32         %f16, %f4, %f20;                          // * oscale
+O|    cvt.rn.f16x2.f32 %r12, %f17, %f16;
+O|    cvt.rn.f16x2.f32 %r13, %f19, %f18;
+O|    st.global.v2.b32 [%rd17], {%r12, %r13};                   // y16` },
+});
+const ORDER = steps.map(s => s.tag);
+const USES = [
+  ['text encoder', 'input_layernorm, post_attention_layernorm', '100', 'w, ε 10⁻⁶ → y16', 'q / k / v and gate / up inputs'],
+  ['token refiner', 'norm1, norm2 (2 blocks), final_norm', '5', 'w → y16; final: y32 in place', 'the refined prompt, once per video'],
+  ['diffusion blocks', 'norm1 + shift/scale 1, norm2 + shift/scale 2', '100 per step', 'w, seg, modulation → y16', 'q/k/v and fc1 inputs, 541 rows'],
+  ['final layer', 'norm + (shift, scale) of the video / audio rows', '2 per step', 'w, one modulation row → y32', 'video_out, audio_out heads'],
+  ['video VAE', 'norm1, norm2 of 36 blocks', '72 per chunk', 'w → y16', '1797 rows per chunk'],
+];
+const rg = Atlas.grid($('row'), 6, 128);
+function drawSeq() {
+  const cv = $('seq'), w = cv.clientWidth, h = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = C.bg; ctx.fillRect(0, 0, w, h);
+  const cw = w / NSEQ, col = [C.x, C.w, C.y];
+  for (let r = 0; r < NSEQ; r++) {
+    const s = segOf(r);
+    ctx.globalAlpha = r === S.row ? 1 : 0.25 + 0.2 * Math.floor(s / 3);
+    ctx.fillStyle = col[modality(r)]; ctx.fillRect(r * cw, 3, Math.max(1, cw - 0.3), h - 6);
+  }
+  ctx.globalAlpha = 1; ctx.strokeStyle = C.fg; ctx.lineWidth = 2; ctx.strokeRect(S.row * cw - 1, 1, cw + 2, h - 2);
+  $('seqsub').textContent = `row ${S.row}: ${MODN[modality(S.row)]}${modality(S.row) === 2 ? (S.row - TEXT < 37 ? ', left channel' : ', right channel') : ''} → seg ${segOf(S.row)} (timestep row ${tsRow(S.row)}, modality ${modality(S.row)})`;
+  Atlas.legend($('seqlegend'), [['--w', `text 0 … ${TEXT - 1}`], ['--y', `audio ${TEXT} … ${TEXT + AUD - 1} (L, R)`], ['--x', `video ${TEXT + AUD} … ${NSEQ - 1}`]]);
+}
+function draw() {
+  const st = stepper.step, si = ORDER.indexOf(st.tag), r = S.row, T = stats(r), it = 42, m = modality(r);
+  $('lanev').textContent = S.lane;
+  drawSeq();
+  rg.resize(6, 128);
+  const g = rg.prep(), span = si >= 4 ? 2 : (m === 1 ? 80 : 4);
+  // 6 canvas rows of 128 columns: the first 768 of the 5376 values (loads 0 … 5 of each lane)
+  for (let q = 0; q < 6; q++) for (let c = 0; c < 128; c++) {
+    const i = q * 128 + c, lane = c >> 2;
+    const v = si >= 4 ? yv(r, i, T) : si >= 3 ? fr(fr(xv(r, i) * T.inv) * wv(i)) : xv(r, i);
+    g.cell(q, c, v >= 0 ? C.x : C.y, (Math.min(1, Math.abs(v) / span) * 0.8 + 0.12) * (lane === S.lane || si === 0 ? 1 : 0.55), 0.05);
+  }
+  for (let q = 0; q < 6; q++) g.box(q, 4 * S.lane, 1, 4, C.fg, 1.5);
+  $('rowlabel').textContent = `row ${r}: the first 768 of its 5376 values (6 of 42 loads per lane)`;
+  $('rowsub').textContent = si >= 4 ? 'modulated: v + v · scale + shift' : si >= 3 ? 'normalized, × w' : 'input x (the residual stream)';
+  Atlas.legend($('legend'), [['--x', 'positive'], ['--y', 'negative'], ['--fg', `lane ${S.lane}'s columns`]]);
+  Atlas.butterfly($('bfly'), T.t, si >= 1 ? 5 : 0, { sel: S.lane, color: C.y, fmt: v => v >= 1e4 ? (v / 1000).toFixed(0) + 'k' : v.toFixed(0) });
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`;
+  $('thlabel').textContent = `lane ${S.lane} of row ${r}: columns ${4 * S.lane} … ${4 * S.lane + 3} + 128 k, k < 42`;
+  let c = row('lane Σ x²', T.t[0][S.lane].toFixed(1));
+  if (si >= 1) c += row('row Σ x²', T.t[5][0].toFixed(1));
+  if (si >= 2) c += row('1 / rms', `1 / √(${T.ms.toFixed(3)} + 10⁻⁵) = ${T.inv.toFixed(5)}`);
+  const i = 4 * S.lane, sv = shiftV(m, i), sc = scaleV(m, i);
+  if (si >= 3) c += row(`v[${i}]`, `${xv(r, i).toFixed(3)} · ${T.inv.toFixed(4)} · ${wv(i).toFixed(3)} = ${fr(fr(xv(r, i) * T.inv) * wv(i)).toFixed(4)}`);
+  if (si >= 4) {
+    c += row('segment', `seg[${r}] = ${segOf(r)} → offset ${segOf(r)} · 6 · 5376 + ${S.norm === 1 ? 0 : 3} · 5376`);
+    c += row(`y[${i}]`, `v + v · (${sc.toFixed(4)}) + (${sv.toFixed(4)}) = ${yv(r, i, T).toFixed(4)}`);
+  }
+  if (si >= 5) c += row('outputs', 'y16 = f16(y · 1) for the next gemm_f16; y32 skipped (0)');
+  $('card').innerHTML = c;
+  $('status').textContent = 'Click the strip to pick a row, the grid to pick a lane.';
+  drawMod(m);
+  $('uses').innerHTML = '<thead><tr><th>where</th><th>norms</th><th>launches</th><th>arguments</th><th>for</th></tr></thead><tbody>' + USES.map(u => `<tr><td>${u[0]}</td><td><code>${u[1]}</code></td><td class="num">${u[2]}</td><td>${u[3]}</td><td>${u[4]}</td></tr>`).join('') + '</tbody>';
+}
+function drawMod(m) {
+  const W = 340, H = 210, n = 64, bw = (W - 20) / n;
+  let s = '';
+  const sh = MOD[S.t][m][S.norm === 1 ? 0 : 3], sc = MOD[S.t][m][S.norm === 1 ? 1 : 4];
+  const top = 20, mid1 = 70, mid2 = 160, k = 40;
+  s += `<line x1="10" x2="${W - 10}" y1="${mid1}" y2="${mid1}" stroke="${C.line}"/><line x1="10" x2="${W - 10}" y1="${mid2}" y2="${mid2}" stroke="${C.line}"/>`;
+  for (let i = 0; i < n; i++) {
+    const a = sh[i], b = 1 + sc[i], x = 10 + i * bw;
+    const ha = Math.max(-1.2, Math.min(1.2, a)) * k, hb = Math.max(-1.2, Math.min(1.2, b)) * k;
+    s += `<rect x="${x}" y="${ha >= 0 ? mid1 - ha : mid1}" width="${bw - 1}" height="${Math.abs(ha)}" fill="${C.w}" opacity="${i === 4 * S.lane % 64 ? 1 : 0.6}"/>`;
+    s += `<rect x="${x}" y="${hb >= 0 ? mid2 - hb : mid2}" width="${bw - 1}" height="${Math.abs(hb)}" fill="${C.y}" opacity="${i === 4 * S.lane % 64 ? 1 : 0.6}"/>`;
+  }
+  const mean = a => a.reduce((p, q) => p + q, 0) / a.length;
+  s += `<text x="10" y="${top - 6}" font-size="10" fill="${C.fg}">shift${S.norm === 1 ? '1' : '2'} (mean ${mean(sh).toFixed(2)})</text>`;
+  s += `<text x="10" y="${mid2 - 50}" font-size="10" fill="${C.fg}">1 + scale${S.norm === 1 ? '1' : '2'} (mean ${mean(sc.map(v => 1 + v)).toFixed(2)})</text>`;
+  s += `<text x="${W - 10}" y="${H - 4}" font-size="9" text-anchor="end" fill="${C.muted}">bars clipped at ±1.2</text>`;
+  $('mod').setAttribute('viewBox', `0 0 ${W} ${H}`); $('mod').innerHTML = s;
+  $('modlabel').textContent = `block 0, ${MODN[m]} tokens, ${S.t === 'early' ? 't = 0' : 't = 0.99'}`;
+}
+rg.hook(p => { $('status').textContent = `column ${p.r * 128 + p.c}: lane ${p.c >> 2}, load ${p.r}`; }, p => { S.lane = p.c >> 2; $('lane').value = S.lane; draw(); }, () => {});
+$('seq').classList.add('pick');
+$('seq').addEventListener('click', e => { const b = $('seq').getBoundingClientRect(); S.row = Math.max(0, Math.min(NSEQ - 1, Math.floor((e.clientX - b.left) / b.width * NSEQ))); draw(); });
+$('lane').addEventListener('input', () => { S.lane = +$('lane').value; draw(); });
+Atlas.facts($('facts'), [['⌈rows / 8⌉', 'blocks of 256'], ['1 warp', 'per row'], ['2', 'passes over the row'], ['1 byte', 'segment id per row'], ['≤ 4 × 3', 'modulation rows: timesteps × modalities'], ['2,217', 'launches per 20-step video']]);
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1300 });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

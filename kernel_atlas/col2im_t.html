@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>col2im_t Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">MiniMax-H3 · <a href="src/minimaxh3.html#col2im_t">minimaxh3.ptx</a> · BigVGAN's upsampling: a GEMM, then a gather per output sample</div>
+    <h1>Inside <code>col2im_t</code></h1>
+    <p>BigVGAN grows 37 latent frames into 29,600 samples through 7 transposed convolutions (strides 5, 5, 2, 2, 2, 2, 2). The engine has no convolution kernel: every convolution is a <a href="gemm_f16_h3.html">gemm_f16</a> on a rearranged matrix. A forward convolution reads <code>im2col1d</code>'s matrix, each row the K · C<sub>in</sub> inputs under the kernel at one output position. A transposed convolution goes the other way. The GEMM multiplies each input sample's C<sub>in</sub> channels by the weights to get C<sub>out</sub> · K contributions, z[s][co · K + k], one per output channel and tap, and this kernel adds them where they land: output t collects every (s, k) with s · r + k − pad = t, plus the bias. Each output is computed by one thread that gathers, so no atomics are needed.</p>
+    <div class="formula"><span class="y">y</span>[t][co] = <span class="w">b</span>[co] + Σ<sub>(s, k): s·r + k − pad = t</sub> <span class="x">z</span>[s][co·K + k], &nbsp; <span class="x">z</span> = <span class="x">x</span> · Wᵀ (W as [co·K + k][ci]) &nbsp;&nbsp;<span class="muted">// L<sub>out</sub> = (L<sub>in</sub> − 1)·r + K − 2·pad = r·L<sub>in</sub></span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">Where each output's contributions come from</h2>
+      <p>Top: input samples s; each spreads its K taps over outputs s·r + k − pad (the lines). Bottom: the outputs. Pick an output t: the highlighted lines are the (s, k) pairs its thread adds. With K = 9 and r = 5 an output gets one or two taps; with K = 4, r = 2 always two.</p>
+    </div>
+    <div class="controls">
+      <span class="seg" id="stSeg" role="group" aria-label="Stage"></span>
+      <label>output t <input id="tt" type="range" min="0" max="49" value="17"> <span id="ttv" class="mono"></span></label>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x">inputs s → outputs t</b><span id="dsub"></span></div>
+        <div class="figure"><svg id="dia" role="img" aria-label="transposed convolution taps"></svg></div>
+        <div class="status" id="status"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="card"></dl>
+        <div class="cvlabel"><b class="w">the forward direction: im2col1d for a dilated convolution</b><span id="imsub"></span></div>
+        <div class="figure"><svg id="im" role="img" aria-label="im2col rows"></svg></div>
+        <label class="kctl">dilation <input id="dil" type="range" min="0" max="2" value="1"> <span id="dilv" class="mono"></span></label>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="w">The 7 upsampling stages of one channel</b><span>GEMM shapes after padding to the kernel's tiles</span></div>
+      <div class="tablewrap"><table class="list" id="stages"></table></div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Gather, not scatter</h3>
+        <p>The natural way to write a transposed convolution is a scatter: each input sample adds its K taps into the output, and neighbouring inputs (K &gt; r) add into the same outputs, which on a GPU means atomics or a careful schedule. Turned around, every output knows its sources: k runs over the taps with k ≡ t + pad (mod r), and s = (t + pad − k) / r. A thread per (t, co) loops over k, keeps the ones that divide evenly and land inside the input, and writes its sum once.</p>
+        <h3>All the arithmetic is in the GEMM</h3>
+        <p>For the first stage the GEMM is 37 × 4,608 × 1,024 (C<sub>out</sub> · K = 512 · 9 by C<sub>in</sub>) and this kernel then adds at most 2 values per output: the expensive part runs on tensor cores at the input's length, before the signal has grown. The weights are transposed once at load, from the file's [C<sub>in</sub>][C<sub>out</sub>][K] to the GEMM's [C<sub>out</sub> · K][C<sub>in</sub>] rows, and converted to f16.</p>
+      </div>
+      <div class="panel">
+        <h3>Small channel counts, padded</h3>
+        <p>The GEMM needs N a multiple of 128 and K a multiple of 32. From stage 6 on C<sub>out</sub> · K drops to 64 and 32 (16 · 4, 8 · 4), and the last stage's input has 16 channels: the host pads the weight matrices with zero rows and columns, and the activations live in rows of max(C, 128) floats. The extra zeros cost little: those stages are long (7,400 to 29,600 samples) but narrow.</p>
+        <h3>im2col1d with dilation</h3>
+        <p>The residual stacks use dilations 1, 3 and 5 with kernels 3, 7 and 11, "same" padding (K·d − d)/2: row t of the matrix holds x[t − pad + k·d][ci] for each (ci, k), zeros outside the signal and in the padding columns up to a multiple of 32. It converts to f16 on the way, so the matrix is the GEMM's A operand as it is. 128 im2col1d and 128 GEMMs per channel, 7 col2im_t.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <a href="src/minimaxh3.html"><code>minimaxh3/minimaxh3.ptx</code></a>, kernels <a href="src/minimaxh3.html#col2im_t"><code>col2im_t</code></a> and <a href="src/minimaxh3.html#im2col1d"><code>im2col1d</code></a>; launched from <code>avae_channel()</code> in <code>minimaxh3.c</code>, grid-stride over L<sub>out</sub> · C<sub>out</sub> (L · K<sub>pad</sub>) threads. Checked by <code>minimaxh3_demo test</code> against direct loops (col2im_t within 5 · 10<sup>−8</sup>, im2col1d exact), and the whole decoder against a float64 NumPy BigVGAN (<code>analysis_tools/audio_ref.py</code>): 0.46%.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+(() => {
+const { $, C } = Atlas;
+Atlas.chrome('col2im_t');
+const ST = [
+  { name: 'stage 1: r = 5, K = 9', r: 5, K: 9 },
+  { name: 'stages 3–7: r = 2, K = 4', r: 2, K: 4 },
+];
+const S = { st: 0, t: 17, dil: 1 };
+$('stSeg').innerHTML = ST.map((v, i) => `<button type="button" data-v="${i}" aria-pressed="${i === S.st}">${v.name}</button>`).join('');
+$('stSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.st = +b.dataset.v; $('stSeg').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); draw(); });
+const LIN = 10;
+const src = (t, { r, K }) => { const pad = (K - r) / 2, out = []; for (let k = 0; k < K; k++) { const n = t + pad - k; if (n >= 0 && n % r === 0 && n / r < LIN) out.push([n / r, k]); } return out; };
+const zv = (s, k) => +(Math.sin(1.3 * s + 0.7 * k) * 0.8).toFixed(3);
+const steps = [
+  { tag: 'Z', short: 'GEMM', title: 'before this kernel: z = x · Wᵀ, one row per input sample, C_out · K columns (gemm_f16, mode 0)', text: 'x is cast to f16 first (cast_f16, zero-padded to 32 columns when C_in = 16). z is f32 [L_in][C_out · K padded to 128].' },
+  { tag: 'I', short: 'roles', title: 'thread k → (t = k / C_out, co = k mod C_out); grid-stride over L_out · C_out', text: 'Channel-fastest again: consecutive threads read consecutive (co · K + k) columns of the same z rows.' },
+  { tag: 'B', short: 'bias', title: 'start the sum at b[co]', text: 'The bias of a transposed convolution is per output channel; adding it here costs nothing extra.' },
+  { tag: 'G', short: 'gather', title: 'for k < K: n = t + pad − k; if n ≥ 0, n mod r = 0 and s = n / r < L_in: + z[s][co · K + k]', text: 'k only grows, so once n < 0 the loop ends. For r = 5, K = 9 one or two k pass; for r = 2, K = 4 exactly two.' },
+  { tag: 'S', short: 'store', title: 'y[t][co] = the sum (f32, rows of max(C_out, 128))', text: 'y is the input of the three residual stacks (aa_snake, im2col1d, gemm_f16) of this stage.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `Z|// z = x . W^T  (gemm_f16 mode 0): z[s][co * K + k] = sum_ci x[s][ci] * w[ci][co][k]
+I|extern "C" __global__ void col2im_t(const float *z, unsigned ldz, const float *b, float *y, unsigned ldy,
+I|                                    unsigned lin, unsigned lout, unsigned cout, unsigned K, unsigned r, unsigned pad)
+I|{
+I|    for (unsigned i = blockIdx.x * blockDim.x + threadIdx.x; i < lout * cout; i += gridDim.x * blockDim.x) {
+I|        unsigned t = i / cout, co = i % cout;
+B|        float acc = __ldg(b + co);
+G|        for (unsigned k = 0; k < K && k <= t + pad; k++) {
+G|            unsigned n = t + pad - k;
+G|            if (n % r == 0 && n / r < lin) acc += z[(n / r) * ldz + co * K + k];
+G|        }
+S|        y[t * ldy + co] = acc;
+I|    }
+I|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    div.u32         %r14, %r12, %r1;        // t
+I|    rem.u32         %r15, %r12, %r1;        // co
+B|    ld.global.nc.f32 %f0, [%rd3];           // bias
+G|    add.u32         %r16, %r14, %r5;        // t + pad = s r + k
+G|    mul.lo.u32      %r17, %r15, %r3;        // co K
+G|KL:
+G|    setp.lt.u32     %p2, %r16, %r18;
+G|    @%p2 bra        STORE;                  // k only grows
+G|    sub.u32         %r19, %r16, %r18;
+G|    rem.u32         %r20, %r19, %r4;
+G|    setp.ne.u32     %p2, %r20, 0;
+G|    @%p2 bra        KN;
+G|    div.u32         %r21, %r19, %r4;        // s
+G|    setp.ge.u32     %p3, %r21, %r6;
+G|    ld.global.nc.f32 %f1, [%rd4];
+G|    add.f32         %f0, %f0, %f1;
+G|KN:
+G|    add.u32         %r18, %r18, 1;
+G|    bra.uni         KL;
+S|STORE:
+S|    mad.lo.u32      %r23, %r14, %r8, %r15;
+S|    st.global.f32   [%rd5], %f0;` },
+});
+const ORDER = steps.map(s => s.tag);
+function draw() {
+  const st = stepper.step, si = ORDER.indexOf(st.tag), P = ST[S.st], pad = (P.K - P.r) / 2, LOUT = LIN * P.r;
+  S.t = Math.min(S.t, LOUT - 1); $('tt').max = LOUT - 1; $('ttv').textContent = S.t;
+  const W = 680, H = 200, xs = s => 30 + (s + 0.5) / LIN * 620, xt = t => 30 + (t + 0.5) / LOUT * 620, mine = src(S.t, P);
+  let s = '';
+  for (let si2 = 0; si2 < LIN; si2++) for (let k = 0; k < P.K; k++) {
+    const t = si2 * P.r + k - pad; if (t < 0 || t >= LOUT) continue;
+    const on = mine.some(([a, b]) => a === si2 && b === k) && si >= 3;
+    s += `<line x1="${xs(si2)}" y1="40" x2="${xt(t)}" y2="160" stroke="${on ? C.sync : C.line}" stroke-width="${on ? 2.2 : 0.7}" opacity="${on ? 1 : 0.7}"/>`;
+  }
+  for (let i = 0; i < LIN; i++) s += `<circle cx="${xs(i)}" cy="36" r="7" fill="${C.x}" opacity="${mine.some(([a]) => a === i) && si >= 3 ? 1 : 0.45}"/><text x="${xs(i)}" y="20" font-size="9" text-anchor="middle" fill="${C.muted}">s ${i}</text>`;
+  for (let t = 0; t < LOUT; t++) s += `<rect x="${xt(t) - 4}" y="160" width="8" height="12" fill="${C.w}" opacity="${t === S.t ? 1 : 0.35}"/>`;
+  s += `<text x="${xt(S.t)}" y="188" font-size="9" text-anchor="middle" fill="${C.fg}">t ${S.t}</text>`;
+  $('dia').setAttribute('viewBox', `0 0 ${W} ${H}`); $('dia').innerHTML = s;
+  $('dsub').textContent = `${LIN} inputs → ${LOUT} outputs, pad ${pad}`;
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`;
+  $('thlabel').textContent = `thread (t = ${S.t}, co)`;
+  let c = row('z', `[${LIN}][C_out · ${P.K}] from the GEMM`);
+  if (si >= 2) c += row('start', 'b[co]');
+  if (si >= 3) c += row('t + pad', `${S.t + pad}: k ≡ ${(S.t + pad) % P.r} (mod ${P.r})`) + row('sources', mine.map(([a, b]) => `z[${a}][co·${P.K} + ${b}] (${zv(a, b)})`).join(' + ') || '–');
+  if (si >= 4) c += row('y[t][co]', `b + ${mine.map(([a, b]) => zv(a, b)).reduce((p, q) => p + q, 0).toFixed(3)}`);
+  $('card').innerHTML = c;
+  $('status').textContent = 'Drag t; the violet lines are the taps its thread adds.';
+  drawIm();
+  $('stages').innerHTML = '<thead><tr><th>stage</th><th>r, K</th><th>C<sub>in</sub> → C<sub>out</sub></th><th>L<sub>in</sub> → L<sub>out</sub></th><th>GEMM M × N × K</th><th>pad</th></tr></thead><tbody>' +
+    [[1, 5, 9, 1024, 512, 37], [2, 5, 9, 512, 256, 185], [3, 2, 4, 256, 128, 925], [4, 2, 4, 128, 64, 1850], [5, 2, 4, 64, 32, 3700], [6, 2, 4, 32, 16, 7400], [7, 2, 4, 16, 8, 14800]].map(([i, r, K, ci, co, l]) => {
+      const n = co * K, np = Math.ceil(n / 128) * 128, kp = Math.ceil(ci / 32) * 32;
+      return `<tr><td>${i}</td><td>${r}, ${K}</td><td>${ci} → ${co}</td><td>${Atlas.int(l)} → ${Atlas.int(l * r)}</td><td>${Atlas.int(l)} × ${Atlas.int(np)} × ${kp}</td><td>${np !== n || kp !== ci ? `N ${n}→${np}${kp !== ci ? `, K ${ci}→${kp}` : ''}` : '–'}</td></tr>`;
+    }).join('') + '</tbody>';
+}
+function drawIm() {
+  const d = [1, 3, 5][S.dil], K = 3, pad = (K * d - d) / 2, L = 12, W = 340, H = 150, cw = 340 / (L + 2 * 5);
+  $('dilv').textContent = d;
+  let s = '';
+  for (let t = 0; t < L; t++) s += `<rect x="${(t + 5) * cw}" y="10" width="${cw - 1}" height="14" fill="${C.x}" opacity="0.4"/>`;
+  const tsel = 5;
+  for (let k = 0; k < K; k++) {
+    const sidx = tsel - pad + k * d, inside = sidx >= 0 && sidx < L;
+    s += `<rect x="${(sidx + 5) * cw}" y="10" width="${cw - 1}" height="14" fill="${inside ? C.sync : C.zero}" opacity="0.95"/>`;
+    s += `<line x1="${(sidx + 5.5) * cw}" y1="26" x2="${120 + k * 40}" y2="100" stroke="${C.sync}" stroke-width="1.2"/>`;
+    s += `<rect x="${104 + k * 40}" y="100" width="32" height="16" fill="${inside ? C.sync : C.zero}" opacity="0.8"/><text x="${120 + k * 40}" y="112" font-size="9" text-anchor="middle" fill="${C.fg}">k ${k}</text>`;
+  }
+  s += `<text x="4" y="140" font-size="9.5" fill="${C.fg}">row ${tsel}: x[t − ${pad} + k·${d}], k = 0, 1, 2</text>`;
+  $('im').setAttribute('viewBox', `0 0 ${W} ${H}`); $('im').innerHTML = s;
+  $('imsub').textContent = `K = 3, dilation ${d}, pad ${pad}`;
+}
+$('tt').addEventListener('input', () => { S.t = +$('tt').value; draw(); });
+$('dil').addEventListener('input', () => { S.dil = +$('dil').value; drawIm(); });
+Atlas.facts($('facts'), [['L_out · C_out', 'threads, grid-stride'], ['≤ 2', 'taps gathered per output'], ['0', 'atomics'], ['7', 'col2im_t per channel'], ['128', 'im2col1d + GEMM per channel'], ['× 800', 'samples per latent frame']]);
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1300 });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

@@ -8,7 +8,7 @@ const covered = new Set(A.KERNELS.map(k => k.id));
 // a node's walkthrough is <kernel>.html unless it names another page (two engines' kernels share an .entry name)
 const pageOf = n => n.page || n.kernel;
 // the engine's PTX listing in src/, and whether a kernel is defined there
-const SRC_FILE = { gptoss: 'gptoss', gemma3: 'gemma3', gemma_emb2: 'emb2', qwen35: 'qwen35', llama31: 'llama31', mistral03: 'mistral03', glm46v: 'glm46v', sam3: 'sam3' };
+const SRC_FILE = { gptoss: 'gptoss', gemma3: 'gemma3', gemma_emb2: 'emb2', qwen35: 'qwen35', llama31: 'llama31', mistral03: 'mistral03', glm46v: 'glm46v', sam3: 'sam3', minimaxh3: 'minimaxh3' };
 const srcOf = (M, kernel) => { const f = SRC_FILE[M.id]; return f && kernel && (A.SRC_FILES[f] || []).includes(kernel) ? A.srcHref(f, kernel) : null; };
 
 // node kinds: io (data in or out), w (GGUF tensor), op (kernel launch or host step), blk (layer)

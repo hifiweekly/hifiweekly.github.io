@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiniMax-H3 Graph</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script src="atlas.js"></script>
+<script src="model.js"></script>
+<style>#newKernels td, #tensors td, #checks td, #perf td { white-space: normal; }</style>
+
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">Model graph · minimax_h3_ref2va_pruned-Q4_K.gguf + 3 more files · engine <a href="src/minimaxh3.html">minimaxh3.ptx</a></div>
+    <h1>MiniMax-H3 (text to video with sound)</h1>
+    <p>MiniMax-H3 turns a prompt into a short video with a matching stereo soundtrack, both generated together. It is four networks: a 50-layer cut of the Qwen3-VL-32B language model encodes the prompt; a 50-block diffusion transformer denoises video and audio latents in one sequence with the prompt, every block's norms and residual adds modulated per token kind (AdaLN) by vectors computed from the timestep; a 36-layer ViT decodes the video latents into frames; BigVGAN decodes the audio latents into 32 kHz samples. The engine runs them one after the other, each with the whole 12 GB GPU, with 16 kernels written for it. The quantized matrices (Q4_K, Q6_K) are expanded to f16 slice by slice (<a href="dequant_q4k.html">dequant_q4k</a>) right before one tensor-core GEMM (<a href="gemm_f16_h3.html">gemm_f16</a>), whose epilogue also applies AdaLN's gate. Click any box for details.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="h-fig">
+    <div class="sechead"><h2 id="h-fig">Architecture</h2><p class="muted">Drawn in the style of <i>Attention Is All You Need</i> (Vaswani et al., 2017). Panels: (a) the text encoder, (b) the diffusion transformer, run once per sampling step, (c) the video decoder, (d) the audio decoder. Boxes whose kernel has a page link to it.</p></div>
+    <figure class="panel paperfig"><object type="image/svg+xml" data="figures/minimaxh3.svg" width="1760" height="1008" style="aspect-ratio: 1760 / 1008" aria-label="MiniMax-H3 architecture: a 50-layer Qwen3-VL text encoder; a 50-block diffusion transformer over text, audio and video tokens with AdaLN modulation; a ViT video decoder; a BigVGAN audio decoder."><img src="figures/minimaxh3.svg" width="1760" height="1008" alt="MiniMax-H3 architecture."></object><figcaption class="muted"><a href="figures/minimaxh3.svg">Open the figure full size</a></figcaption></figure>
+  </section>
+
+  <section aria-labelledby="h-ov">
+    <div class="sechead"><h2 id="h-ov">Whole model</h2><p class="muted">The text encoder and the two decoders run once per video; the diffusion transformer once per sampling step (20 by default). Click a stack of layers to show one layer below.</p></div>
+    <div class="mgrid">
+      <div class="panel graph" id="ovGraph" aria-label="Whole-model graph"></div>
+      <div class="panel side" aria-live="polite"><div id="detail"><h3>Details</h3><p class="muted">Click a box in either graph.</p></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-ly">
+    <div class="sechead"><h2 id="h-ly">One layer</h2><p class="muted" id="lyTitle"></p></div>
+    <div class="controls">
+      <span class="seg" id="passSeg" role="group" aria-label="Pass"></span>
+      <span class="seg" id="kindSeg" role="group" aria-label="Layer kind"></span>
+      <label>Highlight kernel <select id="hotSel"></select></label>
+    </div>
+    <div class="key">
+      <span><i style="border-color:var(--sync)"></i>kernel with a walkthrough</span>
+      <span><i style="border-color:var(--muted);border-style:dashed"></i>kernel, no page yet</span>
+      <span><i style="border-color:var(--w)"></i>model tensor</span>
+      <span><i style="border-color:var(--x);border-radius:8px"></i>activations</span>
+      <span><i style="border-color:var(--line)"></i>host (CPU) step</span>
+    </div>
+    <div class="panel graph" id="lyGraph" aria-label="Layer graph"></div>
+  </section>
+
+  <section aria-labelledby="h-ln">
+    <div class="sechead"><h2 id="h-ln">Launch order</h2><p class="muted" id="launchCount"></p></div>
+    <div class="panel tablewrap"><table class="list" id="launches"></table></div>
+  </section>
+
+  <section aria-labelledby="h-new">
+    <div class="sechead"><h2 id="h-new">What is new in minimaxh3.ptx</h2><p class="muted">Everything: hashing every <code>.entry</code> with its comments stripped against the nine other files finds no shared kernel. Four names exist elsewhere with different code (<code>gemm_f16</code>, <code>layernorm</code>, <code>qk_norm_rope</code>, <code>swiglu</code>); <code>gemm_f16</code>'s main loop is SAM 3's, its epilogue new.</p></div>
+    <div class="two">
+      <div class="panel">
+        <h3>The 16 kernels</h3>
+        <div class="tablewrap"><table class="list" id="newKernels"></table></div>
+      </div>
+      <div class="panel">
+        <h3>Four networks, one GPU</h3>
+        <p>The files hold 35 GB, the GPU 12. The engine never holds two networks at once: each is loaded into one arena, run, and the arena is reset. The diffusion transformer's 50 blocks (10.8 GB of Q4_K) all fit next to their activations, so a sampling step reads no weights over PCIe; if they don't (a smaller GPU, or <code>MINIMAXH3_STREAM</code>), the extra blocks stream through two slots from pinned host memory while the previous block computes, bit-identical. The text encoder's 15.5 GB cannot fit: 36 layers are copied in and 14 pass through two slots, straight from the mapped file, one layer ahead of the compute.</p>
+        <h3>One sequence, three kinds of tokens</h3>
+        <p>The diffusion transformer attends over [prompt | audio left | audio right | video patches] at once, with a 3-D RoPE whose time axis lines the audio frames up with the video frames. Each token's modulation is picked by a one-byte segment id (timestep row × 3 + modality), read by <a href="rms_mod.html">rms_mod</a> for the norms and by the GEMM epilogue for the gates, so no kernel ever splits the sequence. The audio has its own noise schedule (shift 3 against the video's 12) inside the same sampler: the network sees the audio latents rescaled to their own sigma and returns a velocity converted back.</p>
+        <h3>Same noise as the reference</h3>
+        <p>stable-diffusion.cpp draws its noise with a Philox counter RNG and a Box–Muller step that mixes float and double C math; the engine reproduces it bit for bit (all 46,592 values for seed 42), so a seed gives the same starting point in both.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-t">
+    <div class="sechead"><h2 id="h-t">Tensors of one layer of each network, plus the shared ones</h2><p class="muted">Names as in the GGUF and safetensors files. Shapes are rows × cols, output × input. Q4_K and Q6_K stay in their blocks on the GPU and are expanded per slice; f16 matrices are used as stored; norms, biases and the small heads are f32.</p></div>
+    <div class="panel tablewrap"><table class="list" id="tensors"></table></div>
+  </section>
+
+  <section aria-labelledby="h-m">
+    <div class="sechead"><h2 id="h-m">Measured</h2><p class="muted">RTX 4070 SUPER, 256 × 256, 22 frames (0.9 s at 24 fps). The reference is stable-diffusion.cpp (CUDA backend, the same four files).</p></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Speed</h3>
+        <div class="tablewrap"><table class="list" id="perf"></table></div>
+        <p class="muted" id="perfNote"></p>
+      </div>
+      <div class="panel">
+        <h3>Checked against stable-diffusion.cpp</h3>
+        <div class="tablewrap"><table class="list" id="checks"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Sources: <code>te_encode()</code>, <code>dit_refine()</code>, <code>dit_forward()</code>, <code>sample()</code>, <code>vae_chunk()</code> and <code>avae_channel()</code> in <code>minimaxh3/minimaxh3.c</code> (kernels, buffers, launch shapes) and <a href="src/minimaxh3.html"><code>minimaxh3/minimaxh3.ptx</code></a>; tensor shapes from the four model files; the model semantics follow stable-diffusion.cpp's <code>minimax_h3.hpp</code>, <code>minimax_h3_vae.hpp</code>, <code>minimax_h3_audio_vae.hpp</code> and <code>llm.hpp</code>. Kernels without a page yet: <a href="src/minimaxh3.html#qk_norm_rope"><code>qk_norm_rope</code></a>, <a href="src/minimaxh3.html#swiglu"><code>swiglu</code></a>, <a href="src/minimaxh3.html#layernorm"><code>layernorm</code></a>, <a href="src/minimaxh3.html#linear_f32"><code>linear_f32</code></a>, <a href="src/minimaxh3.html#cast_f16"><code>cast_f16</code></a> and <a href="src/minimaxh3.html#axpby"><code>axpby</code></a>, in the <a href="src/minimaxh3.html">PTX listing</a>. ≤ 448 blocks is 8 × the 56 SMs of an RTX 4070 SUPER.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+const GS = '≤ 448 blocks · 256 · grid-stride';
+const gm = (n, m) => `grid (${Atlas.int(n / 128)}, ${Atlas.int(Math.ceil(m / 128))}) · 256`;
+const RM = rows => ({ any: `${Atlas.int(Math.ceil(rows / 8))} blocks · 256 (warp per row)` });
+const GN = 'gemm_f16: 128 × 128 tiles of f16 mma.m16n8k16, f32 accumulators, 3-stage cp.async ring (SAM 3\'s main loop); epilogue α, bias, then f32 / f16 / += / gated +=.';
+const DQ = 'dequant_q4k (Q6_K: dequant_q6k): a slice of ≤ 64 MB of f16 rows, then its gemm_f16; repeated until the matrix is done.';
+// a product on a quantized matrix: the dequant and the GEMM of each slice
+const q = (id, sub, n, m, mode, io, extra) => ({ id, kind: 'op', kernel: 'gemm_f16', page: 'gemm_f16_h3', sub: `${sub}<br/>${Atlas.int(m)} × ${Atlas.int(n)} · mode ${mode}, after dequant_q4k per slice`, launch: { any: gm(Math.min(n, 6144), m) + ' per slice' }, io, note: DQ + ' ' + GN, ...extra });
+const g16 = (id, sub, n, m, mode, io) => ({ id, kind: 'op', kernel: 'gemm_f16', page: 'gemm_f16_h3', sub: `${sub}<br/>${Atlas.int(m)} × ${Atlas.int(n)} · mode ${mode}`, launch: { any: gm(n, m) }, io, note: GN });
+const rm = (id, sub, rows, io) => ({ id, kind: 'op', kernel: 'rms_mod', sub, launch: RM(rows), io });
+const M = {
+  id: 'minimaxh3', engine: 'MiniMax-H3', nLayers: 50,
+  passes: [['run', 'one 256 × 256 video']],
+  kinds: [['dit', 'diffusion block'], ['te', 'text-encoder layer'], ['vae', 'video VAE block'], ['avae', 'audio stage']],
+  layersOf: k => ({ dit: 50, te: 50, vae: 36, avae: 7 })[k],
+  facts: [['19 + 541', 'tokens: prompt, DiT sequence'], ['50 × 5120', 'text-encoder layers'], ['50 × 5376', 'diffusion blocks, 56 heads'], ['36 × 2048', 'video VAE blocks'], ['× 800', 'BigVGAN, 7 stages'], ['35 GB', 'in 4 files (Q4_K, f16, f32)'], ['0.61 s', 'per sampling step'], ['16', 'kernels, all new']],
+  layerTitle: (p, k) => ({
+    dit: 'One of the 50 diffusion blocks, run every sampling step over the whole sequence: 19 prompt, 74 audio and 448 video tokens for 256 × 256 × 22 frames. 33 launches, 12 ms.',
+    te: 'One of the 50 text-encoder layers (Qwen3-VL-32B, pre-norm, causal, 64 query / 8 key-value heads), once per video over the prompt\'s tokens.',
+    vae: 'One of the 36 video-decoder blocks, once per chunk of 7 latent frames: 7 × 16 × 16 latent tokens + 4 registers + 1 zero token = 1,797.',
+    avae: 'One of BigVGAN\'s 7 upsampling stages, once per stereo channel: a transposed convolution, then three residual stacks (kernels 3, 7, 11) whose outputs are averaged.',
+  })[k],
+  overview() {
+    return {
+      nodes: [
+        { id: 'pr', kind: 'io', label: 'prompt', sub: 'raw text, no chat template' },
+        { id: 'tok', kind: 'op', label: 'Qwen2 tokenizer', sub: 'CPU: byte-level BPE from qwen_merges.txt' },
+        { id: 'emb', kind: 'op', label: 'embedding lookup', sub: 'CPU: BF16 rows → f32' },
+        { id: 'te', kind: 'blk', label: 'text encoder × 50', sub: 'Qwen3-VL-32B layers, causal; 36 resident, 14 streamed', layerKind: 'te' },
+        { id: 'ctx', kind: 'io', label: 'hidden states', sub: 'T × 5120, after layer 50, no final norm' },
+        { id: 'cond', kind: 'op', kernel: 'gemm_f16', page: 'gemm_f16_h3', sub: 'condition_proj 5120 → 5376 + bias,<br/>then 2 token-refiner blocks, final norm', launch: { any: gm(5376, 19) }, note: 'Once per video: the refined prompt is the front of every step\'s sequence.' },
+        { id: 'nz', kind: 'op', label: 'Philox noise', sub: 'CPU: seed → packed latent, bit-identical to the reference' },
+        { id: 'x', kind: 'io', label: 'packed latent', sub: '24 video channels × T × H × W + audio 32 × 2 × frames' },
+        { id: 'pe', kind: 'op', kernel: 'linear_f32', sub: 'patch embeddings: video 2 × 2 × 24, audio 32 → 5376', launch: { any: '⌈rows · 5376 / 8⌉ blocks · 256' } },
+        { id: 'seq', kind: 'io', label: 'sequence', sub: '[prompt 19 | audio L, R 2 × 37 | video 7 × 8 × 8] × 5376 f32' },
+        { id: 'ad', kind: 'op', kernel: 'adaln', sub: 'all 50 blocks\' shift, scale, gate per modality from 8 numbers of t', launch: { any: GS + ', twice' } },
+        { id: 'dit', kind: 'blk', label: 'diffusion block × 50', sub: 'AdaLN-modulated attention + SwiGLU', layerKind: 'dit' },
+        { id: 'fin', kind: 'op', kernel: 'rms_mod', sub: 'final norm + (shift, scale) of the video / audio rows,<br/>then video_out, audio_out (linear_f32)', launch: RM(448) },
+        { id: 'eu', kind: 'op', label: 'Euler step', sub: 'CPU: x += Δσ · v; 20 steps, σ shift 12 (audio 3)' },
+        { id: 'vl', kind: 'io', label: 'video latents', sub: '24 × 7 × 16 × 16' },
+        { id: 'al', kind: 'io', label: 'audio latents', sub: '32 × 2 × 37' },
+        { id: 'vae', kind: 'blk', label: 'video VAE × 36', sub: 'ViT decoder, 7-frame chunks, 1,797 tokens', layerKind: 'vae' },
+        { id: 'av', kind: 'blk', label: 'BigVGAN × 7 stages', sub: 'per stereo channel, × 800 samples', layerKind: 'avae' },
+        { id: 'out', kind: 'io', label: 'video + audio', sub: '22 frames 256 × 256, 29,600 samples × 2 at 32 kHz → AVI' },
+      ],
+      edges: [['pr', 'tok'], ['tok', 'emb', 'ids'], ['emb', 'te'], ['te', 'ctx'], ['ctx', 'cond'], ['cond', 'seq', 'refined prompt'], ['nz', 'x'], ['x', 'pe'], ['pe', 'seq'],
+        ['seq', 'dit'], ['ad', 'dit', 'modulation'], ['dit', 'fin'], ['fin', 'eu', 'velocity'], ['eu', 'x', 'next step'], ['eu', 'vl', 'after the last step'], ['eu', 'al'], ['vl', 'vae'], ['al', 'av'], ['vae', 'out', 'frames'], ['av', 'out', 'waveform']],
+    };
+  },
+  layer(pass, kind) {
+    if (kind === 'te') return {
+      nodes: [
+        { id: 'x', kind: 'io', label: 'h', sub: 'T × 5120 f32 residual stream' },
+        rm('n1', 'input_layernorm, ε 10⁻⁶ → f16', 19, 'h → hn'),
+        { id: 'w1', kind: 'w', label: 'q, k, v proj', t: 'model.layers.N.self_attn.q_proj.weight', sub: '8192, 1024, 1024 × 5120 · Q4_K, Q4_K, Q6_K' },
+        q('qkv', 'q | k | v, three products into one row', 10240, 19, 1, 'hn → qkv'),
+        { id: 'rp', kind: 'op', kernel: 'qk_norm_rope', page: 'qk_norm_rope_h3', sub: 'per-head RMSNorm of q, k with weights;<br/>RoPE θ 5·10⁶ on all 128 dims', launch: { any: '⌈T · 72 · 32 / 256⌉ · 256' }, io: 'qkv in place' },
+        { id: 'at', kind: 'op', kernel: 'attn_d128', sub: 'causal, 64 q heads over 8 kv heads (group 8)', launch: { any: 'grid (1, 64) · 128' }, io: 'qkv → o' },
+        q('o', 'o_proj, residual add', 5120, 19, 4, 'o → h'),
+        rm('n2', 'post_attention_layernorm → f16', 19, 'h → hn'),
+        q('gu', 'gate | up, α 1/128', 51200, 19, 1, 'hn → gu'),
+        { id: 'sw', kind: 'op', kernel: 'swiglu', page: 'swiglu_h3', sub: 'silu(gate) · up, scaled 128 in, 1/128 out', launch: { any: GS }, io: 'gu → g' },
+        q('dn', 'down (Q6_K), α 128, residual add', 5120, 19, 4, 'g → h'),
+        { id: 'y', kind: 'io', label: 'h', sub: 'to the next layer' },
+      ],
+      edges: [['x', 'n1'], ['n1', 'qkv', 'hn'], ['w1', 'qkv'], ['qkv', 'rp'], ['rp', 'at'], ['at', 'o', 'o'], ['x', 'o', 'h +='], ['o', 'n2', 'h'], ['n2', 'gu'], ['gu', 'sw'], ['sw', 'dn', 'g'], ['dn', 'y']],
+    };
+    if (kind === 'vae') return {
+      nodes: [
+        { id: 'x', kind: 'io', label: 'x', sub: '1797 × 2048 f32' },
+        rm('n1', 'norm1 → f16', 1797, 'x → xn'),
+        { id: 'w1', kind: 'w', label: 'attn.to_qkv', t: 'decoder.transformer_blocks.N.attn.to_qkv.weight', sub: '6144 × 2048 · F16, + bias' },
+        g16('qkv', 'q k v interleaved per head', 6144, 1797, 1, 'xn → qkv'),
+        { id: 'rp', kind: 'op', kernel: 'qk_norm_rope', page: 'qk_norm_rope_h3', sub: 'RMSNorm without weight; 3-D RoPE θ 100 on 48 of 64 dims', launch: { any: '⌈1797 · 64 · 32 / 256⌉ · 256' }, io: 'qkv in place' },
+        { id: 'at', kind: 'op', kernel: 'attn_d64', page: 'attn_d128', sub: '32 heads × 64, hstride 192', launch: { any: 'grid (29, 32) · 128' }, io: 'qkv → o' },
+        g16('o', 'to_out + bias, × scale1, residual add', 2048, 1797, 5, 'o → x'),
+        rm('n2', 'norm2 → f16', 1797, 'x → xn'),
+        g16('w', 'w1 + bias, α 1/128', 16384, 1797, 1, 'xn → h'),
+        { id: 'sw', kind: 'op', kernel: 'swiglu', page: 'swiglu_h3', sub: 'silu(gate) · up', launch: { any: GS }, io: 'h → g' },
+        g16('w2', 'w2 + bias, α 128, × scale2, residual add', 2048, 1797, 5, 'g → x'),
+        { id: 'y', kind: 'io', label: 'x', sub: 'after 36 blocks: LayerNorm, proj_out → pixels' },
+      ],
+      edges: [['x', 'n1'], ['n1', 'qkv'], ['w1', 'qkv'], ['qkv', 'rp'], ['rp', 'at'], ['at', 'o'], ['x', 'o', 'x +='], ['o', 'n2', 'x'], ['n2', 'w'], ['w', 'sw'], ['sw', 'w2'], ['w2', 'y']],
+    };
+    if (kind === 'avae') return {
+      nodes: [
+        { id: 'x', kind: 'io', label: 'x', sub: 'L × C f32, time-major (stage 1: 37 × 1024)' },
+        { id: 'ca', kind: 'op', kernel: 'cast_f16', sub: 'f16 copy, zero-padded to 32 columns', launch: { any: GS }, io: 'x → a' },
+        g16('up', 'transposed conv: z = x · W, columns (co, k)', 4608, 37, 0, 'a → z'),
+        { id: 'c2', kind: 'op', kernel: 'col2im_t', sub: 'gather the taps of each output + bias: L → r · L', launch: { any: GS }, io: 'z → x' },
+        { id: 'sn', kind: 'op', kernel: 'aa_snake', sub: 'upsample ×2, SnakeBeta, low-pass, per channel', launch: { any: GS }, io: 'xb → a' },
+        { id: 'ic', kind: 'op', kernel: 'im2col1d', page: 'col2im_t', sub: 'dilated conv rows: K · C columns, f16', launch: { any: GS }, io: 'a → col' },
+        g16('cv', 'conv; the second of each pair adds into xb (mode 4)', 512, 185, '0, 4', 'col → h, xb'),
+        { id: 'av', kind: 'op', kernel: 'axpby', sub: 'sum of the 3 stacks, × 1/3', launch: { any: GS }, io: 'xb → x' },
+        { id: 'y', kind: 'io', label: 'x', sub: 'r · L × C / 2 to the next stage' },
+      ],
+      edges: [['x', 'ca'], ['ca', 'up'], ['up', 'c2'], ['c2', 'sn', '3 stacks × 3 pairs'], ['sn', 'ic'], ['ic', 'cv'], ['cv', 'sn', 'next pair'], ['cv', 'av'], ['av', 'y']],
+    };
+    return {
+      nodes: [
+        { id: 'x', kind: 'io', label: 'x', sub: '541 × 5376 f32: prompt, audio, video' },
+        { id: 'mo', kind: 'io', label: 'modulation', sub: 'this block\'s [timestep row][modality][6][5376] from adaln' },
+        rm('n1', 'norm1, then v + v · scale₁ + shift₁ of the row\'s segment → f16', 541, 'x, seg → xn'),
+        { id: 'w1', kind: 'w', label: 'attn.qkv_proj', t: 'blocks.N.attn.qkv_proj.weight', sub: '21,504 × 5376 · Q4_K' },
+        q('qkv', 'q | k | v, 4 slices', 21504, 541, 1, 'xn → qkv'),
+        { id: 'rp', kind: 'op', kernel: 'qk_norm_rope', page: 'qk_norm_rope_h3', sub: 'q, k RMSNorm with weights; 3-D RoPE (t, h, w) on 96 of 128 dims', launch: { any: '7,574 blocks · 256' }, io: 'qkv, cs in place' },
+        { id: 'at', kind: 'op', kernel: 'attn_d128', sub: '56 heads × 128, all 541 tokens', launch: { any: 'grid (9, 56) · 128' }, io: 'qkv → o' },
+        q('o', 'out_proj, × gate₁[seg], residual add', 5376, 541, 5, 'o → x'),
+        rm('n2', 'norm2 + shift₂, scale₂ → f16', 541, 'x → xn'),
+        q('f1', 'fc1, α 1/128, 5 slices', 28672, 541, 1, 'xn → h'),
+        { id: 'sw', kind: 'op', kernel: 'swiglu', page: 'swiglu_h3', sub: 'silu(gate) · up, 128 in, 1/128 out', launch: { any: GS }, io: 'h → g' },
+        q('f2', 'fc2, α 128, × gate₂[seg], residual add', 5376, 541, 5, 'g → x'),
+        { id: 'y', kind: 'io', label: 'x', sub: 'to the next block' },
+      ],
+      edges: [['x', 'n1'], ['mo', 'n1', 'shift, scale'], ['n1', 'qkv', 'xn'], ['w1', 'qkv'], ['qkv', 'rp'], ['rp', 'at'], ['at', 'o', 'o'], ['mo', 'o', 'gate'], ['x', 'o', 'x +='],
+        ['o', 'n2', 'x'], ['n2', 'f1'], ['f1', 'sw'], ['sw', 'f2', 'g'], ['f2', 'y']],
+    };
+  },
+  tensors: [
+    { name: 'model.embed_tokens.weight', file: '151,936 × 5120 · BF16', engine: 'stays on the host: the prompt\'s rows → f32', by: 'embedding lookup on the CPU' },
+    { name: 'model.layers.N.self_attn.q_proj / k_proj / v_proj', file: '8192, 1024, 1024 × 5120 · Q4_K, Q4_K, Q6_K', engine: 'blocks as stored (36 layers resident, 14 streamed)', by: 'dequant_q4k / q6k + gemm_f16' },
+    { name: 'model.layers.N.self_attn.q_norm / k_norm', file: '128 · BF16', engine: 'f32', by: 'qk_norm_rope' },
+    { name: 'model.layers.N.mlp.gate / up / down_proj', file: '25,600 × 5120 (×2), 5120 × 25,600 · Q4_K, Q4_K, Q6_K', engine: 'as stored', by: 'dequant + gemm_f16' },
+    { name: 'condition_proj', file: '5376 × 5120 · Q4_K, bias BF16', engine: 'as stored; bias f32', by: 'gemm_f16 (mode 0)' },
+    { name: 'token_refiner.blocks.N.* (2 blocks)', file: 'as a diffusion block, no adaln_proj', engine: 'as stored', by: 'rms_mod, gemm_f16, attn_d128' },
+    { name: 'adaln_t_table', file: '1025 × 8 · F32', engine: 'host: interpolated per timestep', by: 'adaln (its 8 inputs)' },
+    { name: 'blocks.N.adaln_proj.linear', file: '96,768 × 8 · F16, bias F16', engine: 'f16, all 50 blocks stacked (77 MB)', by: 'adaln' },
+    { name: 'blocks.N.attn.qkv_proj / out_proj', file: '21,504 × 5376, 5376 × 7168 · Q4_K', engine: 'as stored, resident', by: 'dequant_q4k + gemm_f16' },
+    { name: 'blocks.N.mlp.fc1 / fc2', file: '28,672 × 5376, 5376 × 14,336 · Q4_K', engine: 'as stored, resident', by: 'dequant_q4k + gemm_f16' },
+    { name: 'blocks.N.norm1 / norm2, attn.q_norm / k_norm', file: '5376, 128 · BF16', engine: 'f32', by: 'rms_mod, qk_norm_rope' },
+    { name: 'video_patch_proj, audio_patch_proj, final_layer.*', file: '5376 × 96, 5376 × 32; 96 × 5376, 32 × 5376 · F32', engine: 'f32', by: 'linear_f32' },
+    { name: 'rope.inv_freq', file: '16 · F32', engine: 'host: RoPE angles per token', by: 'qk_norm_rope (the cs table)' },
+    { name: 'decoder.transformer_blocks.N.attn.to_qkv / to_out', file: '6144 × 2048, 2048 × 2048 · F16 (+ bias)', engine: 'f16 as stored; biases f32', by: 'gemm_f16' },
+    { name: 'decoder.transformer_blocks.N.ff.w1 / w2, scale1 / scale2', file: '16,384 × 2048, 2048 × 8192 · F16; 2048', engine: 'f16; w1 bias ÷ 128; scales f32 (gates)', by: 'gemm_f16 (modes 1, 5)' },
+    { name: 'decoder.register_tokens, x_embedder, proj_out, post_quant_conv', file: '4 × 2048; 2048 × 24; 3072 × 2048; 24 × 24 · F16', engine: 'f32 (proj_out f16)', by: 'linear_f32, gemm_f16, host' },
+    { name: 'decoder.ups.N.0 (BigVGAN)', file: '[C_in][C_out][9 or 4] · F32', engine: 'f16 [C_out · K][C_in], zero-padded to tiles', by: 'gemm_f16 + col2im_t' },
+    { name: 'decoder.resblocks.N.convs1 / convs2', file: '[C][C][3, 7, 11] · F32', engine: 'f16 [C][C · K] padded', by: 'im2col1d + gemm_f16' },
+    { name: 'decoder.resblocks.N.activations.N', file: 'alpha, beta: C; filters: 12 · F32', engine: 'f32; up filter × 2', by: 'aa_snake' },
+  ],
+};
+Atlas.model(M);
+
+(() => {
+  const $ = Atlas.$, row = r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`, pg = (k, t) => `<a href="${k}.html">${t || k}</a>`;
+  $('newKernels').innerHTML = '<thead><tr><th>kernel</th><th>does</th></tr></thead><tbody>' + [
+    [pg('gemm_f16_h3', 'gemm_f16'), 'every matrix product and convolution: f16 mma, α, bias, f32 / f16 / += / gated +='],
+    [pg('dequant_q4k') + ', dequant_q6k', 'Q4_K / Q6_K blocks → f16 slices before each product'],
+    [pg('rms_mod'), 'RMSNorm + AdaLN shift / scale by segment; the other networks\' plain norms'],
+    [pg('adaln'), 'all 50 blocks\' modulation vectors from 8 numbers of t'],
+    [pg('attn_d128') + ', attn_d64', 'flash attention read from the fused projections, causal or not, grouped'],
+    [pg('aa_snake'), 'BigVGAN\'s anti-aliased SnakeBeta in one pass'],
+    [pg('col2im_t') + ', im2col1d', 'convolutions as products: transposed (gather) and dilated'],
+    ['qk_norm_rope', 'per-head RMSNorm + partial rotate-half RoPE from an angle table'],
+    ['swiglu', 'silu(gate) · up with the 1/128 f16 range scaling'],
+    ['linear_f32, cast_f16, axpby, layernorm', 'small f32 heads, casts, the stack average, the VAE\'s final LayerNorm'],
+  ].map(row).join('') + '</tbody>';
+  $('perf').innerHTML = '<thead><tr><th></th><th>minimaxh3_demo</th><th>stable-diffusion.cpp</th></tr></thead><tbody>' +
+    [['text encoder', '9.4 s (file cached), 45–95 s from disk', '104 s (streamed from disk)'], ['sampling step (541 tokens)', '0.61 s', '18 s (4 steps: 72 s, weights in host RAM)'],
+     ['video VAE, 22 frames', '0.3 s', '26 s'], ['audio VAE', '30 ms', '2.9 s'], ['whole video', '140 s, 20 steps, weights read from disk', '205 s, 4 steps']].map(row).join('') + '</tbody>';
+  $('perfNote').innerHTML = 'stable-diffusion.cpp figures are its own log of the 4-step reference run (<code>--offload-to-cpu</code>, the only configuration that fits this machine). In the engine\'s diffusion step <a href="gemm_f16_h3.html">gemm_f16</a> takes 74% of the GPU time, <a href="dequant_q4k.html">dequant_q4k</a> 23%, <a href="attn_d128.html">attention</a> 1% (nsys).';
+  $('checks').innerHTML = '<thead><tr><th>check</th><th>result (rms relative)</th></tr></thead><tbody>' + [
+    ['tokens, noise', 'the same 19 ids; noise bit-identical'],
+    ['text encoder', '0.52% (sd.cpp CUDA vs its CPU backend: 1.1%)'],
+    ['diffusion, each of 4 steps from the reference\'s input', '2.3–5.8%; sd.cpp CUDA vs CPU differ 3.7% on step 1'],
+    ['4-step sampler, free running', '13%: sd.cpp\'s 8-bit activations alone move this engine\'s own result 13.2%'],
+    ['video VAE', '0.16%; 0.37% of 8-bit pixels differ by more than 1'],
+    ['audio VAE vs float64 NumPy', '0.46% (sd.cpp: 2.3%)'],
+    ['kernels', '26 self-tests vs CPU references'],
+  ].map(row).join('') + '</tbody>';
+})();
+</script>

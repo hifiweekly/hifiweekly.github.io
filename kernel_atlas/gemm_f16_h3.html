@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>gemm_f16 (MiniMax-H3) Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+#tl { width: 100%; aspect-ratio: 1200 / 70; display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">MiniMax-H3 · <a href="src/minimaxh3.html#gemm_f16">minimaxh3.ptx</a> · SAM 3's tensor-core GEMM with an AdaLN epilogue: a gate per row's segment</div>
+    <h1>Inside <code>gemm_f16</code> (MiniMax-H3)</h1>
+    <p>Every matrix product of the four MiniMax-H3 networks runs in this kernel: 128 × 128 tiles of f16 mma.m16n8k16 with f32 accumulators, operands staged through a 3-stage cp.async ring with an XOR swizzle. That main loop is byte-for-byte <a href="gemm_f16.html">SAM 3's gemm_f16</a>, walked through on its own page. What is new is the epilogue: the accumulator is scaled by <code>alpha</code>, and a fifth mode adds the product into the residual stream multiplied by a gate that depends on the row's segment. That one multiply is AdaLN's gated residual: <span class="mono">x += gate[seg] ⊙ (h · Wᵀ)</span>, for text, audio and video tokens in one launch. In the diffusion transformer the weights arrive as f16 slices that <a href="dequant_q4k.html">dequant_q4k</a> has just expanded, so a block of the transformer is a chain of (dequant, GEMM) pairs.</p>
+    <div class="formula"><span class="y">v</span> = <span class="x">acc</span> · α + <span class="w">bias</span>[col]; &nbsp; mode 0: C = v (f32) · 1: C = f16(v) · 4: C += v · 5: C += v · <span class="w">gate</span>[seg[row] · gld + col] &nbsp;&nbsp;<span class="muted">// two adjacent columns per call of store_pair; rows ≥ M dropped</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-tl">
+    <div class="sechead">
+      <h2 id="s-tl">One diffusion block, launch by launch</h2>
+      <p>Measured with nsys (RTX 4070 SUPER, the second sampling step, block 0): 33 launches, 12.07 ms. Bar widths are durations. The q, k, v projection is 4 slices of (dequant, GEMM), out_proj 2, fc1 5, fc2 3; between them sit the norms, the RoPE and the attention. Click a GEMM to follow it below.</p>
+    </div>
+    <div class="panel">
+      <canvas id="tl"></canvas>
+      <div class="legend" id="tllegend"></div>
+      <div class="status" id="tlstatus"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">The epilogue, one pair of outputs</h2>
+      <p>The grid is the output of the selected GEMM: 5 row tiles of 128 tokens by the slice's column tiles. The 541 tokens fill 4 tiles and 29 rows of the fifth. The colored stripes are each tile's rows by segment. Pick a token (row) and a column; the gates are block 0's own gate₁ and gate₂ vectors at the first step (64 channels, repeated across the 5376).</p>
+    </div>
+    <div class="controls">
+      <label>row (token) <input id="rr" type="range" min="0" max="540" value="40"> <span id="rrv" class="mono"></span></label>
+      <label>column <input id="cc" type="range" min="0" max="5374" step="2" value="96"> <span id="ccv" class="mono"></span></label>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x" id="tlabel"></b><span id="tsub"></span></div>
+        <canvas id="tiles"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="card"></dl>
+        <div class="cvlabel"><b class="w">modes and alpha in MiniMax-H3</b></div>
+        <div class="tablewrap"><table class="list" id="modes"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>The gate where the sum is formed</h3>
+        <p>AdaLN multiplies each sub-layer's output by a per-channel gate before the residual add, and the gate differs by token kind. Done separately, the product would be written, read back, gated and added: two more passes over a 541 × 5376 f32 matrix per sub-layer. In the epilogue the gate costs one byte load per row (seg) and one 8-byte load per pair of columns (two gates), and the residual add reads and writes the stream once, as mode 4 already did. Every product that adds into the stream, out_proj and fc2 of the 50 blocks (100 per step), is gated.</p>
+        <h3>alpha keeps f16 in range</h3>
+        <p>The feed-forward's hidden activations exceed f16's 65,504 in the deeper blocks. The reference scales fc1's input by 1/128 and its output back; here fc1 runs with α = 1/128 and an f16 output (mode 1), <code>swiglu</code> undoes the scale on input and re-applies it on output, and fc2 runs with α = 128 into the stream (mode 5). The video VAE does the same, with its fc1 bias pre-scaled on the host, since the bias is added after α.</p>
+      </div>
+      <div class="panel">
+        <h3>541 rows, 640 computed</h3>
+        <p>A block tile covers 128 rows, so 541 tokens take 5 row tiles and the fifth holds 29: 15% of the MMA work is on rows the epilogue drops. The column tiles are full (every N here is a multiple of 128). The q, k, v slice of 6,144 columns is 48 × 5 = 240 tiles on 56 SMs: 760 µs for 35.7 GFLOP, 47 TFLOPS counting only the real rows, 55 over the computed tiles.</p>
+        <h3>Dequant, then GEMM, slice by slice</h3>
+        <p>A slice's f16 weights (≤ 64 MB) are written by <a href="dequant_q4k.html">dequant_q4k</a> and read by the next launch on the same stream, mostly from L2 for the first tiles. The pair takes about 1 ms per 6,144 columns of a 5376-wide matrix: 24% expanding, 76% multiplying. Fusing the decode into the B-tile loader would save the f16 round trip but decode each weight 5 times (once per row tile), and slow the inner loop the tensor cores are waiting on.</p>
+        <h3>The other networks</h3>
+        <p>The text encoder (19 tokens: one row tile, mostly empty) uses modes 1 and 4; the video VAE (1,797 tokens) runs f16 weights straight from the file with biases, modes 1, 0 and 5 (its per-channel layer scales are mode 5 with no segments: one gate row for all tokens); the audio VAE's convolutions are GEMMs on im2col matrices, with zero-padded rows and columns where its channel counts drop below 128 (<a href="col2im_t.html">col2im_t</a>).</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <a href="src/minimaxh3.html"><code>minimaxh3/minimaxh3.ptx</code></a>, kernel <a href="src/minimaxh3.html#gemm_f16"><code>gemm_f16</code></a> and its epilogue <a href="src/minimaxh3.html#store_pair"><code>store_pair</code></a>; launched by <code>gemm_f16()</code> from <code>matmul()</code> in <code>minimaxh3.c</code>, grid (N / 128, ⌈M / 128⌉) of 256 threads. Checked by <code>minimaxh3_demo test</code> in every mode against a double-precision product (f32 modes within 1.3 · 10<sup>−6</sup> relative, f16 within one rounding). Timings: nsys, block 0 of the second step. Gates: block 0's <code>adaln_proj</code> at t = 0; accumulator and stream values are generated.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('gemm_f16_h3');
+// block 0's gate₁ and gate₂ at t = 0, first 64 channels: [video, text, audio][gate1, gate2][64]
+const GATE = [[[0.0298,0.0033,0.2354,-0.0132,-0.006,0.0439,0.1394,-0.0735,-0.0395,-0.0024,0.0292,-0.0228,-0.0092,-0.0827,-0.001,-0.0244,-0.0193,0.0037,-0.0048,0.0258,-0.0116,-0.0019,0.0659,-0.0033,1.0037,0.0142,-0.0241,1.365,-0.0162,-0.1953,0.123,0.1617,0.0056,-0.0409,-0.0424,-0.3395,-0.0863,-0.0325,0.0713,0.0059,-0.002,0.0382,-0.0571,0.0006,0.0716,-0.0493,-0.046,-0.2815,-0.0766,-0.0338,0.0179,0.174,-0.0008,-0.059,0.026,-0.0045,0.1215,-0.1617,0.0153,-0.0516,0.0686,0.3269,-0.0529,0.2332],[-0.0458,0.0118,-1.089,0.0506,-0.0201,0.4915,-0.0154,-0.0331,0.893,0.0368,-0.0557,0.0007,0.0393,0.0069,0.0009,-0.0577,-0.0323,-0.077,0.0041,0.0114,-0.0148,0.0367,0.0011,-0.0023,-0.6268,0.095,0.0131,-0.0834,-0.0023,-0.0432,0.0305,-0.0078,-0.0285,0.0766,-0.0326,-0.3459,-0.0193,-0.0467,-0.0572,0.0102,-0.034,-0.0382,-0.0888,0.0075,-0.0076,-0.117,-0.0291,0.064,0.0371,0.0708,-0.0064,-0.0194,-0.0894,-0.0292,0.0251,-0.0092,-0.0359,-0.0208,-0.0201,0.0058,-0.0196,0.0898,0.0157,0.0312]],[[0.0439,0.1764,-0.117,-0.0691,0.0009,0.0163,0.012,-0.0623,0.0748,0.3019,0.0509,0.0619,0.0241,0.0239,-0.0274,-0.0304,0.0505,0.0751,0.0517,0.0797,0.0325,0.07,0.0513,0.0494,-0.0488,0.0181,0.0354,-0.019,-0.0069,0.0378,0.001,0.0001,-0.0673,0.0611,-0.078,-0.0403,0.0485,-0.016,-0.0022,-0.1044,-0.0061,0.093,0.0586,0.0616,0.1275,-0.064,-0.0127,0.0823,0.0111,0.0366,0.0113,-0.0384,0.0846,-0.0061,-0.0656,0.037,0.0186,0.0524,0.0461,-0.1213,-0.0587,0.0131,0.0306,-0.0496],[0.1882,0.4008,-0.3814,-0.3522,0.2157,0.2249,-0.3632,-0.0219,-0.4932,0.1559,0.2055,0.1806,-0.2764,0.2134,-0.1391,-0.2335,0.3016,0.1283,0.3992,-0.3715,-0.1279,-0.3507,-0.3114,0.2616,-0.4911,-0.2464,-0.2879,-0.4147,0.231,0.2606,0.213,-0.2014,-0.1267,-0.2281,0.22,0.3421,0.1736,0.2209,0.2621,-0.2428,0.2088,-0.3031,0.1216,-0.3812,-0.2993,0.1886,0.1497,0.301,-0.2055,-0.2353,-0.1762,-0.2673,-0.2516,0.196,-0.129,0.2839,-0.3787,-0.3672,0.1734,0.2004,0.1953,0.2092,0.203,0.1642]],[[0.0488,0.0255,0.0141,-0.0092,0.0062,0.0164,0.0588,0.0092,-0.0339,0.0541,-0.2119,0.0161,-0.0006,-0.0186,0.0179,-0.342,-0.0157,-0.0665,0.0209,0.0462,0.0702,0.0388,0.0226,0.0249,-0.0637,-0.0128,-0.0166,0.0352,-0.0074,0.0307,-0.0265,0.0175,0.0868,0.0423,0.0005,0.0411,0.0043,-0.0286,0.0397,-0.0691,0.0857,0.0647,-0.137,-0.0006,-0.0118,0.0163,-0.0317,-0.5101,-0.0744,0.066,-0.0326,0.0103,-0.055,0.1085,0.3212,-0.0719,0.0393,-0.0616,0.053,0.0019,-0.0332,-0.0838,-0.0557,-0.0118],[0.0703,-0.0144,-0.0605,0.0095,-0.0045,0.0047,0.06,0.094,-0.0001,0.0471,0.0147,-0.0467,-0.0138,-0.0514,-0.0036,-0.0434,0.0039,0.0213,0.0452,-0.0387,0.0194,-0.0005,-0.0421,0.0361,-0.0151,0.0187,0.0388,0.0186,0.0174,0.0069,-0.0739,0.0107,-0.0201,0.014,0.0065,0.0572,-0.0014,-0.0284,-0.0386,-0.0035,0.0502,0.0217,0.1697,-0.0161,0.1011,0.0457,-0.0302,-0.0152,0.048,-0.0584,-0.0318,-0.0365,0.0545,0.0158,-0.0528,-0.0366,-0.0366,0.0448,0.0362,0.0328,0.0436,0.0598,0.0153,0.1041]]];
+// block 0, step 2: [kernel, µs, what, N (columns of the GEMM), K]
+const TL = [['rms_mod', 24.1, 'norm1 + shift/scale₁'],
+  ['dequant_q4k', 237.1, 'qkv rows 0–6143'], ['gemm_f16', 760.2, 'qkv slice 1', 6144, 5376], ['dequant_q4k', 238.7, 'qkv rows 6144–12287'], ['gemm_f16', 761.5, 'qkv slice 2', 6144, 5376],
+  ['dequant_q4k', 240.3, 'qkv rows 12288–18431'], ['gemm_f16', 764.5, 'qkv slice 3', 6144, 5376], ['dequant_q4k', 122.8, 'qkv rows 18432–21503'], ['gemm_f16', 394.4, 'qkv slice 4', 3072, 5376],
+  ['qk_norm_rope', 50.8, 'q, k head norms, 3-D RoPE'], ['attn_d128', 131.0, '56 heads, 541 tokens'],
+  ['dequant_q4k', 240.5, 'out_proj rows 0–4607'], ['gemm_f16', 760.4, 'out_proj slice 1, gated', 4608, 7168], ['dequant_q4k', 44.4, 'out_proj rows 4608–5375'], ['gemm_f16', 206.5, 'out_proj slice 2, gated', 768, 7168],
+  ['rms_mod', 30.2, 'norm2 + shift/scale₂'],
+  ['dequant_q4k', 239.9, 'fc1 rows 0–6143'], ['gemm_f16', 767.3, 'fc1 slice 1, α = 1/128', 6144, 5376], ['dequant_q4k', 239.4, 'fc1 rows 6144–12287'], ['gemm_f16', 765.4, 'fc1 slice 2', 6144, 5376],
+  ['dequant_q4k', 238.0, 'fc1 rows 12288–18431'], ['gemm_f16', 768.8, 'fc1 slice 3', 6144, 5376], ['dequant_q4k', 239.3, 'fc1 rows 18432–24575'], ['gemm_f16', 767.8, 'fc1 slice 4', 6144, 5376],
+  ['dequant_q4k', 160.5, 'fc1 rows 24576–28671'], ['gemm_f16', 403.6, 'fc1 slice 5', 4096, 5376], ['swiglu', 86.2, 'silu(gate) · up, × 128 / 128'],
+  ['dequant_q4k', 245.4, 'fc2 rows 0–2303'], ['gemm_f16', 712.0, 'fc2 slice 1, α = 128, gated', 2304, 14336], ['dequant_q4k', 238.8, 'fc2 rows 2304–4607'], ['gemm_f16', 711.8, 'fc2 slice 2, gated', 2304, 14336],
+  ['dequant_q4k', 82.5, 'fc2 rows 4608–5375'], ['gemm_f16', 396.6, 'fc2 slice 3, gated', 768, 14336]];
+const TOT = TL.reduce((a, b) => a + b[1], 0);
+const S = { sel: 12, row: 40, col: 96 };
+const TEXT = 19, AUD = 74, M = 541;
+const modality = r => r < TEXT ? 1 : r < TEXT + AUD ? 2 : 0;
+const MODN = ['video', 'text', 'audio'];
+const gated = () => /gated/.test(TL[S.sel][2]) || /fc2|out_proj/.test(TL[S.sel][2]);
+const isFc2 = () => /fc2/.test(TL[S.sel][2]), isFc1 = () => /fc1/.test(TL[S.sel][2]);
+const alpha = () => isFc1() ? 1 / 128 : isFc2() ? 128 : 1;
+const accV = (r, c) => { const v = Atlas.gauss(Atlas.rng(Atlas.h32(r * 131 + c * 7 + S.sel))); return fr(isFc2() ? v * 0.01 : isFc1() ? v * 160 : v * 1.3); };
+const xV = (r, c) => fr(Atlas.gauss(Atlas.rng(Atlas.h32(r * 17 + c * 3 + 1))) * (modality(r) === 1 ? 40 : 1.8));
+const gateV = (r, c) => GATE[modality(r)][isFc2() ? 1 : 0][c % 64];
+const steps = [
+  { tag: 'A', short: 'main loop', title: 'the 128 × 128 tile\'s accumulators: K / 32 k-tiles of mma.m16n8k16 (see SAM 3\'s page)', text: 'Each warp holds a 64 × 32 piece as 4 × 4 mma tiles, 4 f32 accumulators per lane per 16 × 8 tile, 64 in all. The epilogue walks them two adjacent columns at a time: 32 calls of store_pair per lane.' },
+  { tag: 'R', short: 'row check', title: 'rows ≥ M are dropped: the fifth row tile keeps 29 of its 128 rows', text: 'store_pair returns at once for those rows, after the MMA work was done on their zero-padded A rows.' },
+  { tag: 'V', short: 'α, bias', title: 'v = acc · α + bias[col], for both columns', text: 'α is 1 except fc1 (1/128) and fc2 (128); bias is 0 in the diffusion transformer (its products have none) and in the text encoder, present in the VAE and the condition projection.' },
+  { tag: 'G', short: 'gate', title: 'mode 5: s = seg[row]; (g₀, g₁) = gate[s · gld + col …]; v ·= g', text: 'One u8 load per row, one 8-byte load per column pair through the read-only cache. gld = 6 · 5376: the gate is the third (attention) or sixth (MLP) vector of the row\'s modulation, in the array adaln wrote.' },
+  { tag: 'S', short: 'add, store', title: 'modes 4 and 5: load C[row][col, col + 1], add, store: the residual stream updated in place', text: 'Each output pair belongs to exactly one thread, so the read-modify-write needs no atomics. Modes 0 and 1 store v directly (f32, or f16 for the next GEMM\'s A operand).' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `A|// the main loop: see gemm_f16 (SAM 3), unchanged; then for each accumulator pair:
+A|__device__ void store_pair(void *c, unsigned ldc, unsigned row, unsigned col, float v0, float v1,
+A|                           const float *bias, unsigned m, unsigned mode,
+A|                           const float *gate, const uint8_t *seg, unsigned gld, float alpha)
+A|{
+R|    if (row >= m) return;
+V|    v0 *= alpha;  v1 *= alpha;
+V|    if (bias) { float2 b = __ldg((const float2 *)(bias + col)); v0 += b.x; v1 += b.y; }
+V|    size_t e = (size_t)row * ldc + col;
+V|    if (mode == 1) { *(__half2 *)((__half *)c + e) = __floats2half2_rn(v0, v1); return; }
+V|    if (mode == 0) { *(float2 *)((float *)c + e) = make_float2(v0, v1); return; }
+G|    if (mode == 5) {
+G|        unsigned s = seg ? seg[row] : 0;
+G|        float2 g = __ldg((const float2 *)(gate + (size_t)s * gld + col));
+G|        v0 *= g.x;  v1 *= g.y;
+G|    }
+S|    float2 *p = (float2 *)((float *)c + e), o = *p;          // modes 4, 5: residual add
+S|    *p = make_float2(o.x + v0, o.y + v1);
+A|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `A|    call.uni store_pair, (%rd8, %r44, %r30, %r31, %acc0, %acc1, %rd7, %r43, %r45, %rd9, %rd10, %r48, %fal);
+A|    ...                                     // 31 more pairs
+R|    setp.ge.u32     %sp0, row, m;
+R|    @%sp0 bra       SP_DONE;
+V|    mul.f32         v0, v0, alpha;
+V|    mul.f32         v1, v1, alpha;
+V|    ld.global.nc.v2.f32 {%sf0, %sf1}, [%sd0];   // bias
+V|    add.f32         v0, v0, %sf0;
+V|    mad.lo.u32      %sr0, row, ldc, col;    // element index
+V|    setp.eq.u32     %sp1, mode, 1;
+V|    @%sp1 bra       SP_F16;
+G|    mov.u32         %sr2, 0;                // mode 5: gate of the row's segment
+G|    ld.global.nc.u8 %sh, [%sd2];            // seg[row]
+G|    cvt.u32.u16     %sr2, %sh;
+G|SP_GATE:
+G|    mad.lo.u32      %sr2, %sr2, gld, col;
+G|    ld.global.nc.v2.f32 {%sf0, %sf1}, [%sd2];
+G|    mul.f32         v0, v0, %sf0;
+G|    mul.f32         v1, v1, %sf1;
+S|SP_ADD:
+S|    ld.global.v2.f32 {%sf2, %sf3}, [%sd1];  // modes 4, 5: residual add
+S|    add.f32         v0, v0, %sf2;
+S|    add.f32         v1, v1, %sf3;
+S|    st.global.v2.f32 [%sd1], {v0, v1};` },
+});
+const ORDER = steps.map(s => s.tag);
+const kcol = n => n === 'gemm_f16' ? C.x : n === 'dequant_q4k' ? C.y : n === 'attn_d128' ? C.sync : C.w;
+function drawTL() {
+  const cv = $('tl'), w = cv.clientWidth, h = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = C.bg; ctx.fillRect(0, 0, w, h);
+  let x = 0;
+  TL.forEach((t, i) => {
+    const ww = t[1] / TOT * w;
+    ctx.globalAlpha = i === S.sel ? 1 : 0.6; ctx.fillStyle = kcol(t[0]); ctx.fillRect(x + 0.5, 8, Math.max(1, ww - 1), h - 16);
+    if (i === S.sel) { ctx.globalAlpha = 1; ctx.strokeStyle = C.fg; ctx.lineWidth = 2; ctx.strokeRect(x, 5, ww, h - 10); }
+    x += ww;
+  });
+  ctx.globalAlpha = 1;
+  Atlas.legend($('tllegend'), [['--x', 'gemm_f16'], ['--y', 'dequant_q4k'], ['--sync', 'attn_d128'], ['--w', 'rms_mod, qk_norm_rope, swiglu']]);
+  const t = TL[S.sel];
+  $('tlstatus').textContent = `${S.sel + 1}/33: ${t[0]}, ${t[2]}: ${t[1]} µs` + (t[3] ? `, ${Atlas.int(M)} × ${Atlas.int(t[3])} × ${Atlas.int(t[4])} = ${(2 * M * t[3] * t[4] / 1e9).toFixed(1)} GFLOP, ${(2 * M * t[3] * t[4] / t[1] / 1e6).toFixed(1)} TFLOPS` : '');
+}
+const tg = Atlas.grid($('tiles'), 5, 48);
+function draw() {
+  const st = stepper.step, si = ORDER.indexOf(st.tag), t = TL[S.sel], N = t[3] || 6144, nt = N / 128;
+  drawTL();
+  S.col = Math.min(S.col, N - 2);
+  $('rrv').textContent = `${S.row} (${MODN[modality(S.row)]})`; $('ccv').textContent = S.col; $('cc').max = N - 2;
+  tg.resize(5 * 4, nt);
+  const g = tg.prep();
+  for (let rt = 0; rt < 5; rt++) for (let q = 0; q < 4; q++) for (let c = 0; c < nt; c++) {
+    const r0 = rt * 128 + q * 32, live = r0 < M, mod = modality(Math.min(M - 1, r0 + 16));
+    g.cell(rt * 4 + q, c, live ? [C.x, C.w, C.y][mod] : C.zero, live ? 0.35 : 0.2, 0.06);
+    if (!live) g.hatch(rt * 4 + q, c);
+  }
+  for (let k = 1; k < 5; k++) g.hline(k * 4, C.fg, 1.5);
+  const rt = Math.floor(S.row / 128), ct = Math.floor(S.col / 128);
+  g.box(rt * 4, ct, 4, 1, C.fg, 2);
+  g.ctx.fillStyle = C.fg; g.ctx.fillRect(ct * g.cw, (S.row / 128 * 4) * g.ch - 1, g.cw, 2);
+  $('tlabel').textContent = `C of ${t[2]}: 5 row tiles × ${nt} column tiles`;
+  $('tsub').textContent = `tile (${rt}, ${ct}) holds the selected pair`;
+  Atlas.legend($('legend'), [['--w', 'text rows'], ['--y', 'audio rows'], ['--x', 'video rows'], ['--zero', 'past row 540: dropped']]);
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`, r = S.row, c = S.col, a0 = accV(r, c), a1 = accV(r, c + 1), al = alpha();
+  $('thlabel').textContent = `output (${r}, ${c} … ${c + 1}) of ${t[2]}`;
+  let k = row('acc', `${a0.toFixed(4)}, ${a1.toFixed(4)}`);
+  if (si >= 1) k += row('row < 541', 'yes, stored');
+  const v0 = fr(a0 * al), v1 = fr(a1 * al);
+  if (si >= 2) k += row(`v = acc · ${al === 1 ? '1' : al < 1 ? '1/128' : '128'}`, `${v0.toFixed(4)}, ${v1.toFixed(4)} (no bias)`);
+  const mode = /qkv|fc1/.test(t[2]) ? 1 : 5;
+  if (si >= 3) {
+    if (mode === 5) {
+      const g0 = gateV(r, c), g1 = gateV(r, c + 1);
+      k += row('seg[row]', `${modality(r)} (${MODN[modality(r)]}, timestep row 0)`);
+      k += row(`gate${isFc2() ? '₂' : '₁'}[${c}, ${c + 1}]`, `${g0.toFixed(4)}, ${g1.toFixed(4)}`);
+      k += row('v · gate', `${fr(v0 * g0).toFixed(5)}, ${fr(v1 * g1).toFixed(5)}`);
+    } else k += row('mode 1', `f16(v) = ${Atlas.f16(v0).toFixed(4)}, ${Atlas.f16(v1).toFixed(4)}: the A operand of the next step (no gate)`);
+  }
+  if (si >= 4 && mode === 5) { const x0 = xV(r, c); k += row('x[row][col]', `${x0.toFixed(4)} → ${fr(x0 + fr(v0 * gateV(r, c))).toFixed(4)}`); }
+  $('card').innerHTML = k;
+  $('status').textContent = 'Click a tile to move the pair into it.';
+  $('modes').innerHTML = '<thead><tr><th>products</th><th>mode</th><th>α</th></tr></thead><tbody>' + [
+    ['DiT q k v; fc1', '1 f16', '1; 1/128'], ['DiT out_proj; fc2', '5 gated', '1; 128'], ['TE, refiner: o; down, fc2', '4 +=', '1; 128'],
+    ['condition_proj (+ bias)', '0 f32', '1'], ['VAE qkv; w1 (+ bias)', '1 f16', '1; 1/128'], ['VAE to_out; w2 (+ bias)', '5, 1 gate row', '1; 128'],
+    ['VAE proj_out; audio convs', '0; 0, 4', '1'],
+  ].map(x => `<tr>${x.map(y => `<td>${y}</td>`).join('')}</tr>`).join('') + '</tbody>';
+}
+$('tl').classList.add('pick');
+$('tl').addEventListener('click', e => {
+  const b = $('tl').getBoundingClientRect(), x = (e.clientX - b.left) / b.width * TOT; let acc = 0;
+  for (let i = 0; i < TL.length; i++) { acc += TL[i][1]; if (x <= acc) { if (TL[i][0] === 'gemm_f16') S.sel = i; else $('tlstatus').textContent = `${TL[i][0]}: ${TL[i][2]}, ${TL[i][1]} µs`; break; } }
+  draw();
+});
+tg.hook(p => { $('status').textContent = `rows ${Math.floor(p.r / 4) * 128 + (p.r % 4) * 32} … +31, columns ${p.c * 128} … +127`; }, p => { S.row = Math.min(540, Math.floor(p.r / 4) * 128 + (p.r % 4) * 32 + 5); S.col = p.c * 128 + 2 * (S.col % 64 >> 1); $('rr').value = S.row; $('cc').value = S.col; draw(); }, () => {});
+$('rr').addEventListener('input', () => { S.row = +$('rr').value; draw(); });
+$('cc').addEventListener('input', () => { S.col = +$('cc').value; draw(); });
+Atlas.facts($('facts'), [['grid (N/128, ⌈M/128⌉)', 'blocks of 256'], ['128 × 128', 'tile, f32 accumulators'], ['4', 'epilogue modes: 0, 1, 4, 5'], ['1 + 8 B', 'per pair for the gate'], ['74%', 'of the diffusion GPU time'], ['47 TFLOPS', 'q, k, v slice, real rows']]);
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1300 });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

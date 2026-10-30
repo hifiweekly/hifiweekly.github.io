@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>attn_d128 Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+#lay { width: 100%; aspect-ratio: 1200 / 60; display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">MiniMax-H3 · <a href="src/minimaxh3.html#attn_d128">minimaxh3.ptx</a> · flash attention read straight out of the fused q, k, v projection</div>
+    <h1>Inside <code>attn_d128</code></h1>
+    <p>MiniMax-H3 has three kinds of attention: the diffusion transformer's 56 heads of 128 over the whole 541-token sequence, the text encoder's 64 query heads sharing 8 key/value heads, causal, and the video VAE's 32 heads of 64 over 1,797 tokens. Each network's q, k and v come out of one fused GEMM, and each lays them out differently. This kernel (and <code>attn_d64</code>, its 64-dim twin) reads every head from where the projection left it: a column offset for q, k and v, a stride between heads and a group size for shared key heads, so nothing is split or transposed in between. Inside it is a flash attention: 64 queries per block, key tiles through two cp.async buffers, S = QKᵀ and O += PV on f16 tensor cores, and the online softmax in base 2 with P never leaving registers.</p>
+    <div class="formula"><span class="y">O</span>[t][h] = softmax<sub>j</sub>(<span class="x">q</span><sub>t,h</sub> · <span class="x">k</span><sub>j,h/g</sub> / √d) · <span class="w">v</span><sub>j,h/g</sub>, &nbsp; q<sub>t,h</sub> = qkv[t][qoff + h·hstride …], k, v likewise at koff, voff &nbsp;&nbsp;<span class="muted">// causal: j ≤ t</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-lay">
+    <div class="sechead">
+      <h2 id="s-lay">Where a head's q, k and v are</h2>
+      <p>One row of the fused projection (one token), drawn to scale. Pick the network and a head: the outlined columns are the ones the kernel reads for it. The three layouts need only <code>qoff</code>, <code>koff</code>, <code>voff</code>, <code>hstride</code> and <code>group</code>.</p>
+    </div>
+    <div class="controls">
+      <span class="seg" id="netSeg" role="group" aria-label="Network"></span>
+      <label>head <input id="hh" type="range" min="0" max="55" value="9"> <span id="hhv" class="mono"></span></label>
+    </div>
+    <div class="panel">
+      <canvas id="lay"></canvas>
+      <div class="legend" id="laylegend"></div>
+      <div class="status" id="laystatus"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">One query row through the key tiles</h2>
+      <p>A block takes 64 queries of one head; each warp 16 of them, each lane the scores of rows g and g + 8 (g = lane / 4) for 2 keys per 8-key tile. Below, one query row of the diffusion transformer runs through the 17 tiles of 32 keys (541 keys, the last tile 29 real and 3 zero-filled): the running maximum m, the running sum ℓ and the rescale factor 2<sup>m_old − m_new</sup>, against the exact softmax. Scores are generated; text keys are made more relevant.</p>
+    </div>
+    <div class="controls">
+      <label>query row <input id="qq" type="range" min="0" max="540" value="200"> <span id="qqv" class="mono"></span></label>
+      <label>tile <input id="tt" type="range" min="0" max="16" value="16"> <span id="ttv" class="mono"></span></label>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x">scores of the row, by key tile</b><span id="ssub"></span></div>
+        <div class="figure"><svg id="sc" role="img" aria-label="scores and softmax weights"></svg></div>
+        <div class="status" id="status"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="card"></dl>
+        <div class="cvlabel"><b class="w">running m and ℓ after each tile</b></div>
+        <div class="tablewrap"><table class="list" id="run"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>No split-heads kernel</h3>
+        <p>SAM 3's engine copies q, k and v into per-head arrays before <a href="flash_attn.html">flash_attn</a>. Here the loader computes each head's columns itself, so the three networks' fused projections are read as they are: [q₀ … q₅₅ | k₀ … k₅₅ | v₀ … v₅₅] in the diffusion transformer, [q₀ … q₆₃ | k₀ … k₇ | v₀ … v₇] with 8 query heads per key head in the text encoder, and [q k v]₀ … [q k v]₃₁ interleaved per head in the video VAE, which reshapes its projection to (3 · 64, 32 heads) before chunking. The only cost is a 256-byte (or 128-byte) row of a head being one strided segment of a long row, which cp.async reads 16 bytes per thread just as well.</p>
+        <h3>Zero-filled tails, not bounds checks</h3>
+        <p>The 541st key is the last; the 17th tile has 3 rows past it. cp.async with a source size of 0 writes zeros into shared memory for those rows, and the scores of keys ≥ N are set to −∞ before the softmax, so the inner loop has no branch per key. Query rows ≥ N are computed and not stored.</p>
+      </div>
+      <div class="panel">
+        <h3>Small share of the time</h3>
+        <p>Attention is 1.1% of the diffusion transformer's GPU time (131 µs per block against 12 ms for the products) and 6% of the video VAE's (15 ms of a 255 ms chunk, 36 launches of 0.42 ms). The sequences are short next to the width: 541 tokens × 56 heads × 128 is 8.4 GFLOP per block for QKᵀ and PV together, against 417 GFLOP for the block's four products.</p>
+        <h3>The text encoder is causal</h3>
+        <p>With <code>causal</code> set, a block only visits key tiles up to its last query, and scores with key &gt; query are −∞. The text encoder runs one block of 64 queries per head for the 19-token prompt; group 8 makes 8 query heads read the same key and value columns. The VAE variant, <code>attn_d64</code>, keeps 64-key tiles (64-dim rows are half as wide, so a tile is the same 8 KB).</p>
+        <h3>Scale and base 2</h3>
+        <p>Scores are multiplied by (1/√d) · log₂e once, so the softmax uses <code>ex2.approx</code> directly: 2<sup>s − m</sup> is e<sup>(qk/√d) − m′</sup>. The reference applies a 1/128 "kv_scale" to k and v and undoes it after flash attention, a guard against f16 overflow in its kernel; mathematically it is the same softmax, and the row maxima here keep every exponent ≤ 0.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <a href="src/minimaxh3.html"><code>minimaxh3/minimaxh3.ptx</code></a>, kernels <a href="src/minimaxh3.html#attn_d128"><code>attn_d128</code></a> and <a href="src/minimaxh3.html#attn_d64"><code>attn_d64</code></a>; launched by <code>attention()</code> in <code>minimaxh3.c</code>, grid (⌈N / 64⌉, heads) of 128 threads. Checked by <code>minimaxh3_demo test</code> against a double-precision softmax: plain, grouped-causal, the VAE's interleaved layout (within 4 · 10<sup>−4</sup> relative). Timings: nsys. Scores on this page are generated.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('attn_d128');
+const NETS = {
+  dit: { name: 'diffusion transformer', heads: 56, kv: 56, d: 128, ld: 21504, q: h => 128 * h, k: h => 7168 + 128 * h, v: h => 14336 + 128 * h, group: 1, args: 'qoff 0, koff 7168, voff 14336, hstride 128, group 1' },
+  te: { name: 'text encoder', heads: 64, kv: 8, d: 128, ld: 10240, q: h => 128 * h, k: h => 8192 + 128 * Math.floor(h / 8), v: h => 9216 + 128 * Math.floor(h / 8), group: 8, args: 'qoff 0, koff 8192, voff 9216, hstride 128, group 8, causal' },
+  vae: { name: 'video VAE (attn_d64)', heads: 32, kv: 32, d: 64, ld: 6144, q: h => 192 * h, k: h => 192 * h + 64, v: h => 192 * h + 128, group: 1, args: 'qoff 0, koff 64, voff 128, hstride 192, group 1' },
+};
+const S = { net: 'dit', h: 9, q: 200, tile: 16 };
+$('netSeg').innerHTML = Object.entries(NETS).map(([k, v]) => `<button type="button" data-v="${k}" aria-pressed="${k === S.net}">${v.name}</button>`).join('');
+$('netSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.net = b.dataset.v; S.h = Math.min(S.h, NETS[S.net].heads - 1); $('hh').max = NETS[S.net].heads - 1; $('hh').value = S.h; $('netSeg').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); drawLay(); });
+function drawLay() {
+  const n = NETS[S.net], cv = $('lay'), w = cv.clientWidth, h = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = C.bg; ctx.fillRect(0, 0, w, h);
+  const X = c => c / n.ld * w;
+  const kindOf = c => S.net === 'vae' ? ['q', 'k', 'v'][Math.floor((c % 192) / 64)] : c < n.heads * n.d ? 'q' : c < (n.heads + n.kv) * n.d ? 'k' : 'v';
+  for (let c = 0; c < n.ld; c += n.d / 4) { const k = kindOf(c); ctx.fillStyle = k === 'q' ? C.x : k === 'k' ? C.y : C.w; ctx.globalAlpha = 0.35; ctx.fillRect(X(c), 10, X(n.d / 4) + 0.5, h - 20); }
+  ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = C.fg;
+  for (const [f, col] of [[n.q, C.x], [n.k, C.y], [n.v, C.w]]) { const c0 = f(S.h); ctx.fillStyle = col; ctx.fillRect(X(c0), 6, Math.max(2, X(n.d)), h - 12); ctx.strokeRect(X(c0), 5, Math.max(2, X(n.d)), h - 10); }
+  $('hhv').textContent = S.h;
+  Atlas.legend($('laylegend'), [['--x', 'q columns'], ['--y', 'k columns'], ['--w', 'v columns']]);
+  $('laystatus').textContent = `${n.name}: row of ${Atlas.int(n.ld)} f16; head ${S.h} reads q at ${n.q(S.h)}, k at ${n.k(S.h)}, v at ${n.v(S.h)} (${n.d} each) · ${n.args}`;
+}
+$('hh').addEventListener('input', () => { S.h = +$('hh').value; drawLay(); });
+
+// the score row: 541 keys, tiles of 32
+const NK = 541, T = 32, NT = Math.ceil(NK / T), L2E = 1.4426950408889634;
+const score = j => { const r = Atlas.rng(Atlas.h32(S.q * 977 + j * 13 + 3)); return fr(Atlas.gauss(r) * 2.2 + (j < 19 ? 2.5 : 0) - (j >= 19 && j < 93 ? 0.6 : 0)); };
+function online(upto) {
+  let m = -Infinity, l = 0; const hist = [];
+  for (let t = 0; t <= upto; t++) {
+    let mt = -Infinity; for (let j = t * T; j < Math.min(NK, (t + 1) * T); j++) mt = Math.max(mt, score(j) * L2E);
+    const mn = Math.max(m, mt), resc = m === -Infinity ? 0 : 2 ** (m - mn);
+    let s = 0; for (let j = t * T; j < Math.min(NK, (t + 1) * T); j++) s += 2 ** (score(j) * L2E - mn);
+    l = l * resc + s; hist.push({ t, mt, m: mn, resc, l }); m = mn;
+  }
+  return hist;
+}
+const steps = [
+  { tag: 'I', short: 'roles', title: 'block (⌈N / 64⌉, head): 64 queries; warp w rows 16w … 16w + 15; columns of q, k, v from (qoff, koff, voff) + (h or h / group) · hstride', text: 'For the diffusion transformer that is 9 × 56 = 504 blocks of 128 threads; the text encoder 1 × 64, the VAE 29 × 32.' },
+  { tag: 'Q', short: 'Q tile', title: 'cp.async the 64 × 128 Q tile into buffer 1, ldmatrix it into registers (32 words per lane), then reuse the buffer', text: 'Shared rows are 256 bytes: 16 chunks of 16, chunk c of row r stored at c ^ (r & 7), so ldmatrix\'s 8 row addresses hit 8 bank groups.' },
+  { tag: 'K', short: 'key tiles', title: 'each step: wait for tile i (K and V, 2 × 8 KB), prefetch tile i + 1 into the other buffer', text: 'Rows past N load with a source size of 0: zeros, no branch. Causal blocks stop at the tile holding their last query.' },
+  { tag: 'S', short: 'S = QKᵀ', title: 'S = Q · Kᵀ for the warp\'s 16 rows × 32 keys: 8 k-steps of mma.m16n8k16 per 8-key column, × scale · log₂e', text: 'Each lane ends with rows g and g + 8, keys 2 (lane & 3) and + 1 of each 8-key column: 16 scores of the 512 in the warp\'s tile.' },
+  { tag: 'M', short: 'online softmax', title: 'm_new = max(m, row max of the tile) (2 shuffles across the quad); rescale ℓ and O by 2^(m − m_new); p = 2^(s − m_new)', text: 'The quad (4 lanes) holding a row agrees on its maximum with shfl.bfly 1 and 2; ex2.approx gives each p; ℓ accumulates the row sum per lane, combined at the end.' },
+  { tag: 'P', short: 'O += PV', title: 'P → f16: two adjacent 8-key S accumulator tiles are exactly one A fragment; O += P · V on tensor cores', text: 'V is read transposed with ldmatrix.trans, so no shared-memory transpose is needed; O stays in 64 f32 registers per lane (16 rows × 128 dims per warp).' },
+  { tag: 'F', short: 'store', title: 'after the last tile: ℓ summed over the quad, O / ℓ, f16 stores to O[t][h · d]', text: 'Each warp writes its 16 rows of the head, rows ≥ N skipped; the next GEMM (out_proj) reads O as its A operand.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (outline)', lang: 'cpp', src: `I|__global__ void attn_d128(const __half *qkv, __half *o, unsigned n, unsigned ld, unsigned ldo, unsigned qoff,
+I|                          unsigned koff, unsigned voff, unsigned hstride, unsigned group, float scale, unsigned causal)
+I|{
+I|    unsigned q0 = blockIdx.x * 64, h = blockIdx.y, kh = h / group;
+I|    const __half *Q = qkv + qoff + h * hstride, *K = qkv + koff + kh * hstride, *V = qkv + voff + kh * hstride;
+Q|    load_tile_async(smem_buf1, Q, q0, 64, ld, n);  wait(); frag_a qa[8] = ldmatrix_x4(smem_buf1);   // 64 × 128
+K|    load_tile_async(buf[0], K, V, 0, ld, n);                                         // K, V rows 0..31
+M|    float m[2] = {-INF, -INF}, l[2] = {0, 0}, acc[16][4] = {};                        // rows g, g + 8
+K|    for (unsigned t = 0; t < ntiles; t++) {                                          // causal: up to q0 + 63
+K|        wait(); __syncthreads(); if (t + 1 < ntiles) load_tile_async(buf[(t + 1) & 1], K, V, 32 * (t + 1), ld, n);
+S|        float s[4][4] = mma(qa, ldmatrix_x4(buf[t & 1].K)) * scale * LOG2E;           // 16 rows × 32 keys
+S|        mask(s, 32 * t, n, causal ? q0 + row : ~0u);                                    // -INF past n / the query
+M|        float mt = quad_max(row_max(s)), mn = max(m, mt), r = exp2(m - mn);
+M|        l = l * r + row_sum(exp2(s - mn));  acc *= r;  m = mn;
+P|        acc += mma(to_f16(exp2(s - mn)), ldmatrix_x4_trans(buf[t & 1].V));             // P stays in registers
+K|    }
+F|    l = quad_sum(l);  store_f16(o + (q0 + row) * ldo + h * 128, acc / l);               // rows < n
+I|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    mov.u32         %r4, %ctaid.y;          // h
+I|    div.u32         %r9, %r4, %r8;          // kv head
+I|    mad.lo.u32      %r10, %r4, %r7, %r10;   // q column
+I|    mad.lo.u32      %r11, %r9, %r7, %r11;   // k column
+I|    mad.lo.u32      %r12, %r9, %r7, %r12;   // v column
+Q|    // Q tile -> buffer 1
+Q|    cp.async.cg.shared.global [%r16+16384+0], [%rd1], 16, %r21;
+Q|    ...
+Q|    cp.async.wait_group 0;
+Q|    bar.sync        0;
+Q|    ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%qa0, %qa1, %qa2, %qa3}, [%r28];
+K|TILE:
+K|    cp.async.wait_group 0;
+K|    bar.sync        0;
+K|    // prefetch tile + 1 into the other buffer
+K|    cp.async.cg.shared.global [%r39+0], [%rd1], 16, %r21;   // src-size 0 past N: zeros
+S|    ldmatrix.sync.aligned.m8n8.x4.shared.b16 {...}, [...];   // K fragments
+S|    mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {...}, {%qa0, ...}, {...}, {...};
+S|    mul.f32         %f4, %f4, 0f3FB8AA3B;   // scale * log2(e)
+M|    max.f32         ...;
+M|    shfl.sync.bfly.b32 ...;                 // quad max, offsets 1, 2
+M|    ex2.approx.f32  ...;                    // 2^(m_old - m_new), 2^(s - m)
+P|    cvt.rn.f16x2.f32 ...;                   // S accumulators -> A fragment
+P|    ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {...}, [...];  // V
+P|    mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {...}, ...;  // O += P V
+F|    rcp.rn.f32      ...;                    // 1 / l
+F|    st.global.b32   ...;                    // f16x2 of O` },
+});
+const ORDER = steps.map(s => s.tag);
+function draw() {
+  const st = stepper.step, si = ORDER.indexOf(st.tag), upto = S.tile, H = online(upto), last = H[H.length - 1];
+  drawLay();
+  $('qqv').textContent = S.q; $('ttv').textContent = `${S.tile + 1} of ${NT}`;
+  // exact softmax over all keys (for the reference) and the partial one over the visited tiles
+  let mx = -Infinity; for (let j = 0; j < NK; j++) mx = Math.max(mx, score(j));
+  let z = 0; for (let j = 0; j < NK; j++) z += Math.exp(score(j) - mx);
+  const W = 680, Hh = 222, bw = W / NK;
+  let s = '';
+  for (let t = 0; t < NT; t++) s += `<rect x="${t * T * bw}" y="0" width="${T * bw}" height="${Hh - 12}" fill="${t <= upto ? C.x : C.zero}" opacity="${t === upto ? 0.16 : 0.06}"/>`;
+  for (let j = 0; j < NK; j++) {
+    const v = score(j), y = 64 - v * 6, vis = Math.floor(j / T) <= upto;
+    s += `<rect x="${j * bw}" y="${Math.min(64, y)}" width="${Math.max(0.6, bw - 0.2)}" height="${Math.abs(64 - y)}" fill="${j < 19 ? C.w : j < 93 ? C.y : C.x}" opacity="${vis ? 0.85 : 0.25}"/>`;
+    if (si >= 4 && vis) { const pp = 2 ** (v * L2E - last.m) / last.l; s += `<rect x="${j * bw}" y="${206 - Math.min(1, pp * 12) * 66}" width="${Math.max(0.6, bw - 0.2)}" height="${Math.min(1, pp * 12) * 66}" fill="${C.sync}" opacity="0.8"/>`; }
+  }
+  s += `<line x1="0" x2="${W}" y1="64" y2="64" stroke="${C.line}"/><line x1="0" x2="${W}" y1="206" y2="206" stroke="${C.line}"/>`;
+  s += `<text x="4" y="12" font-size="10" fill="${C.fg}">scores q·k/√d (text keys 0–18 brown, audio 19–92 pink, video teal)</text>`;
+  if (si >= 4) s += `<text x="4" y="132" font-size="10" fill="${C.fg}">softmax weights over the tiles so far (× 12, clipped)</text>`;
+  s += `<text x="${W}" y="${Hh - 2}" font-size="9" text-anchor="end" fill="${C.muted}">key 540 · tiles of 32</text>`;
+  $('sc').setAttribute('viewBox', `0 0 ${W} ${Hh}`); $('sc').innerHTML = s;
+  $('ssub').textContent = `${upto + 1} tiles visited`;
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`;
+  $('thlabel').textContent = `query row ${S.q}: warp ${Math.floor((S.q % 64) / 16)} of block ${Math.floor(S.q / 64)}, lanes ${4 * (S.q % 8)} … ${4 * (S.q % 8) + 3}`;
+  let c = row('block, row in it', `(${Math.floor(S.q / 64)}, head), ${S.q % 64}`);
+  if (si >= 2) c += row('tile', `keys ${upto * T} … ${Math.min(NK, (upto + 1) * T) - 1}${upto === NT - 1 ? ' (+ 3 zero rows, −∞)' : ''}`);
+  if (si >= 3) c += row('tile max · log₂e', last.mt.toFixed(4));
+  if (si >= 4) c += row('m, ℓ', `${last.m.toFixed(4)}, ${last.l.toFixed(4)} (rescale ${last.resc.toFixed(4)})`);
+  if (si >= 6) {
+    const ex = 1; let lsum = 0; for (let j = 0; j < NK; j++) lsum += 2 ** (score(j) * L2E - mx * L2E);
+    c += row('exact (all tiles)', upto === NT - 1 ? `m = ${(mx * L2E).toFixed(4)}, ℓ = ${lsum.toFixed(4)}: ${Math.abs(lsum - last.l) < 1e-6 * lsum * ex ? 'equal' : 'differs'}` : 'visit all 17 tiles to compare');
+  }
+  $('card').innerHTML = c;
+  $('status').textContent = 'Move the tile slider to run the online softmax tile by tile.';
+  $('run').innerHTML = '<thead><tr><th>tile</th><th>tile max</th><th>m</th><th>2^(m_old − m)</th><th>ℓ</th></tr></thead><tbody>' +
+    H.slice(-8).map(r => `<tr><td>${r.t + 1}</td><td class="num">${r.mt.toFixed(3)}</td><td class="num">${r.m.toFixed(3)}</td><td class="num">${r.t ? r.resc.toFixed(4) : '–'}</td><td class="num">${r.l.toFixed(3)}</td></tr>`).join('') + '</tbody>';
+}
+$('qq').addEventListener('input', () => { S.q = +$('qq').value; draw(); });
+$('tt').addEventListener('input', () => { S.tile = +$('tt').value; draw(); });
+Atlas.facts($('facts'), [['grid (⌈N/64⌉, heads)', 'blocks of 128'], ['64', 'queries per block'], ['32 keys', 'per tile (attn_d64: 64)'], ['2 × 16 KB', 'shared: K, V double-buffered'], ['1.1%', 'of the diffusion GPU time'], ['131 µs', 'per block, 56 heads × 541']]);
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1300 });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

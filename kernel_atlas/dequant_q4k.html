@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>dequant_q4k Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">MiniMax-H3 · <a href="src/minimaxh3.html#dequant_q4k">minimaxh3.ptx</a> · a thread per 32-value sub-block, Q4_K bytes to f16 just before the GEMM</div>
+    <h1>Inside <code>dequant_q4k</code></h1>
+    <p>MiniMax-H3's diffusion transformer is 11.4 GB of Q4_K matrices: 4.5 bits per weight, which is why it fits in a 12 GB GPU at all. The engine keeps them in that format and never builds the f16 matrices whole. Before each product, this kernel expands a slice of up to 6,144 rows (64 MB of f16) into a scratch buffer, and <a href="gemm_f16_h3.html">gemm_f16</a> multiplies it at once, while the slice is still in L2. A Q4_K super-block is 144 bytes for 256 weights: an f16 scale and min, twelve bytes that pack a 6-bit scale and a 6-bit min for each of 8 sub-blocks, and 128 bytes of 4-bit codes. The block below is the model's own: the first 256 weights of block 0's q, k, v projection.</p>
+    <div class="formula"><span class="y">w</span> = (<span class="w">d</span> · sc<sub>j</sub>) · <span class="x">q</span> − (<span class="w">dmin</span> · m<sub>j</sub>), &nbsp;<span class="x">q</span> = nibble (j &amp; 1) of qs[32 ⌊j/2⌋ + l] &nbsp;&nbsp;<span class="muted">// sub-block j &lt; 8, value l &lt; 32; (sc, m) 6 bits each, as ggml's get_scale_min_k4</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">One thread, one sub-block: 2 scales, 32 codes, 32 halves</h2>
+      <p>The grid is the 144 bytes of the block. Pick a sub-block (or click the bytes or the output strip); the step-through follows the thread that decodes it, and every value is decoded here in your browser from the block's bytes, the way the PTX does it.</p>
+    </div>
+    <div class="controls">
+      <label>sub-block j <input id="jj" type="range" min="0" max="7" value="5"> <span id="jjv" class="mono"></span></label>
+      <span class="seg" id="fmtSeg" role="group" aria-label="Format"></span>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x">the 144-byte super-block</b><span id="bsub"></span></div>
+        <canvas id="bytes"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="cvlabel"><b class="y">the 256 f16 outputs</b><span>8 sub-blocks of 32</span></div>
+        <canvas id="outs"></canvas>
+        <div class="status" id="status"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="card"></dl>
+        <div class="cvlabel"><b class="w">the 12 scale bytes, bit by bit</b><span>6-bit (scale, min) per sub-block</span></div>
+        <div class="figure"><svg id="bits" role="img" aria-label="scale bytes"></svg></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cvlabel"><b class="w">Where it runs: a slice of rows, then its product</b><span>the diffusion transformer and the text encoder (Q6_K: dequant_q6k)</span></div>
+      <div class="tablewrap"><table class="list" id="uses"></table></div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Expand, then multiply on f16 tensor cores</h3>
+        <p>The language-model engines in this atlas multiply quantized weights directly: one token at a time, a matrix–vector product that reads each byte once is bound by memory, and decoding in registers is free. The diffusion transformer multiplies 541 tokens at once, so it is bound by arithmetic, and the fastest arithmetic on this GPU is f16 mma with f32 accumulation. Decoding inside the GEMM's inner loop would re-decode every weight for each of the 5 row tiles of 128 tokens; expanding once per slice costs one extra write and read of the f16 slice. Measured with nsys over four steps: the GEMMs take 74% of the GPU time, the dequant 23%, attention 1%.</p>
+        <h3>Slices of 64 MB</h3>
+        <p><code>matmul()</code> in the host code walks a matrix in slices of ⌊64 MB / (2 · K)⌋ rows, rounded down to 128 (the GEMM's tile): 6,144 rows of the 5376-wide q, k, v projection, 2,304 of the 14,336-wide fc2. The scratch buffer is reused for every slice of every matrix, so the f16 copy of a 115-million-weight matrix never exists whole, and the GEMM reads a slice the dequant has just written.</p>
+      </div>
+      <div class="panel">
+        <h3>A thread per sub-block</h3>
+        <p>The 8 sub-blocks of a super-block share d, dmin and the 12 scale bytes but nothing else, so a thread per sub-block needs no cooperation: it reads 2 + 2 + 3 bytes of header, 32 code bytes as 8 aligned words, and writes 32 halves as 8 eight-byte stores. A 144-byte block starts 16-byte aligned (144 = 9 × 16), which is what lets the codes be read as u32 words. Two threads (j and j + 1) read the same 32 code bytes, one taking the low nibbles and one the high.</p>
+        <h3>The 6-bit scales</h3>
+        <p>Sub-blocks 0–3 keep their scale and min in the low 6 bits of bytes 0–3 and 4–7. Sub-blocks 4–7 take 4 bits from bytes 8–11 (low nibble scale, high nibble min) and their top 2 bits from the unused high bits of bytes 0–3 (scale) and 4–7 (min). The bit view on the right colors each bit by the sub-block it belongs to.</p>
+        <h3>Q6_K</h3>
+        <p>The text encoder's v and down projections are Q6_K: 210 bytes per 256 values, 4 low bits in <code>ql</code>, 2 high bits in <code>qh</code>, a signed 8-bit scale per 16 values. <code>dequant_q6k</code> is the same scheme with a thread per 16 values; since 210-byte blocks are only 2-byte aligned, it reads them byte by byte.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <a href="src/minimaxh3.html"><code>minimaxh3/minimaxh3.ptx</code></a>, kernels <a href="src/minimaxh3.html#dequant_q4k"><code>dequant_q4k</code></a> and <a href="src/minimaxh3.html#dequant_q6k"><code>dequant_q6k</code></a>; launched by <code>dequant()</code> from <code>matmul()</code> in <code>minimaxh3.c</code>, grid-stride (≤ 448 blocks of 256). Checked by <code>minimaxh3_demo test</code>: bit-identical to ggml's reference dequantization (quant.c) on 300 random blocks of each format. The block shown is <code>blocks.0.attn.qkv_proj.weight</code>, row 0, values 0–255, of minimax_h3_ref2va_pruned-Q4_K.gguf.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('dequant_q4k');
+// blocks.0.attn.qkv_proj.weight, row 0, first super-block (144 bytes, hex)
+const BLK = 'e6130f1fede2a8b9e5e1a3bfef9e847a44955385748b13bb93a8a9b317ea333c7f808578978b97720192f693379114eb5982cf99c69f78008657c16650a59be4b6a79d9b9587e23ac79c86a939ab375895a762828d7099175f648565579d647335361656854467226897785507f56672dc1af747bb577974d64457bf4c550d9308a996e57f9c404049a6987baa9b78c2';
+const B = BLK.match(/../g).map(h => parseInt(h, 16));
+const half = (lo, hi) => { const h = lo | hi << 8, s = h >> 15, e = (h >> 10) & 31, m = h & 1023; return (s ? -1 : 1) * (e ? 2 ** (e - 15) * (1 + m / 1024) : 2 ** -14 * (m / 1024)); };
+const d = half(B[0], B[1]), dmin = half(B[2], B[3]), SC = B.slice(4, 16), QS = B.slice(16);
+const scmin = j => j < 4 ? [SC[j] & 63, SC[j + 4] & 63] : [(SC[j + 4] & 15) | ((SC[j - 4] >> 6) << 4), (SC[j + 4] >> 4) | ((SC[j] >> 6) << 4)];
+const code = (j, l) => (QS[32 * (j >> 1) + l] >> (4 * (j & 1))) & 15;
+const val = (j, l) => { const [s, m] = scmin(j); return Atlas.f16(fr(fr(fr(d * s) * code(j, l)) - fr(dmin * m))); };
+const S = { j: 5 };
+$('fmtSeg').innerHTML = '<button type="button" aria-pressed="true">Q4_K (this page)</button><a href="src/minimaxh3.html#dequant_q6k" style="margin-left:8px">dequant_q6k in the listing →</a>';
+const steps = [
+  { tag: 'I', short: 'roles', title: 'thread k → super-block k / 8, sub-block j = k mod 8; grid-stride over all sub-blocks of the slice', text: 'A 6,144-row slice of the q, k, v projection is 6,144 × 21 blocks × 8 = 1,032,192 threads\' worth of sub-blocks; ≤ 448 blocks of 256 stride over them.' },
+  { tag: 'D', short: 'd, dmin', title: 'the block\'s f16 d and dmin: two 2-byte loads, cvt.f32.f16', text: 'Every one of the 8 threads of a block loads them; they come from L1 after the first.' },
+  { tag: 'K', short: 'scale, min', title: 'unpack sub-block j\'s 6-bit scale sc and min m from the 12 scale bytes', text: 'j < 4: the low 6 bits of scales[j] and scales[j + 4]. j ≥ 4: 4 bits of scales[j + 4] plus the top 2 bits of scales[j − 4] (scale) or scales[j] (min). Then d1 = d · sc, m1 = dmin · m.' },
+  { tag: 'Q', short: 'codes', title: '8 u32 loads of the 32 code bytes qs[32 ⌊j/2⌋ …]; shift by 4 (j & 1) for the high nibbles', text: 'Each word gives 4 codes: (w >> 0, 8, 16, 24) & 15 after the nibble shift. Sub-blocks 2i and 2i + 1 read the same bytes.' },
+  { tag: 'O', short: 'store', title: 'w = d1 · q − m1, four at a time: two cvt.rn.f16x2.f32, one 8-byte store', text: 'The 32 halves land at block · 256 + 32 j of the f16 slice, the row-major layout gemm_f16 reads as its B operand.' },
+];
+const codeL = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `I|extern "C" __global__ void dequant_q4k(const uint8_t *src, __half *dst, unsigned nsub)
+I|{
+I|    for (unsigned k = blockIdx.x * blockDim.x + threadIdx.x; k < nsub; k += gridDim.x * blockDim.x) {
+I|        unsigned blk = k >> 3, j = k & 7;
+I|        const uint8_t *b = src + 144 * (size_t)blk;
+D|        float d = __half2float(*(const __half *)b), dmin = __half2float(*(const __half *)(b + 2));
+K|        const uint8_t *sc = b + 4;
+K|        unsigned s, m;
+K|        if (j < 4) { s = sc[j] & 63; m = sc[j + 4] & 63; }
+K|        else { s = (sc[j + 4] & 15) | (sc[j - 4] >> 6) << 4; m = (sc[j + 4] >> 4) | (sc[j] >> 6) << 4; }
+K|        float d1 = d * s, m1 = dmin * m;
+Q|        const uint32_t *qs = (const uint32_t *)(b + 16 + 32 * (j >> 1));
+O|        __half2 *out = (__half2 *)(dst + 256 * (size_t)blk + 32 * j);
+Q|        for (int wd = 0; wd < 8; wd++) {
+Q|            uint32_t q = qs[wd] >> (4 * (j & 1));
+O|            out[2 * wd]     = __floats2half2_rn(d1 * (q & 15) - m1, d1 * (q >> 8 & 15) - m1);
+O|            out[2 * wd + 1] = __floats2half2_rn(d1 * (q >> 16 & 15) - m1, d1 * (q >> 24 & 15) - m1);
+Q|        }
+I|    }
+I|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    shr.u32         %r6, %r4, 3;            // block
+I|    and.b32         %r7, %r4, 7;            // sub-block j
+I|    mul.wide.u32    %rd2, %r6, 144;
+D|    ld.global.nc.b16 %h0, [%rd2];
+D|    cvt.f32.f16     %f0, %h0;               // d
+D|    ld.global.nc.b16 %h1, [%rd2+2];
+D|    cvt.f32.f16     %f1, %h1;               // dmin
+K|    ld.global.nc.u8 %r8, [%rd3+4];          // scales[j]
+K|    ld.global.nc.u8 %r9, [%rd3+8];          // scales[j + 4]
+K|    @!%p1 bra       HI;
+K|    and.b32         %r10, %r8, 63;          // sc
+K|    and.b32         %r11, %r9, 63;          // m
+K|HI:
+K|    ld.global.nc.u8 %r12, [%rd3];           // scales[j - 4]
+K|    and.b32         %r10, %r9, 15;
+K|    shr.u32         %r13, %r12, 6;
+K|    shl.b32         %r13, %r13, 4;
+K|    or.b32          %r10, %r10, %r13;       // sc
+K|SCALED:
+K|    mul.f32         %f2, %f0, %f2;          // d1 = d * sc
+K|    mul.f32         %f3, %f1, %f3;          // m1 = dmin * m
+Q|WORD:
+Q|    ld.global.nc.u32 %r19, [%rd6];          // 4 quant bytes
+Q|    shr.b32         %r19, %r19, %r15;       // nibble j & 1
+Q|    and.b32         %r21, %r19, 15;
+Q|    ...
+O|    mul.f32         %f4, %f2, %f4;
+O|    sub.f32         %f4, %f4, %f3;
+O|    cvt.rn.f16x2.f32 %r25, %f5, %f4;
+O|    cvt.rn.f16x2.f32 %r26, %f7, %f6;
+O|    st.global.v2.b32 [%rd5], {%r25, %r26};
+Q|    @%p2 bra        WORD;` },
+});
+const ORDER = steps.map(s => s.tag);
+const USES = [
+  ['diffusion block (× 50)', 'qkv_proj 21,504 × 5376', '4 slices of ≤ 6,144 rows', '65 MB Q4_K → 231 MB f16'],
+  ['', 'out_proj 5376 × 7168', '2 slices', '22 MB → 77 MB'],
+  ['', 'fc1 28,672 × 5376', '5 slices', '87 MB → 308 MB'],
+  ['', 'fc2 5376 × 14,336', '3 slices (2,304 rows)', '43 MB → 154 MB'],
+  ['condition_proj, refiner', '5376 × 5120; 2 blocks as above', 'once per video', ''],
+  ['text encoder (× 50)', 'q, k, o, gate, up: Q4_K; v, down: Q6_K', 'slices of ≤ 6,528 / 1,280 rows', '310 MB per layer'],
+];
+const bg = Atlas.grid($('bytes'), 9, 16), og = Atlas.grid($('outs'), 8, 32);
+function draw() {
+  const st = stepper.step, si = ORDER.indexOf(st.tag), j = S.j, [s, m] = scmin(j);
+  $('jjv').textContent = j;
+  const g = bg.prep();
+  for (let i = 0; i < 144; i++) {
+    const r = i >> 4, c = i & 15;
+    let col = C.zero, a = 0.35;
+    if (i < 4) { col = C.w; a = si >= 1 ? 0.95 : 0.5; }
+    else if (i < 16) { const k = i - 4, mine = (j < 4 && (k === j || k === j + 4)) || (j >= 4 && (k === j + 4 || k === j - 4 || k === j)); col = C.sync; a = mine && si >= 2 ? 0.95 : 0.35; }
+    else { const q = i - 16, mine = (q >> 5) === (j >> 1); col = C.x; a = mine && si >= 3 ? 0.9 : mine ? 0.5 : 0.18; }
+    g.cell(r, c, col, a, 0.1);
+    g.text(r, c, B[i].toString(16).padStart(2, '0'), C.fg, 9);
+  }
+  if (si >= 3) { const q0 = 16 + 32 * (j >> 1); g.box(q0 >> 4, 0, 2, 16, C.fg, 2); }
+  $('bsub').textContent = `d = ${d.toPrecision(4)}, dmin = ${dmin.toPrecision(4)} (bytes 0–3), scales (4–15), codes (16–143)`;
+  Atlas.legend($('legend'), [['--w', 'd, dmin (f16)'], ['--sync', 'scale bytes'], ['--x', 'codes: 2 per byte']]);
+  const o = og.prep();
+  for (let jj = 0; jj < 8; jj++) for (let l = 0; l < 32; l++) {
+    const v = val(jj, l), on = jj === j && si >= 4;
+    o.cell(jj, l, v >= 0 ? C.x : C.y, (Math.min(1, Math.abs(v) / 0.3) * 0.8 + 0.12) * (jj === j ? 1 : 0.45), 0.08);
+    if (on && l === 0) o.box(jj, 0, 1, 32, C.fg, 2);
+  }
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`;
+  $('thlabel').textContent = `the thread of sub-block ${j}: outputs ${32 * j} … ${32 * j + 31}`;
+  let c = row('k', `8 · block + ${j}`);
+  if (si >= 1) c += row('d, dmin', `${d.toPrecision(5)}, ${dmin.toPrecision(5)}`);
+  if (si >= 2) c += row('sc, m', `${s}, ${m}  →  d1 = ${fr(d * s).toPrecision(5)}, m1 = ${fr(dmin * m).toPrecision(5)}`);
+  if (si >= 3) c += row('codes', Array.from({ length: 8 }, (_, l) => code(j, l)).join(' ') + ' … (bytes ' + (16 + 32 * (j >> 1)) + '…, ' + (j & 1 ? 'high' : 'low') + ' nibbles)');
+  if (si >= 4) c += row('w[0 … 3]', [0, 1, 2, 3].map(l => val(j, l).toFixed(5)).join(', '));
+  $('card').innerHTML = c;
+  $('status').textContent = 'Click a code byte or an output to pick its sub-block.';
+  drawBits(si);
+  $('uses').innerHTML = '<thead><tr><th>where</th><th>matrix (rows × K)</th><th>launches</th><th>bytes</th></tr></thead><tbody>' + USES.map(u => `<tr><td>${u[0]}</td><td>${u[1]}</td><td>${u[2]}</td><td>${u[3]}</td></tr>`).join('') + '</tbody>';
+}
+function drawBits(si) {
+  const W = 340, H = 236, cw = 34, rh = 17, ox = 50, oy = 18, j = S.j;
+  // owner of each bit of the 12 scale bytes: [sub-block, 'sc' | 'm']
+  const own = (k, bit) => {
+    if (k < 4) return bit < 6 ? [k, 'sc'] : [k + 4, 'sc'];
+    if (k < 8) return bit < 6 ? [k - 4, 'm'] : [k, 'm'];
+    return bit < 4 ? [k - 4, 'sc'] : [k - 4, 'm'];
+  };
+  let s = '';
+  for (let b = 0; b < 8; b++) s += `<text x="${ox + (7 - b) * cw + cw / 2}" y="12" font-size="9" text-anchor="middle" fill="${C.muted}">bit ${b}</text>`;
+  for (let k = 0; k < 12; k++) {
+    const y = oy + k * rh;
+    s += `<text x="4" y="${y + 12}" font-size="9.5" fill="${C.fg}">sc[${k}] ${SC[k].toString(16).padStart(2, '0')}</text>`;
+    for (let b = 0; b < 8; b++) {
+      const [sb, kind] = own(k, b), mine = sb === j && si >= 2, x = ox + (7 - b) * cw;
+      s += `<rect x="${x + 1}" y="${y + 1}" width="${cw - 2}" height="${rh - 2}" rx="2" fill="${kind === 'sc' ? C.sync : C.w}" opacity="${mine ? 0.9 : 0.18}"/>`;
+      s += `<text x="${x + cw / 2}" y="${y + 12}" font-size="9" text-anchor="middle" fill="${C.fg}">${(SC[k] >> b) & 1}<tspan font-size="7" fill="${C.muted}"> ${sb}</tspan></text>`;
+    }
+  }
+  s += `<text x="4" y="${H - 4}" font-size="9" fill="${C.muted}">small digit: the sub-block owning the bit; violet scale, brown min</text>`;
+  $('bits').setAttribute('viewBox', `0 0 ${W} ${H}`); $('bits').innerHTML = s;
+}
+bg.hook(p => { const i = p.r * 16 + p.c; $('status').textContent = `byte ${i} = 0x${B[i].toString(16).padStart(2, '0')}` + (i >= 16 ? `: codes of sub-blocks ${2 * ((i - 16) >> 5)} (low nibble ${B[i] & 15}) and ${2 * ((i - 16) >> 5) + 1} (high ${B[i] >> 4})` : ''); },
+  p => { const i = p.r * 16 + p.c; if (i >= 16) { S.j = 2 * ((i - 16) >> 5) + (S.j & 1); $('jj').value = S.j; draw(); } }, () => {});
+og.hook(p => { $('status').textContent = `w[${32 * p.r + p.c}] = ${val(p.r, p.c).toFixed(6)} (sub-block ${p.r}, code ${code(p.r, p.c)})`; }, p => { S.j = p.r; $('jj').value = S.j; draw(); }, () => {});
+$('jj').addEventListener('input', () => { S.j = +$('jj').value; draw(); });
+Atlas.facts($('facts'), [['144 B', 'per 256 weights (4.5 bits)'], ['8', 'threads per super-block'], ['32', 'halves per thread'], ['≤ 64 MB', 'f16 slice, then its GEMM'], ['23%', 'of the diffusion GPU time'], ['2,829', 'launches in 4 steps']]);
+const stepper = Atlas.stepper({ steps, code: codeL, render: draw, delay: 1300 });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>

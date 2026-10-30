@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>adaln Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<script src="atlas.js"></script>
+<style>
+#heat td.h { text-align: center; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="eyebrow">MiniMax-H3 · <a href="src/minimaxh3.html#adaln">minimaxh3.ptx</a> · a thread per output channel, every block and timestep in one launch</div>
+    <h1>Inside <code>adaln</code></h1>
+    <p>Every one of MiniMax-H3's 50 diffusion blocks modulates its two norms and gates its two residual adds with vectors computed from the timestep: shift, scale and gate for attention, the same three for the feed-forward, separately for video, text and audio tokens. That is 6 × 3 × 5376 = 96,768 numbers per block. The model computes them from just 8 numbers: a learned curve, <code>adaln_t_table</code>, tabulated at 1025 points of t ∈ [0, 1], stands where other diffusion transformers have a sinusoidal embedding and an MLP. Each block's vectors are an affine function of those 8 numbers. This kernel evaluates all of them, for all 50 blocks and every timestep the sequence uses, at the start of each sampling step: 4.8 million threads, one launch.</p>
+    <div class="formula"><span class="y">out</span>[(l·R + r)·J + j] = <span class="w">b</span>[l·J + j] + Σ<sub>i&lt;8</sub> <span class="w">W</span>[l·J + j][i] · <span class="x">temb</span>[r][i], &nbsp; <span class="x">temb</span>[r] = lerp(<span class="w">table</span>, 1024 · t<sub>r</sub>) &nbsp;&nbsp;<span class="muted">// J = 96,768 per block, L = 50 blocks, R ≤ 4 timesteps</span></div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="s-main">
+    <div class="sechead">
+      <h2 id="s-main">Eight numbers of t, 4.8 million modulation values</h2>
+      <p>Drag t. Left: the 8 curves of <code>adaln_t_table</code> (the model's, every 16th of the 1025 rows) and the interpolated embedding the host uploads. Right: how large each of the six vectors comes out for five of the 50 blocks, per modality (rms over the 5376 channels, from the model's AdaLN weights). t here is 1 − σ: the first step of sampling is t = 0, pure noise, and t → 1 is the finished video.</p>
+    </div>
+    <div class="controls">
+      <label>t <input id="tt" type="range" min="0" max="1000" value="0"> <span id="ttv" class="mono"></span></label>
+      <span class="seg" id="modSeg" role="group" aria-label="Modality"></span>
+    </div>
+    <div class="stepper" id="stepper"></div>
+    <div class="block">
+      <div class="panel">
+        <div class="cvlabel"><b class="x">adaln_t_table: 8 curves over t</b><span>temb = the curves at t</span></div>
+        <div class="figure"><svg id="curves" role="img" aria-label="the eight time-embedding curves"></svg></div>
+        <div class="cvlabel"><b class="y" id="maplabel"></b><span id="mapsub"></span></div>
+        <canvas id="map"></canvas>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="panel">
+        <div class="cvlabel"><b id="thlabel"></b></div>
+        <dl class="kv" id="card"></dl>
+        <div class="cvlabel"><b class="w" id="heatlabel"></b><span>rms over 5376 channels</span></div>
+        <div class="tablewrap"><table class="list" id="heat"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="codehead"><h3>The code for the current step</h3><div class="tabs" id="tabs"></div></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="sechead"><h2 id="s-why">Why it is built this way</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>A table instead of a time MLP</h3>
+        <p>Diffusion transformers usually embed the timestep with sinusoids, run it through a two-layer MLP, apply SiLU, and only then project it to each block's modulation. In this checkpoint the first part is gone: <code>adaln_t_table</code> holds the 8-dimensional embedding at 1025 evenly spaced t (the "AdaLN curve"), and the engine interpolates linearly between the two rows around 1024 · t, on the host, for at most 4 timesteps per step. Only the last, affine part remains, and that is this kernel. The curves are smooth and dominated by the first two components: the time signal the network sees is low-dimensional by construction.</p>
+        <h3>Four timesteps, three used</h3>
+        <p>The sequence carries the video timestep (text and video tokens) and the audio one, which follows its own sigma schedule (shift 3 instead of 12), plus two rows the reference adds for reference-media conditioning. The engine keeps all four so its row numbering matches, deduplicates equal values (at the first step all are 0 or 0.999), and evaluates every row: the cost is in reading W, not in the rows.</p>
+      </div>
+      <div class="panel">
+        <h3>Memory-bound, once per step</h3>
+        <p>Each thread reads 8 f16 weights (one 16-byte load) and a bias, then does 8 FMAs per timestep row: 77 MB of weights in, 58 MB of f32 vectors out (3 rows), about 0.2 ms of the 610 ms step (nsys). Computing a block's vectors inside the block would read the same bytes; doing all 50 at once keeps the launch count down and leaves the vectors in one array, [block][timestep row][modality][6][5376], where <a href="rms_mod.html">rms_mod</a> and <a href="gemm_f16_h3.html">gemm_f16</a>'s gated epilogue find them by (timestep row × 3 + modality) and a stride of 6 · 5376.</p>
+        <h3>What the vectors do</h3>
+        <p>Gates grow with depth: block 0's are a few tenths, block 49's attention gate for video has an rms above 4. Shift and scale vary little with t compared with the gates, so most of the time dependence enters through how strongly each block's output is added. Block 49's text gates and feed-forward modulation are exactly zero: nothing reads text rows after the last block. The final layer's own (shift, scale) pair is a second, single-block launch of the same kernel.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">Source: <a href="src/minimaxh3.html"><code>minimaxh3/minimaxh3.ptx</code></a>, kernel <a href="src/minimaxh3.html#adaln"><code>adaln</code></a>; launched by <code>adaln()</code> in <code>minimaxh3.c</code>, grid-stride over L · J threads (≤ 448 blocks of 256), twice per step (50 blocks, then the final layer). Checked by <code>minimaxh3_demo test</code> against a double-precision product (within 8 · 10<sup>−8</sup>). The curves and the vector sizes are computed from <code>adaln_t_table</code> and <code>blocks.{0,12,25,37,49}.adaln_proj.linear</code> of minimax_h3_ref2va_pruned-Q4_K.gguf.<br>Copyright (c) 2026 Edward Jiang, all rights reserved.</footer>
+</div>
+
+<script>
+(() => {
+const { $, fr, C } = Atlas;
+Atlas.chrome('adaln');
+// TT: adaln_t_table every 16th row (65 × 8); MR[block][t = k/16][modality][vector]: rms over 5376 channels
+const TT = [[0.4725,0.2499,-0.0972,0.0281,-0.0068,0.0016,0.0007,-0.0003],[0.4336,0.2043,-0.054,0.0202,-0.0021,0.0002,-0.0001,0.0],[0.3993,0.1638,-0.0217,0.0129,0.0008,-0.0005,-0.0002,0.0001],[0.3692,0.1289,0.0015,0.0064,0.0023,-0.0007,-0.0002,0.0001],[0.3428,0.0991,0.0174,0.0009,0.0029,-0.0007,-0.0,0.0001],[0.3196,0.0739,0.0278,-0.0036,0.0029,-0.0005,0.0001,0.0],[0.2991,0.0527,0.0339,-0.0072,0.0025,-0.0002,0.0001,-0.0],[0.2807,0.0347,0.0368,-0.01,0.0019,0.0,0.0001,-0.0001],[0.2642,0.0195,0.0375,-0.012,0.0012,0.0002,0.0001,-0.0001],[0.2491,0.0066,0.0364,-0.0134,0.0005,0.0004,0.0001,-0.0001],[0.2352,-0.0045,0.0341,-0.0142,-0.0001,0.0005,0.0,-0.0001],[0.2222,-0.014,0.0309,-0.0146,-0.0007,0.0006,0.0,-0.0001],[0.21,-0.0223,0.0272,-0.0146,-0.0012,0.0006,-0.0,-0.0],[0.1985,-0.0295,0.0232,-0.0143,-0.0015,0.0006,-0.0001,-0.0],[0.1874,-0.0357,0.0189,-0.0137,-0.0018,0.0005,-0.0001,0.0],[0.1767,-0.0411,0.0146,-0.0129,-0.002,0.0004,-0.0001,0.0],[0.1664,-0.0459,0.0103,-0.012,-0.002,0.0003,-0.0001,0.0],[0.1564,-0.05,0.0062,-0.011,-0.002,0.0001,-0.0001,0.0001],[0.1467,-0.0536,0.0022,-0.0099,-0.002,0.0,-0.0001,0.0001],[0.1371,-0.0566,-0.0016,-0.0088,-0.0018,-0.0001,-0.0001,0.0001],[0.1277,-0.0592,-0.0051,-0.0076,-0.0017,-0.0002,-0.0,0.0001],[0.1185,-0.0613,-0.0084,-0.0064,-0.0015,-0.0004,-0.0,0.0001],[0.1093,-0.0631,-0.0113,-0.0052,-0.0012,-0.0005,-0.0,0.0001],[0.1002,-0.0644,-0.0139,-0.004,-0.001,-0.0005,0.0,0.0],[0.0912,-0.0653,-0.0162,-0.0028,-0.0007,-0.0006,0.0,0.0],[0.0821,-0.0658,-0.0182,-0.0017,-0.0005,-0.0006,0.0001,0.0],[0.073,-0.066,-0.0198,-0.0006,-0.0002,-0.0007,0.0001,0.0],[0.0639,-0.0659,-0.0211,0.0005,0.0,-0.0007,0.0001,-0.0],[0.0547,-0.0654,-0.0221,0.0015,0.0002,-0.0006,0.0001,-0.0],[0.0454,-0.0646,-0.0228,0.0025,0.0004,-0.0006,0.0001,-0.0],[0.0359,-0.0634,-0.0231,0.0034,0.0006,-0.0005,0.0001,-0.0],[0.0262,-0.0619,-0.0231,0.0043,0.0008,-0.0005,0.0001,-0.0],[0.0164,-0.0601,-0.0229,0.0052,0.0009,-0.0004,0.0001,-0.0],[0.0062,-0.0581,-0.0223,0.006,0.0011,-0.0003,0.0001,-0.0],[-0.0041,-0.0557,-0.0215,0.0068,0.0012,-0.0002,0.0,-0.0001],[-0.0147,-0.053,-0.0204,0.0075,0.0012,-0.0,0.0,-0.0001],[-0.0257,-0.0501,-0.019,0.0083,0.0013,0.0001,-0.0,-0.0001],[-0.0369,-0.0469,-0.0174,0.009,0.0013,0.0002,-0.0,-0.0],[-0.0485,-0.0434,-0.0156,0.0096,0.0013,0.0003,-0.0001,-0.0],[-0.0604,-0.0397,-0.0135,0.0103,0.0013,0.0004,-0.0001,-0.0],[-0.0726,-0.0357,-0.0113,0.0109,0.0012,0.0005,-0.0001,-0.0],[-0.0852,-0.0315,-0.0089,0.0115,0.0012,0.0006,-0.0001,-0.0],[-0.0981,-0.0271,-0.0063,0.0121,0.0011,0.0007,-0.0001,-0.0],[-0.1113,-0.0225,-0.0036,0.0126,0.001,0.0007,-0.0001,-0.0],[-0.1248,-0.0177,-0.0007,0.0131,0.0009,0.0007,-0.0001,0.0],[-0.1386,-0.0127,0.0022,0.0135,0.0007,0.0008,-0.0001,0.0],[-0.1526,-0.0076,0.0052,0.0139,0.0005,0.0007,-0.0001,0.0],[-0.1668,-0.0023,0.0082,0.0142,0.0004,0.0007,-0.0001,0.0],[-0.1813,0.0031,0.0112,0.0144,0.0002,0.0006,-0.0,0.0],[-0.1958,0.0086,0.0141,0.0146,-0.0,0.0005,0.0,0.0001],[-0.2105,0.0142,0.0169,0.0145,-0.0002,0.0004,0.0,0.0001],[-0.2253,0.0199,0.0195,0.0144,-0.0004,0.0003,0.0001,0.0001],[-0.2401,0.0256,0.0218,0.0139,-0.0006,0.0001,0.0001,0.0001],[-0.2548,0.0314,0.0237,0.0133,-0.0008,-0.0,0.0001,0.0001],[-0.2695,0.0372,0.025,0.0122,-0.001,-0.0002,0.0002,0.0001],[-0.2841,0.043,0.0256,0.0107,-0.0011,-0.0004,0.0002,0.0],[-0.2986,0.0487,0.0252,0.0085,-0.0012,-0.0006,0.0001,0.0],[-0.3129,0.0545,0.0235,0.0056,-0.0013,-0.0007,0.0001,-0.0],[-0.327,0.0601,0.0201,0.0016,-0.0012,-0.0008,0.0,-0.0],[-0.3408,0.0657,0.0145,-0.0038,-0.0011,-0.0009,-0.0001,-0.0001],[-0.3545,0.0711,0.0061,-0.011,-0.0008,-0.0008,-0.0002,-0.0001],[-0.3678,0.0763,-0.0059,-0.0205,-0.0003,-0.0006,-0.0003,-0.0001],[-0.3809,0.0809,-0.0224,-0.0331,0.0004,-0.0001,-0.0003,-0.0001],[-0.3937,0.0847,-0.0445,-0.0497,0.0014,0.0006,-0.0,0.0],[-0.406,0.087,-0.0731,-0.0713,0.0027,0.0017,0.0008,0.0003]];
+const MR = {"0":[[[0.147,0.8536,0.15,0.0662,0.8408,0.1932],[0.2469,0.4931,0.1517,0.0966,0.4108,0.2697],[0.1307,0.7058,0.0732,0.0192,0.9351,0.0382]],[[0.1496,0.8887,0.1413,0.0675,0.8544,0.2343],[0.2438,0.4978,0.1556,0.0977,0.4189,0.2725],[0.1319,0.7568,0.0688,0.0191,0.952,0.0376]],[[0.1515,0.9078,0.1377,0.0701,0.8635,0.2564],[0.2443,0.502,0.1585,0.0998,0.4243,0.2748],[0.1329,0.784,0.0667,0.0192,0.9626,0.0383]],[[0.1522,0.9173,0.1357,0.0724,0.8683,0.2692],[0.245,0.5043,0.1601,0.1012,0.427,0.2758],[0.1335,0.8,0.0646,0.0193,0.9683,0.0388]],[[0.1523,0.9228,0.1343,0.0744,0.8713,0.2783],[0.2456,0.5057,0.1611,0.1023,0.4284,0.2762],[0.134,0.8117,0.0625,0.0193,0.972,0.039]],[[0.1522,0.9263,0.1333,0.0763,0.8734,0.2857],[0.246,0.5065,0.1618,0.1031,0.4292,0.2763],[0.1344,0.8213,0.0606,0.0194,0.9744,0.0392]],[[0.1521,0.9284,0.1325,0.0781,0.8748,0.292],[0.2462,0.5068,0.1623,0.1038,0.4293,0.276],[0.1349,0.8292,0.0587,0.0194,0.9758,0.0393]],[[0.1519,0.9293,0.1318,0.0797,0.8757,0.2977],[0.2463,0.5065,0.1626,0.1044,0.4289,0.2755],[0.1353,0.8356,0.057,0.0194,0.9761,0.0391]],[[0.1517,0.9291,0.1312,0.0813,0.8762,0.3031],[0.2462,0.5057,0.1627,0.1048,0.4279,0.2746],[0.1356,0.8408,0.0554,0.0194,0.9755,0.0389]],[[0.1518,0.928,0.1306,0.0829,0.8763,0.3086],[0.2459,0.5044,0.1627,0.1052,0.4264,0.2733],[0.136,0.8454,0.0539,0.0194,0.974,0.0386]],[[0.1521,0.9263,0.1302,0.0847,0.8765,0.3145],[0.2457,0.5028,0.1626,0.1056,0.4246,0.2719],[0.1364,0.8497,0.0526,0.0193,0.9719,0.0383]],[[0.1531,0.9244,0.13,0.0869,0.8768,0.321],[0.2455,0.501,0.1627,0.1061,0.4226,0.2703],[0.137,0.8541,0.0519,0.0194,0.9696,0.0383]],[[0.1547,0.9225,0.1301,0.0894,0.8775,0.3278],[0.2455,0.4993,0.1629,0.1068,0.4205,0.2687],[0.1377,0.8588,0.052,0.0196,0.9673,0.0385]],[[0.1569,0.9207,0.1305,0.0921,0.8786,0.3348],[0.2457,0.4976,0.1632,0.1076,0.4185,0.2673],[0.1386,0.8637,0.053,0.0199,0.965,0.0392]],[[0.1595,0.9191,0.1309,0.0949,0.88,0.341],[0.2459,0.4961,0.1636,0.1084,0.4167,0.2659],[0.1394,0.8678,0.0546,0.0204,0.9627,0.0401]],[[0.1618,0.9175,0.1309,0.0975,0.8816,0.3451],[0.246,0.4944,0.1638,0.1088,0.4149,0.2648],[0.1398,0.8696,0.0567,0.0211,0.9598,0.0413]],[[0.1634,0.9194,0.1297,0.1004,0.8866,0.3446],[0.2461,0.4938,0.164,0.1084,0.4144,0.2651],[0.1409,0.8678,0.0623,0.0232,0.9582,0.0456]]],"12":[[[0.1243,0.5974,0.2407,0.0812,0.3559,0.1556],[0.1775,0.3562,0.2358,0.1355,0.5878,0.138],[0.2114,0.4765,0.0816,0.1002,0.5697,0.0642]],[[0.1305,0.6274,0.2564,0.0846,0.3641,0.1634],[0.1863,0.3641,0.2473,0.14,0.5972,0.1443],[0.2228,0.4999,0.0807,0.1071,0.5874,0.0662]],[[0.1344,0.6434,0.2661,0.0875,0.3697,0.1684],[0.1922,0.3699,0.2539,0.1433,0.6037,0.1489],[0.2293,0.5128,0.0814,0.1115,0.598,0.0681]],[[0.1367,0.6518,0.2718,0.0893,0.3727,0.1714],[0.1958,0.3734,0.2575,0.1454,0.6072,0.1519],[0.2335,0.5201,0.0821,0.1144,0.6042,0.0692]],[[0.1383,0.6572,0.2759,0.0905,0.3744,0.1734],[0.1983,0.3758,0.26,0.147,0.6094,0.1541],[0.2369,0.5253,0.0827,0.1167,0.6085,0.0701]],[[0.1395,0.6609,0.279,0.0914,0.3756,0.1749],[0.2004,0.3776,0.2618,0.1482,0.6107,0.1559],[0.2399,0.5293,0.0833,0.1189,0.6118,0.0707]],[[0.1406,0.6636,0.2816,0.0922,0.3762,0.1761],[0.202,0.3788,0.2632,0.1493,0.6112,0.1574],[0.2425,0.5324,0.0838,0.1208,0.6141,0.0713]],[[0.1415,0.6653,0.2837,0.0929,0.3764,0.177],[0.2033,0.3795,0.2642,0.1501,0.611,0.1587],[0.2448,0.5346,0.0844,0.1227,0.6155,0.0717]],[[0.1423,0.6662,0.2855,0.0934,0.3761,0.1777],[0.2043,0.3797,0.2649,0.1508,0.61,0.1598],[0.247,0.5361,0.085,0.1246,0.6161,0.072]],[[0.1431,0.6665,0.2872,0.094,0.3755,0.1783],[0.2052,0.3796,0.2654,0.1514,0.6084,0.1609],[0.2492,0.5372,0.0857,0.1266,0.6162,0.0724]],[[0.1441,0.6664,0.289,0.0947,0.3747,0.1789],[0.2062,0.3794,0.2659,0.152,0.6063,0.1621],[0.2515,0.538,0.0867,0.1289,0.6159,0.0729]],[[0.1452,0.6663,0.2909,0.0955,0.3739,0.1798],[0.2072,0.379,0.2664,0.1528,0.604,0.1634],[0.2542,0.5389,0.0881,0.1316,0.6155,0.0738]],[[0.1467,0.6663,0.2932,0.0965,0.3732,0.1809],[0.2083,0.3788,0.267,0.1538,0.6016,0.1651],[0.2572,0.54,0.09,0.1346,0.6152,0.0752]],[[0.1483,0.6664,0.2957,0.0976,0.3727,0.1823],[0.2096,0.3786,0.2677,0.1549,0.5994,0.1668],[0.2603,0.5412,0.0922,0.1378,0.6151,0.077]],[[0.15,0.6662,0.2981,0.0988,0.3723,0.1838],[0.2106,0.3784,0.2683,0.156,0.5972,0.1685],[0.2632,0.5423,0.0947,0.141,0.6149,0.079]],[[0.1515,0.6649,0.2996,0.0996,0.3715,0.185],[0.2108,0.3777,0.268,0.1564,0.595,0.1692],[0.265,0.5422,0.0975,0.1438,0.6142,0.0811]],[[0.1528,0.6626,0.2995,0.1001,0.3705,0.1866],[0.209,0.3767,0.2662,0.1555,0.5944,0.1677],[0.2646,0.5411,0.1026,0.1462,0.6141,0.0847]]],"25":[[[0.1956,0.5608,0.4647,0.1012,0.3784,0.2991],[0.2052,0.4225,0.4003,0.1459,0.3452,0.1834],[0.1947,0.6782,0.2063,0.0723,0.5699,0.1157]],[[0.2036,0.5871,0.4778,0.1031,0.3872,0.3022],[0.2146,0.4267,0.4168,0.1515,0.3509,0.1881],[0.2082,0.7231,0.2206,0.0722,0.607,0.1249]],[[0.2082,0.601,0.4851,0.1051,0.3921,0.3037],[0.2204,0.4306,0.4249,0.1556,0.3552,0.1908],[0.2164,0.7474,0.2298,0.0733,0.6276,0.1307]],[[0.2107,0.6083,0.4886,0.1064,0.3941,0.3039],[0.2236,0.4328,0.4287,0.1582,0.3578,0.1921],[0.2217,0.7614,0.2358,0.0741,0.6401,0.1344]],[[0.2123,0.6128,0.4906,0.1073,0.3951,0.3035],[0.2259,0.4341,0.4308,0.1601,0.3596,0.1928],[0.2256,0.7714,0.2406,0.0748,0.6495,0.1373]],[[0.2134,0.616,0.4917,0.108,0.3954,0.3028],[0.2275,0.4348,0.4323,0.1617,0.3609,0.1933],[0.229,0.7794,0.2451,0.0755,0.6573,0.1399]],[[0.2143,0.6181,0.4922,0.1087,0.3953,0.3018],[0.2287,0.435,0.4332,0.1631,0.3617,0.1936],[0.2317,0.7861,0.2494,0.0761,0.6638,0.142]],[[0.2148,0.6193,0.4921,0.1092,0.3947,0.3006],[0.2296,0.4347,0.4337,0.1641,0.3621,0.1937],[0.234,0.7918,0.2537,0.0768,0.6693,0.1439]],[[0.2152,0.6196,0.4914,0.1096,0.3937,0.2989],[0.2301,0.434,0.4337,0.165,0.3621,0.1936],[0.2359,0.7967,0.2584,0.0775,0.6742,0.1457]],[[0.2155,0.6194,0.4902,0.11,0.3922,0.2969],[0.2305,0.4327,0.4334,0.1658,0.3619,0.1934],[0.2376,0.8013,0.2637,0.0783,0.6787,0.1475]],[[0.2158,0.6188,0.4887,0.1105,0.3906,0.2947],[0.2307,0.4313,0.4329,0.1667,0.3614,0.1932],[0.2394,0.806,0.2698,0.0795,0.6834,0.1497]],[[0.2163,0.6181,0.4871,0.1111,0.3888,0.2923],[0.231,0.4296,0.4323,0.1677,0.361,0.193],[0.2414,0.8111,0.277,0.0812,0.6886,0.1525]],[[0.2169,0.6175,0.4854,0.112,0.3871,0.2898],[0.2315,0.4281,0.4318,0.1689,0.3606,0.193],[0.2436,0.8166,0.285,0.0835,0.6944,0.156]],[[0.2178,0.6169,0.4839,0.113,0.3856,0.2875],[0.232,0.4267,0.4313,0.1702,0.3604,0.1931],[0.2461,0.8224,0.2936,0.0864,0.7004,0.1602]],[[0.2186,0.6162,0.4824,0.1141,0.3842,0.2853],[0.2324,0.4253,0.4305,0.1714,0.3601,0.1932],[0.2483,0.8277,0.302,0.0896,0.7059,0.1647]],[[0.2192,0.6147,0.4811,0.115,0.3829,0.2833],[0.2322,0.4238,0.4285,0.1718,0.3594,0.1927],[0.2493,0.8305,0.3088,0.0928,0.7088,0.1688]],[[0.2198,0.6131,0.4818,0.1156,0.3828,0.2827],[0.2308,0.4228,0.4247,0.1706,0.3583,0.191],[0.2481,0.8295,0.3129,0.0975,0.7068,0.174]]],"37":[[[0.2818,1.2324,1.5874,0.162,0.431,0.5741],[0.2458,1.0278,2.3651,0.1926,0.3647,0.3731],[0.3348,1.0177,0.9239,0.1098,0.5748,0.3922]],[[0.3049,1.3262,1.7286,0.1705,0.4344,0.634],[0.2587,1.1234,2.6087,0.2067,0.379,0.4071],[0.3508,1.096,0.977,0.1164,0.6208,0.4234]],[[0.3168,1.3754,1.7971,0.1758,0.4358,0.6649],[0.2657,1.1697,2.7275,0.2144,0.386,0.4241],[0.3601,1.1392,1.0058,0.1203,0.6439,0.4407]],[[0.3229,1.4021,1.8312,0.1785,0.436,0.6825],[0.2692,1.1925,2.7905,0.2183,0.389,0.433],[0.3656,1.1658,1.0214,0.1225,0.6563,0.4516]],[[0.3269,1.4197,1.8516,0.1803,0.436,0.6949],[0.2714,1.206,2.8323,0.2206,0.3905,0.4388],[0.3694,1.1858,1.0315,0.1239,0.6644,0.46]],[[0.3299,1.4329,1.8655,0.1816,0.436,0.7045],[0.2729,1.2151,2.8643,0.2222,0.3915,0.4432],[0.3723,1.2026,1.0389,0.1251,0.6705,0.467]],[[0.3322,1.4431,1.875,0.1827,0.4358,0.7122],[0.274,1.2213,2.89,0.2233,0.3922,0.4468],[0.3746,1.2172,1.0443,0.126,0.6752,0.473]],[[0.3342,1.451,1.8812,0.1837,0.4355,0.7184],[0.2746,1.2252,2.911,0.2241,0.3925,0.4497],[0.3763,1.2299,1.048,0.1268,0.6787,0.4781]],[[0.3358,1.4571,1.8847,0.1846,0.4348,0.7234],[0.2748,1.2273,2.9287,0.2246,0.3926,0.4522],[0.3774,1.2415,1.0506,0.1275,0.6813,0.4826]],[[0.3372,1.4621,1.8862,0.1854,0.4339,0.7276],[0.2748,1.2281,2.9446,0.2249,0.3926,0.4544],[0.3782,1.2528,1.0522,0.1282,0.6833,0.4866]],[[0.3387,1.4666,1.8867,0.1864,0.4329,0.7317],[0.2746,1.2281,2.9602,0.2251,0.3924,0.4566],[0.3788,1.2645,1.0533,0.129,0.685,0.4907]],[[0.3403,1.4713,1.8867,0.1876,0.432,0.7358],[0.2744,1.2278,2.9765,0.2253,0.3923,0.459],[0.3794,1.277,1.0545,0.1299,0.6867,0.4949]],[[0.3421,1.4764,1.8867,0.1891,0.4312,0.7401],[0.2741,1.2274,2.9936,0.2256,0.3923,0.4615],[0.3802,1.2904,1.0558,0.1312,0.6886,0.4994]],[[0.344,1.4815,1.8865,0.1907,0.4305,0.7443],[0.2739,1.2268,3.0103,0.2259,0.3923,0.464],[0.381,1.3039,1.0575,0.1326,0.6904,0.5038]],[[0.3455,1.4853,1.8848,0.1923,0.4297,0.7475],[0.2735,1.225,3.0224,0.226,0.392,0.4658],[0.3819,1.3159,1.0593,0.1342,0.6915,0.5076]],[[0.346,1.4847,1.8779,0.1933,0.428,0.7475],[0.2725,1.2193,3.0201,0.2252,0.3907,0.4657],[0.3827,1.3226,1.0609,0.1358,0.69,0.5091]],[[0.345,1.4768,1.8635,0.1934,0.4251,0.741],[0.2706,1.2073,2.9881,0.223,0.3881,0.4619],[0.3848,1.3193,1.0661,0.1383,0.6839,0.5058]]],"49":[[[0.2673,1.5771,4.5622,0.2445,0.5309,0.7192],[0.1858,0.7354,0.0,0.0,0.0,0.0],[0.3513,1.1541,3.8293,0.3174,0.6393,0.6657]],[[0.2852,1.694,4.8801,0.2605,0.5846,0.8004],[0.1937,0.7931,0.0,0.0,0.0,0.0],[0.3815,1.2331,4.1169,0.3399,0.6871,0.7241]],[[0.2949,1.7575,5.0432,0.2697,0.6153,0.8442],[0.1982,0.8233,0.0,0.0,0.0,0.0],[0.3972,1.2757,4.261,0.3503,0.7109,0.753]],[[0.3007,1.7955,5.1317,0.2757,0.6349,0.8704],[0.2007,0.8407,0.0,0.0,0.0,0.0],[0.4071,1.3023,4.3432,0.356,0.7242,0.7688]],[[0.3048,1.8234,5.189,0.2806,0.6507,0.8896],[0.2024,0.8528,0.0,0.0,0.0,0.0],[0.4149,1.3234,4.4021,0.36,0.7336,0.7797]],[[0.3081,1.8458,5.2284,0.2849,0.6654,0.9056],[0.2036,0.862,0.0,0.0,0.0,0.0],[0.4219,1.3418,4.4488,0.3634,0.7413,0.7882]],[[0.3109,1.8642,5.253,0.2887,0.6802,0.9194],[0.2046,0.8689,0.0,0.0,0.0,0.0],[0.4284,1.3585,4.4855,0.3663,0.7478,0.7949]],[[0.3133,1.8791,5.2638,0.2922,0.6958,0.9317],[0.2052,0.8738,0.0,0.0,0.0,0.0],[0.4345,1.3738,4.5132,0.3688,0.7535,0.8002]],[[0.3154,1.8915,5.2623,0.2956,0.7129,0.9431],[0.2056,0.877,0.0,0.0,0.0,0.0],[0.4406,1.3886,4.5336,0.3711,0.7588,0.8043]],[[0.3173,1.9024,5.2505,0.2991,0.7326,0.9547],[0.2059,0.8789,0.0,0.0,0.0,0.0],[0.4469,1.4037,4.5491,0.3732,0.7645,0.808]],[[0.3193,1.9131,5.2311,0.3028,0.7554,0.9669],[0.206,0.88,0.0,0.0,0.0,0.0],[0.4537,1.4201,4.5623,0.3755,0.7713,0.8119]],[[0.3214,1.9243,5.2069,0.3068,0.7816,0.9805],[0.2062,0.8807,0.0,0.0,0.0,0.0],[0.4612,1.4382,4.5755,0.3779,0.7798,0.8166]],[[0.3236,1.9363,5.1803,0.3112,0.8107,0.9952],[0.2064,0.8813,0.0,0.0,0.0,0.0],[0.4691,1.4579,4.5898,0.3804,0.7905,0.8224]],[[0.3258,1.9487,5.1526,0.3156,0.8415,1.0105],[0.2067,0.8817,0.0,0.0,0.0,0.0],[0.4768,1.4783,4.6037,0.3828,0.8031,0.829]],[[0.3276,1.9593,5.1217,0.3195,0.8717,1.0245],[0.2069,0.881,0.0,0.0,0.0,0.0],[0.4831,1.4972,4.6113,0.3841,0.817,0.8349]],[[0.3281,1.9638,5.0793,0.3213,0.8981,1.0337],[0.2065,0.877,0.0,0.0,0.0,0.0],[0.4847,1.51,4.5964,0.3818,0.8322,0.8369]],[[0.3262,1.9576,5.018,0.3182,0.9171,1.0332],[0.2052,0.8662,0.0,0.0,0.0,0.0],[0.4751,1.512,4.5299,0.3709,0.8561,0.8342]]]};
+const J = 96768, L = 50, H = 5376, VEC = ['shift₁', 'scale₁', 'gate₁', 'shift₂', 'scale₂', 'gate₂'], MODN = ['video', 'text', 'audio'];
+const S = { t: 0, mod: 0, l: 0, j: 0 };
+$('modSeg').innerHTML = MODN.map((v, i) => `<button type="button" data-v="${i}" aria-pressed="${i === S.mod}">${v}</button>`).join('');
+$('modSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.mod = +b.dataset.v; $('modSeg').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); draw(); });
+// TT: 65 rows (every 16th of 1025); interpolate in it the way the host does in the full table
+const temb = t => { const p = Math.min(1, Math.max(0, t)) * 64, i = Math.min(63, Math.floor(p)), f = p - i; return TT[i].map((v, k) => fr(v + (TT[i + 1][k] - v) * f)); };
+const vrms = (l, m, v) => { const g = MR[l], p = S.t * 16, i = Math.min(15, Math.floor(p)), f = p - i; return g[i][m][v] + (g[i + 1][m][v] - g[i][m][v]) * f; };
+const steps = [
+  { tag: 'I', short: 'roles', title: 'thread k = blockIdx.x · 256 + tid, grid-stride over L · J = 4,838,400 (block l, channel j)', text: 'k / J is the block, k mod J the output channel. ≤ 448 blocks of 256 threads stride over the 4.8 M outputs, 37 rounds each.' },
+  { tag: 'W', short: 'weights', title: 'one 16-byte load: the 8 f16 weights of row (l, j); cvt.f32.f16 × 8', text: 'W is [L][J][8] f16, so a thread\'s weights are one aligned 16-byte word; consecutive threads read consecutive words (fully coalesced).' },
+  { tag: 'B', short: 'bias', title: 'b[l · J + j]: one f16, the vector\'s value when temb = 0', text: 'Both W and b stay f16, as in the file: the outputs are f32 sums of f32 products, so the f16 storage is the only rounding.' },
+  { tag: 'R', short: 'per timestep', title: 'for r < R: two 16-byte loads of temb[r], 8 FMAs, + bias', text: 'temb is [R][8] f32, 32 bytes per row, read by every thread through the read-only cache: R ≤ 4 rows, 128 bytes for the whole launch.' },
+  { tag: 'S', short: 'store', title: 'out[(l · R + r) · J + j] = the sum', text: 'The layout puts all of block l\'s rows together: [l][r][modality m][vector v][channel], so (r, m) is one row of 6 × 5376 that rms_mod and the gated GEMM epilogue index with a stride.' },
+];
+const code = Atlas.code($('code'), $('tabs'), {
+  cpp: { label: 'CUDA C++ (equivalent)', lang: 'cpp', src: `I|extern "C" __global__ void adaln(const __half *w, const __half *b, const float *t, float *out,
+I|                                 unsigned J, unsigned L, unsigned R)
+I|{
+I|    for (unsigned k = blockIdx.x * blockDim.x + threadIdx.x; k < J * L; k += gridDim.x * blockDim.x) {
+W|        uint4 q = __ldg((const uint4 *)w + k);                   // the 8 f16 weights of row k
+W|        float wf[8];  const __half *h = (const __half *)&q;
+W|        for (int i = 0; i < 8; i++) wf[i] = __half2float(h[i]);
+B|        float bias = __half2float(b[k]);
+I|        unsigned l = k / J, j = k % J;
+R|        for (unsigned r = 0; r < R; r++) {
+R|            const float *tr = t + 8 * r;
+R|            float s = wf[0] * tr[0];
+R|            for (int i = 1; i < 8; i++) s = fmaf(wf[i], tr[i], s);
+S|            out[(size_t)(l * R + r) * J + j] = s + bias;
+R|        }
+I|    }
+I|}` },
+  ptx: { label: 'Hand-written PTX (excerpt)', lang: 'ptx', src: `I|    mad.lo.u32      %r7, %r4, %r5, %r6;     // k
+I|LOOP:
+I|    setp.ge.u32     %p0, %r7, %r3;
+I|    @%p0 bra        DONE;
+W|    mul.wide.u32    %rd4, %r7, 16;
+W|    ld.global.nc.v4.b32 {%r9, %r10, %r11, %r12}, [%rd4];
+W|    mov.b32         {%h0, %h1}, %r9;
+W|    cvt.f32.f16     %f0, %h0;
+W|    ...                                     // %f1 … %f7
+B|    ld.global.nc.b16 %h8, [%rd5];
+B|    cvt.f32.f16     %f8, %h8;               // bias
+I|    div.u32         %r13, %r7, %r0;         // block l
+I|    rem.u32         %r14, %r7, %r0;         // j
+R|ROW:
+R|    ld.global.nc.v4.f32 {%f10, %f11, %f12, %f13}, [%rd6];
+R|    ld.global.nc.v4.f32 {%f14, %f15, %f16, %f17}, [%rd6+16];
+R|    mul.f32         %f9, %f0, %f10;
+R|    fma.rn.f32      %f9, %f1, %f11, %f9;
+R|    ...                                     // 6 more
+R|    add.f32         %f9, %f9, %f8;
+S|    add.u32         %r17, %r15, %r16;
+S|    mad.lo.u32      %r17, %r17, %r0, %r14;  // (l R + r) J + j
+S|    st.global.f32   [%rd7], %f9;
+R|    add.u32         %r16, %r16, 1;
+R|    @%p1 bra        ROW;
+I|    add.u32         %r7, %r7, %r8;
+I|    bra.uni         LOOP;` },
+});
+const ORDER = steps.map(s => s.tag);
+const mg = Atlas.grid($('map'), 6, 50);
+function drawCurves() {
+  const W = 360, Hh = 170, x0 = 28, y0 = 10, w = W - x0 - 8, h = 120, lo = -0.6, hi = 0.6;
+  const X = t => x0 + t * w, Y = v => y0 + (hi - Math.max(lo, Math.min(hi, v))) / (hi - lo) * h;
+  const cols = [C.x, C.y, C.w, C.sync, C.fg, C.muted, C.muted, C.muted];
+  let s = `<line x1="${x0}" x2="${x0 + w}" y1="${Y(0)}" y2="${Y(0)}" stroke="${C.line}"/>`;
+  for (let k = 0; k < 8; k++) s += `<path d="${TT.map((r, i) => (i ? 'L' : 'M') + X(i / 64).toFixed(1) + ' ' + Y(r[k]).toFixed(1)).join(' ')}" fill="none" stroke="${cols[k]}" stroke-width="${k < 3 ? 1.6 : 0.9}" opacity="${k < 5 ? 0.95 : 0.6}"/>`;
+  s += `<line x1="${X(S.t)}" x2="${X(S.t)}" y1="${y0}" y2="${y0 + h}" stroke="${C.fg}" stroke-dasharray="3 2"/>`;
+  const e = temb(S.t), bw = (w - 8) / 8;
+  for (let k = 0; k < 8; k++) {
+    const v = e[k], bh = Math.min(1, Math.abs(v) / 0.6) * 18;
+    s += `<rect x="${x0 + k * bw + 2}" y="${v >= 0 ? 150 - bh : 150}" width="${bw - 4}" height="${bh}" fill="${cols[k]}" opacity="0.85"/>`;
+    s += `<text x="${x0 + k * bw + bw / 2}" y="${168}" font-size="8.5" text-anchor="middle" fill="${C.fg}">${v.toFixed(3)}</text>`;
+  }
+  s += `<text x="2" y="${Y(0.5) + 3}" font-size="9" fill="${C.muted}">0.5</text><text x="2" y="${Y(-0.5) + 3}" font-size="9" fill="${C.muted}">−0.5</text>`;
+  s += `<text x="${x0}" y="${y0 + h + 12}" font-size="9" fill="${C.muted}">t = 0</text><text x="${x0 + w}" y="${y0 + h + 12}" font-size="9" text-anchor="end" fill="${C.muted}">1</text>`;
+  $('curves').setAttribute('viewBox', `0 0 ${W} ${Hh + 6}`); $('curves').innerHTML = s;
+}
+function draw() {
+  const st = stepper.step, si = ORDER.indexOf(st.tag);
+  $('ttv').textContent = S.t.toFixed(3) + ` (σ = ${(1 - S.t).toFixed(3)}, row ${(S.t * 1024).toFixed(1)} of the table)`;
+  drawCurves();
+  // the output layout of one timestep row: 50 blocks (columns) × 6 vectors (rows) of the selected modality
+  const g = mg.prep();
+  for (let v = 0; v < 6; v++) for (let l = 0; l < L; l++) {
+    const near = [0, 12, 25, 37, 49].reduce((a, b) => Math.abs(b - l) < Math.abs(a - l) ? b : a);
+    const val = vrms(near, S.mod, v), hot = si >= 1 && l === S.l && v === Math.floor(S.j / H) % 6;
+    g.cell(v, l, [2, 5].includes(v) ? C.y : C.x, Math.min(1, val / 2) * 0.8 + 0.1, 0.08);
+    if (hot) g.box(v, l, 1, 1, C.fg, 2);
+  }
+  $('maplabel').textContent = `out for one timestep row and ${MODN[S.mod]} tokens: 50 blocks × 6 vectors`;
+  $('mapsub').textContent = 'shade: rms of the vector (nearest of the 5 sampled blocks)';
+  Atlas.legend($('legend'), [['--x', 'shift, scale'], ['--y', 'gates'], ['--fg', `thread (${S.l}, ${S.j})`]]);
+  const row = (a, b) => `<dt>${a}</dt><dd>${b}</dd>`;
+  const k = S.l * J + S.j, m = Math.floor(S.j / (6 * H)), v = Math.floor(S.j / H) % 6, ch = S.j % H;
+  $('thlabel').textContent = `thread k = ${Atlas.int(k)}: block ${S.l}, j = ${Atlas.int(S.j)} (${MODN[m]}, ${VEC[v]}, channel ${ch})`;
+  let c = row('k / J, k mod J', `${S.l}, ${Atlas.int(S.j)}`);
+  if (si >= 1) c += row('weights', `W + 16 · ${Atlas.int(k)}: bytes ${Atlas.int(16 * k)} … ${Atlas.int(16 * k + 15)}`);
+  if (si >= 2) c += row('bias', `b[${Atlas.int(k)}]`);
+  if (si >= 3) c += row('temb[r]', temb(S.t).map(x => x.toFixed(3)).join(', '));
+  if (si >= 4) c += row('stores', `out[(${S.l} · R + r) · 96768 + ${Atlas.int(S.j)}], r < R`);
+  $('card').innerHTML = c;
+  $('status').textContent = 'Click a cell to pick the thread for that block and vector.';
+  const blocks = [0, 12, 25, 37, 49];
+  $('heatlabel').textContent = `${MODN[S.mod]} tokens at t = ${S.t.toFixed(2)}: vector sizes per block`;
+  $('heat').innerHTML = '<thead><tr><th>block</th>' + VEC.map(x => `<th>${x}</th>`).join('') + '</tr></thead><tbody>' +
+    blocks.map(l => `<tr><td>${l}</td>` + VEC.map((_, vv) => { const x = vrms(l, S.mod, vv); return `<td class="h" style="background: color-mix(in srgb, var(${[2, 5].includes(vv) ? '--y' : '--x'}) ${Math.min(70, x * 25).toFixed(0)}%, transparent)">${x.toFixed(2)}</td>`; }).join('') + '</tr>').join('') + '</tbody>';
+}
+mg.hook(p => { $('status').textContent = `block ${p.c}, ${VEC[p.r]} of ${MODN[S.mod]} tokens`; }, p => { S.l = p.c; S.j = (S.mod * 6 + p.r) * H + 37; draw(); }, () => {});
+$('tt').addEventListener('input', () => { S.t = +$('tt').value / 1000; draw(); });
+Atlas.facts($('facts'), [['8', 'numbers of t (adaln_t_table)'], ['96,768', 'outputs per block and timestep'], ['4.84 M', 'threads: 50 blocks × J'], ['77 MB', 'f16 weights read per step'], ['2', 'launches per step (+ final layer)'], ['0.2 ms', 'of a 610 ms step']]);
+const stepper = Atlas.stepper({ steps, code, render: draw, delay: 1300 });
+stepper.go(0);
+Atlas.onResize(draw);
+})();
+</script>
+</body>
+</html>
