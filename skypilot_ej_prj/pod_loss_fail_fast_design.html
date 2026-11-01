@@ -679,19 +679,6 @@ failure.</li>
 managed jobs comes from the <code>sky launch</code> numbers above (~106 s before
 the fix), not from a managed-job run on <code>ej-proj-0-1</code>.</li>
 </ul>
-<h3 id="95-next-steps">9.5 Next steps <a class="header-anchor" href="#95-next-steps">#</a></h3>
-<ol>
-<li>Commit as described in section 8 (D, then A, then B), then run the A/B
-benchmark against <code>ej-proj-0-1</code> to confirm the happy path is unchanged.</li>
-<li>Jobs controller (<code>recovery_strategy.py</code>): give
-<code>InstancesLostDuringSetupError</code> its own retry code, and a short first
-back-off instead of 60 s, since a deleted pod isn't a capacity problem.
-With this change, back-off becomes the largest part of a recovery:
-measured at 68–77 s of a ~145 s recovery (9.4, managed jobs).</li>
-<li>Optional: component C, and a Kubernetes-only check for pods that are
-terminating but still Running.</li>
-</ol>
-
 </main>
 
 </body>
