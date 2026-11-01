@@ -9,7 +9,8 @@
 
 ### **Requirement 2: Your design doc (markdown, in-repo or linked):**
 
-This Doc, see details at Project Write-up below, markdown: [https\://hifiweekly.github.io/skypilot\_ej\_prj/overview.md](https://hifiweekly.github.io/skypilot_ej_prj/overview.md) 
+This Doc, see details at Project Write-up below,  
+Markdown version: [https\://hifiweekly.github.io/skypilot\_ej\_prj/overview.md](https://hifiweekly.github.io/skypilot_ej_prj/overview.md) 
 
 ### **Requirement 3: Your benchmark script and a result table:**
 
@@ -72,7 +73,9 @@ All run done on Ubuntu 26.04, i7-8700K, 32GB memory
 
 The refactoring in these branches ([https\://github.com/siliconej/skypilot/branches/](https://github.com/siliconej/skypilot/branches/yours)) is a set of optimizations stacked in a progressive fashion. The svg diagrams linked here (4 nodes test \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence.svg)\], 6 nodes test \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_6nodes.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)\]) show the different updates that are prepared for your review. Overall there are two parts of the refactoring, first set focuses on section D (cycles between provision and job submission), second set focuses on the rest of the whole workflow. I also implemented the bonus feature and fixed a warning on linux. See more detailed below.
 
-The priority of these optimizations is analyzed and determined based on the delta time reduction that could be achieved theoretically according to first trace analysis on the master HEAD.
+The priority of these optimizations is analyzed and determined based on the delta time reduction that could be achieved theoretically according to first trace analysis on the master HEAD. More than 5 optimization strategies picked during the first cut, only the benchmark results that show statistical significance were pushed to branches.
+
+Notice that all the analysis is based on the tracing and profiling on a Linux box running Ubuntu 26.04. I did notice the subtle differences of the benchmark results between Linux and MacOS. For example,on Linux during each pod’s Runtime setup, Ray init is slower than the MacOS, so we see less effect of optimizing slow PyPI access using “uv pip install \--offline” on Linux, but potentially it could benefit MacOS’s Runtime setup speed.
 
 A more lengthy consolidated design doc of all the optimization included so far in this project is at: [https\://hifiweekly.github.io/skypilot\_ej\_prj/launch\_latency\_consolidated\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/launch_latency_consolidated_design.html) 
 
@@ -412,7 +415,7 @@ Managed Job ID: 9
 └── To view all managed jobs:	sky jobs queue  
 sky jobs launch \-y \-c last\_test ej/job.yaml  **0.90s user 0.26s system 3% cpu 30.486 total**
 
-##   Appendix C: Ubuntu Benchmark Result
+##   Appendix C: Ubuntu Benchmark Result: sky-launch-ab
 
 This run is valid: on a 6-node sky launch, ej-prj-3-job1 (5cb8dace3) reached "Cluster launched" about 6 s (24%) faster than baseline 5ef55efa4, where it branched from master. All 10 measured launches succeeded on all 6 ranks, with 1 warm-up launch per build excluded, and no launch fell back to restarting Ray. The first table is your summary.md as a real ASCII table.
 
@@ -463,7 +466,7 @@ These are the per-launch times in seconds, from results.csv:
 
 The results are in ej/bench\_results/20261031-234001-sky-launch-ab/, including summary.md, results.csv, meta.json and logs/.
 
-## Appendix D: MacOS Benchmark Result
+## Appendix D: MacOS Benchmark Result: sky-launch-ab
 
 This run is valid, and the gain is clearer than in the last one: ej-prj-3-job1 reached "Cluster launched" 6.5 s (32%) faster than baseline 5ef55efa4. All 10 measured launches succeeded on all 6 ranks. Every candidate run also beat every baseline run on both post\_runtime\_s and total provisioning (12.6–15.7 s against 18.1–21.4 s), so p \= 0.0041 is about the lowest a 5-against-5 test can give.
 
@@ -480,7 +483,8 @@ Medians, seconds     Linux box (23:40 run)       This run (likely Mac)
 \+------------------+---------+---------+       \+---------+---------+  
 \| Provision total  \|    24.5 \|    18.5 \|       \|    20.7 \|    14.1 \|  
 \| Client wall time \|    41.2 \|    35.5 \|       \|    35.0 \|    28.3 \|  
-\+------------------+---------+---------+       \+---------+---------+  
+\+------------------+---------+---------+       \+---------+---------+
+
 \* On the candidate, skylet starts while Ray is being waited on, so it overlaps the  
   row above. On the baseline it runs after that wait. The Ray \+ skylet row includes it either way.
 
@@ -490,4 +494,77 @@ What the numbers show
 \- The Ray wait has nearly disappeared here. In 4 of 5 candidate runs, Ray \+ skylet equals the skylet time (1.9–2.2 s), so all nodes had already joined when runtime setup ended.  
 \- Runtime setup is now the biggest stage on this machine (6.4 s). On Linux the Ray wait is what holds launches back, and faster setup just moves time into it. Here, faster setup should shorten the launch directly.  
 \- Runtime setup is 1.6 s faster on the candidate (p \= 0.045). This is plausible because the candidate no longer does a real PyPI install of SkyPilot during pod startup, but the Linux run didn't show the gain.  
-\- The pod-start gain is probably noise. It's 0.8 s faster here (p \= 0.045), but was 0.7 s slower on the same code in the last run, and no change targets it.  
+\- The pod-start gain is probably noise. It's 0.8 s faster here (p \= 0.045), but was 0.7 s slower on the same code in the last run, and no change targets it.
+
+## Appendix E: Ubuntu Benchmark Result: jobs-ab –nodes 6
+
+ej-prj-3-job1 is clearly faster: its median client total is 54.6 s against 69.5 s on master, a 14.9 s (21%) cut. All 16 measured runs succeeded, and every candidate run (50.5–60.3 s) beat every master run (61.5–74.9 s). It also replicates §14 of the design doc, which had 54.8 s against 70.8 s.
+
+The report's p \= 0.0000 isn't literally zero. I computed the exact value at p \= 0.00016, the lowest possible for 8 runs against 8\.
+
+Where the time goes
+
+These are means, because medians don't add up across phases.
+
+┌─────────────────────────────────┬────────┬───────────┬────────┬────────────────────────┐  
+│              Phase              │ Master │ Candidate │ Change │        Exact p         │  
+├─────────────────────────────────┼────────┼───────────┼────────┼────────────────────────┤  
+│ G: RUNNING → SUCCEEDED          │ 9.74   │ 3.48      │ −6.25  │ 0.00016                │  
+├─────────────────────────────────┼────────┼───────────┼────────┼────────────────────────┤  
+│ D: provisioning → job submitted │ 30.77  │ 25.82     │ −4.95  │ 0.013                  │  
+├─────────────────────────────────┼────────┼───────────┼────────┼────────────────────────┤  
+│ F: job ended → RUNNING          │ 3.16   │ 1.12      │ −2.05  │ 0.00016                │  
+├─────────────────────────────────┼────────┼───────────┼────────┼────────────────────────┤  
+│ H: SUCCEEDED → client exits     │ 3.32   │ 2.51      │ −0.81  │ 0.16 (not significant) │  
+├─────────────────────────────────┼────────┼───────────┼────────┼────────────────────────┤  
+│ A: client start → job row       │ 7.12   │ 6.87      │ −0.25  │ 0.036                  │  
+├─────────────────────────────────┼────────┼───────────┼────────┼────────────────────────┤  
+│ E: job runs                     │ 8.38   │ 8.96      │ \+0.58  │ 0.0065                 │  
+├─────────────────────────────────┼────────┼───────────┼────────┼────────────────────────┤  
+│ B \+ C: hand-off to controller   │ 6.14   │ 6.26      │ \+0.12  │ not tested             │  
+├─────────────────────────────────┼────────┼───────────┼────────┼────────────────────────┤  
+│ Client total                    │ 68.64  │ 55.02     │ −13.62 │ 0.00016                │  
+└─────────────────────────────────┴────────┴───────────┴────────┴────────────────────────┘
+
+\- Most of the gain is after the job finishes: F, G and H account for about 9.1 s of the 13.6 s. G is now 3.4–3.6 s in every run, compared with 3.8–16.8 s on master.  
+\- Provisioning contributes about 5 s, but that average hides the main finding below.
+
+Main finding: the candidate has fast and slow runs
+
+The report's median D of 25.1s doesn't match any actual run, because the runs fall into two groups:
+
+┌─────────────────┬──────┬───────────────────┬───────────┬──────────────────┐  
+│      Group      │ Runs │ Runtime setup (s) │   D (s)   │ Client total (s) │  
+├─────────────────┼──────┼───────────────────┼───────────┼──────────────────┤  
+│ Candidate, fast │ 4    │ 1.8–2.5           │ 21.8–22.1 │ 50.5–52.9        │  
+├─────────────────┼──────┼───────────────────┼───────────┼──────────────────┤  
+│ Candidate, slow │ 4    │ 10.4–16.8         │ 28.1–32.8 │ 56.3–60.3        │  
+├─────────────────┼──────┼───────────────────┼───────────┼──────────────────┤  
+│ Master          │ 8    │ 2.2–2.9           │ 28.6–33.4 │ 61.5–74.9        │  
+└─────────────────┴──────┴───────────────────┴───────────┴──────────────────┘
+
+\- In slow runs, most of the provisioning gain disappears: the median D is about 28.9 s against master's 30.6 s. In fast runs it's about 22 s, a gain of about 8.6 s.  
+\- The stall probably affects master too, but it's hidden: master's runtime setup stays short because its delay shows up in the Ray wait instead.  
+\- The cause isn't confirmed by this run: worker logs aren't saved. It looks like the roughly 10 s single-pod stall I traced earlier to resolving setuptools\<70, but I can't confirm these four runs are the same thing.  
+\- §15 of the design doc needs revisiting: it blames the PyPI dry run and proposes \--offline, but ej-prj-3-job2 tested that and showed no gain.
+
+Smaller things to note
+
+\- Small slowdowns: E is up 0.58s, and §14 also showed it slightly slower (+0.3 s). The submit step is up about 0.45 s, but §14 had it going the other way, so I'd treat that one as unproven. Neither is diagnosed, and these p-values aren't adjusted for testing many metrics.  
+\- Skylet start is slower (1.63 → 4.17s): this is expected, since it now overlaps the Ray wait, so it doesn't add its full time to the total.  
+\- Pod start is unchanged (5.47 vs 5.60s): the IfNotPresent gain is still available.  
+\- First launch after a restart isn't counted: warm-ups are dropped, and they ran slower in A and C. The very first one took 143.9 s, with A at 68 s, while later warm-ups had A at about 9 s. I haven't looked into why.
+
+What to try next
+
+┌───────────────────────────────────────────┬──────────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────┐  
+│                 Candidate                 │                       Likely gain                        │                                  Evidence                                  │  
+├───────────────────────────────────────────┼──────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤  
+│ Rebuilt image with the pins (611a9432b)   │ Up to about 3.9 s on average, and removes the slow group │ Inferred from the two groups, and assumes the setuptools\<70 cause is right │  
+├───────────────────────────────────────────┼──────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤  
+│ IfNotPresent for the default image        │ Up to about 3 s                                          │ Pod start only, from the pull-policy test                                  │  
+├───────────────────────────────────────────┼──────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤  
+│ Avoid the first storage lookup in phase A │ Up to about 4.8 s                                        │ §13 probe; the fix isn't designed yet                                      │  
+└───────────────────────────────────────────┴──────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
+
+I'd start with the rebuilt image, because it targets the variability as well as the average, and the code change is already on this branch. The test is the same A/B with the rebuilt image, ideally also saving worker logs so a remaining stall can be identified. Do you want me to set that up?
