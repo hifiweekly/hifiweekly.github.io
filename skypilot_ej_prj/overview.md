@@ -68,7 +68,8 @@ A more length consolidated design doc of all the optimization included so far th
 
 These three changes focus on the job preparation and per node job submission, and will have impact on unmanaged job scheduling by ‘sky launch’ as well.
 
-**\* Branch ej-prj-0: Start ray in the pod before preparing SkyPilot** [https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-0?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-0?expand=1)
+**\* Branch ej-prj-0: Start ray in the pod before preparing SkyPilot** [https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-0?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-0?expand=1)  
+PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions.html\#ej-prj-0](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions.html#ej-prj-0) 
 
 **\* TL;DR**
 
@@ -98,7 +99,8 @@ A new template test checks the order, including the HA case, and the rendered po
 ---
 
 **\* Branch ej-prj-1: Wait for Ray in one blocking call; start skylet during the wait**  
-[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-1?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-1?expand=1)
+[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-1?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-1?expand=1)  
+PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions.html\#ej-prj-1](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions.html#ej-prj-1) 
 
 **\* TL;DR**
 
@@ -127,7 +129,8 @@ A new template test checks the order, including the HA case, and the rendered po
 ---
 
 **\* Branch ej-prj-3: Skip the needless ray stop; pre-install the runtime pins in the image**  
-[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-3?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-3?expand=1) 
+[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-3?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-3?expand=1)   
+PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions.html\#ej-prj-3](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions.html#ej-prj-3) 
 
 **\* TL;DR**
 
@@ -160,7 +163,8 @@ Because the workers wait for the head's GCS port, a late head delays the whole c
 These two changes focus on the skypilot tasks before and after the job preparation and job submission, including whole job request processing, submission, job monitoring, and job exit.
 
 **\* Branch ej-prj-job0: Fetch status and submitted-at in one call; skip the first status-check sleep; re-check status on controller logs change**  
-[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-job0?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-job0?expand=1) 
+[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-job0?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-job0?expand=1)   
+PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions.html\#ej-prj-job0](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions.html#ej-prj-job0) 
 
 **\* TL;DR**
 
@@ -185,7 +189,8 @@ These two changes focus on the skypilot tasks before and after the job preparati
 ---
 
 **\* Branch ej-prj-job1: Look up the enabled storage clouds once per request**  
-[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-job1?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-job1?expand=1)
+[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-job1?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-job1?expand=1)  
+PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions.html\#ej-prj-job1](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions.html#ej-prj-job1) 
 
 **\* TL;DR**
 
@@ -211,7 +216,8 @@ These two changes focus on the skypilot tasks before and after the job preparati
 
 ### **Bonus: 90s timeout handling** 
 
-[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-bonus?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-bonus?expand=1)
+[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-bonus?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-bonus?expand=1)  
+PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions.html\#ej-prj-bonus](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions.html#ej-prj-bonus) 
 
 **\* TL;DR**
 
@@ -233,7 +239,8 @@ These two changes focus on the skypilot tasks before and after the job preparati
 **Tests:**  
 \- 9 new unit tests.  
 \- A new smoke test, test\_launch\_fails\_fast\_when\_pod\_deleted (worker and head), deletes a pod mid-setup. Both cases passed on kind in 42–45 s, against a 45 s limit.  
-\- 7aed7c84e adds the function to command\_runner.pyi; without it, CI's mypy check fails.
+\- 7aed7c84e adds the function to command\_runner.pyi; without it, CI's mypy check fails.  
+\- verified both unmanaged job case (sky launch) and managed job case (sky jobs launch).
 
 **Design Doc**: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pod\_loss\_fail\_fast\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/pod_loss_fail_fast_design.html) 
 
@@ -241,7 +248,8 @@ These two changes focus on the skypilot tasks before and after the job preparati
 
 ### **Fix: k8s-pool-warning suppression**
 
-[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-k8s-pool-warning?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-k8s-pool-warning?expand=1)
+[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-k8s-pool-warning?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-k8s-pool-warning?expand=1)  
+PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions.html\#ej-k8s-pool-warning](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions.html#ej-k8s-pool-warning) 
 
 **Problem.**  
 \- The pool overflows by design. SkyPilot's Kubernetes API clients cap their connection pool at CONNECTION\_POOL\_MAXSIZE (4). Going past it is normal, for example when creating or inspecting more than 4 pods in parallel.  
@@ -258,7 +266,11 @@ These two changes focus on the skypilot tasks before and after the job preparati
 
 Design doc: [https\://hifiweekly.github.io/skypilot\_ej\_prj/k8s\_pool\_full\_warning\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/k8s_pool_full_warning_design.html) 
 
-## Appendix A: User’s Perceived Time
+## Appendix A: Other references
+
+Zip file of other markdown version of the linked design docs: [https\://hifiweekly.github.io/skypilot\_ej\_prj/references.zip](https://hifiweekly.github.io/skypilot_ej_prj/references.zip)
+
+## Appendix B: User’s Perceived Time
 
 ### **ej-prj-3-job0: sky jobs launch**
 
