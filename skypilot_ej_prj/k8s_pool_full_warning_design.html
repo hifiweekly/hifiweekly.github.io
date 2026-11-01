@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: hide urllib3&#x27;s &quot;Connection pool is full&quot; warning for SkyPilot&#x27;s Kubernetes clients</title>
+<meta name="description" content="Since #11136, each SkyPilot Kubernetes API client keeps at most 4 pooled connections. Requests beyond that make urllib3 log &quot;Connection pool is full&quot;, a warning about intended behaviour. A logging.Filter hides it for SkyPilot&#x27;s capped pools only.">
+<meta name="author" content="Edward Jiang">
+<link rel="icon" href="../favicon.ico">
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2e0;
+  --accent: #2f5bd3; --code-bg: #f0f0ed; --th-bg: #f3f3f1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+    --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+  --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+nav { max-width: 920px; margin: 0 auto; padding: 16px 16px 0; font-size: 14px; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--accent); }
+main {
+  max-width: 920px; margin: 12px auto 64px; padding: 28px 32px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+@media (max-width: 640px) { main { margin: 8px 16px 48px; padding: 20px 16px; } }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 16px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 17px; margin: 28px 0 10px; }
+h4 { font-size: 15px; margin: 22px 0 8px; }
+.header-anchor { color: var(--muted); text-decoration: none; opacity: 0; margin-left: -0.9em; padding-right: 0.25em; font-weight: 400; }
+h1:hover .header-anchor, h2:hover .header-anchor, h3:hover .header-anchor, h4:hover .header-anchor { opacity: 1; }
+a { color: var(--accent); }
+p, ul, ol { margin: 0 0 14px; }
+li { margin: 3px 0; }
+li > ul, li > ol { margin: 4px 0; }
+code {
+  font: 0.88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto; margin: 0 0 16px;
+}
+pre code { background: none; padding: 0; font-size: 13px; overflow-wrap: normal; }
+pre.mermaid { background: var(--panel); text-align: center; }
+.table-wrap { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; font-size: 14px; min-width: 50%; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--th-bg); font-weight: 600; }
+blockquote { margin: 0 0 14px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+img { max-width: 100%; }
+</style>
+</head>
+<body>
+<nav><a href="../">&larr; hifiweekly</a></nav>
+<main>
+<h1 id="design-hide-urllib3s-connection-pool-is-full-warning-for-skypilots-kubernetes-clients">Design: hide urllib3's &quot;Connection pool is full&quot; warning for SkyPilot's Kubernetes clients <a class="header-anchor" href="#design-hide-urllib3s-connection-pool-is-full-warning-for-skypilots-kubernetes-clients">#</a></h1>
+<ul>
+<li><strong>Branch:</strong> <code>ej-k8s-pool-warning</code>, cut from <code>origin/master</code> at <code>5ef55efa4</code></li>
+<li><strong>Commit:</strong> <code>5bb46b39a</code> &quot;[Kubernetes] Hide urllib3 pool-full warning from capped API clients&quot;</li>
+<li><strong>Pushed to:</strong> <a href="https://github.com/siliconej/skypilot/tree/ej-k8s-pool-warning">https://github.com/siliconej/skypilot/tree/ej-k8s-pool-warning</a></li>
+<li><strong>Not in the combined branch</strong> <code>ej-prj-3-job1</code>. It is independent of the launch-latency work.</li>
+<li><strong>PR text:</strong> <a href="pr_descriptions.html#ej-k8s-pool-warning-kubernetes-hide-urllib3-pool-full-warning-from-capped-api-clients"><code>pr_descriptions.md</code></a></li>
+</ul>
+<h2 id="1-background">1. Background <a class="header-anchor" href="#1-background">#</a></h2>
+<p><code>sky/adaptors/kubernetes.py</code> builds the Kubernetes API clients SkyPilot uses. Since #11136 (<code>ecc8eb527</code>, &quot;Cap the connections each Kubernetes API client keeps open&quot;), each client's urllib3 pool keeps at most <code>CONNECTION_POOL_MAXSIZE = 4</code> connections:</p>
+<pre><code class="language-python">config.connection_pool_maxsize = CONNECTION_POOL_MAXSIZE
+</code></pre>
+<p>The cap is deliberate. If something between SkyPilot and the API server doesn't pass on the server's close of an idle connection, every connection opened at peak concurrency would otherwise stay open for the life of the client. That can be the whole process, such as a jobs controller. Requests beyond 4 in parallel still work: they use a connection that is closed afterwards.</p>
+<p>When urllib3 closes one of those extra connections, it logs a warning (urllib3 2.8.0, <code>HTTPConnectionPool._put_conn</code>):</p>
+<pre><code class="language-python">log.warning(
+    &quot;Connection pool is full, discarding connection: %s. Connection pool size: %s&quot;,
+    self.host,
+    self.pool.qsize(),
+)
+</code></pre>
+<h2 id="2-the-problem">2. The problem <a class="header-anchor" href="#2-the-problem">#</a></h2>
+<p><strong>Users see warnings about intended behaviour.</strong> Any operation with more than 4 Kubernetes API calls in parallel prints them, for example creating or inspecting the pods of a cluster with more than 4 nodes:</p>
+<pre><code>WARNING:urllib3.connectionpool:Connection pool is full, discarding connection: 127.0.0.1. Connection pool size: 4
+</code></pre>
+<p><strong>Observed:</strong> every 6-node managed job in the 2026-10-31 benchmark (jobs 105–124, <a href="launch_latency_consolidated_design.html"><code>launch_latency_consolidated_design.md</code></a> §14) has 6–7 of these lines in its controller log, right after &quot;Launching on Kubernetes&quot;.</p>
+<p><strong>Why the existing guard doesn't stop them.</strong> The API getters are wrapped in <code>_api_logging_decorator('urllib3', logging.ERROR)</code>, which keeps the <code>urllib3</code> logger at ERROR:</p>
+<ul>
+<li><strong>The decorator reasserts the level only after a getter returns.</strong> It does that once per client construction, not per API call, to keep <code>Logger.setLevel()</code> calls rare. <code>setLevel()</code> takes logging's process-wide lock, and on Python &lt; 3.13 a <code>fork()</code> while another thread holds that lock deadlocks the child.</li>
+<li><strong><code>kubernetes.client.Configuration</code> resets the logger.</strong> Every <code>Configuration.__init__</code> runs its <code>debug</code> setter. With <code>debug=False</code>, that sets every logger in <code>self.logger</code> to WARNING, including <code>logging.getLogger(&quot;urllib3&quot;)</code> (kubernetes 35.0.0).</li>
+<li><strong>So the level is often WARNING when the pool overflows.</strong> A <code>Configuration</code> built anywhere (another code path, or another thread in the middle of a call) puts <code>urllib3</code> back to WARNING. <code>urllib3.connectionpool</code> has no level of its own and inherits it, so the pool-full warning gets through until the next decorated call.</li>
+</ul>
+<h2 id="3-goals-and-non-goals">3. Goals and non-goals <a class="header-anchor" href="#3-goals-and-non-goals">#</a></h2>
+<h3 id="goals">Goals <a class="header-anchor" href="#goals">#</a></h3>
+<ul>
+<li>Stop showing the pool-full warning for SkyPilot's own capped Kubernetes clients.</li>
+<li>Keep every other urllib3 warning, such as retries after a broken connection, and pool-full warnings from pools of other sizes.</li>
+<li>Add no <code>setLevel()</code> calls and no per-record locking, for the fork-safety reasons in §2.</li>
+</ul>
+<h3 id="non-goals">Non-goals <a class="header-anchor" href="#non-goals">#</a></h3>
+<ul>
+<li>Changing the pool cap or its behaviour (#11136).</li>
+<li>Changing <code>_api_logging_decorator</code>.</li>
+<li>Silencing urllib3 for other libraries.</li>
+</ul>
+<h2 id="4-design">4. Design <a class="header-anchor" href="#4-design">#</a></h2>
+<p>A <code>logging.Filter</code> on the <code>urllib3.connectionpool</code> logger, installed once when <code>sky/adaptors/kubernetes.py</code> is imported:</p>
+<pre><code class="language-python">class _PoolFullFilter(logging.Filter):
+
+    def filter(self, record: logging.LogRecord) -&gt; bool:
+        return not (isinstance(record.msg, str) and
+                    record.msg.startswith('Connection pool is full') and
+                    isinstance(record.args, tuple) and len(record.args) == 2 and
+                    record.args[1] == CONNECTION_POOL_MAXSIZE)
+
+
+logging.getLogger('urllib3.connectionpool').addFilter(_PoolFullFilter())
+</code></pre>
+<ul>
+<li><strong>It matches the unformatted record.</strong> It checks the message template and its arguments, not the formatted string, so it doesn't depend on the host or on formatting.</li>
+<li><strong>It matches only SkyPilot's pool size.</strong> The second argument is <code>self.pool.qsize()</code>. When the pool is full, that equals its maximum size, so it equals <code>CONNECTION_POOL_MAXSIZE</code> only for pools capped at 4.</li>
+<li><strong>A level reset can't undo it.</strong> Filters live on the logger object, and <code>Configuration</code>'s <code>setLevel()</code> doesn't touch them.</li>
+<li><strong>It costs almost nothing.</strong> A filter runs only for records that pass the level check, takes no lock, and is installed once. Nothing runs per API call.</li>
+<li><strong>It sits on the logger that emits the record,</strong> <code>urllib3.connectionpool</code>. Logger filters run only on the logger where a record is created, not on parents it propagates to, so a filter on <code>urllib3</code> would never see it.</li>
+</ul>
+<h2 id="5-alternatives-considered">5. Alternatives considered <a class="header-anchor" href="#5-alternatives-considered">#</a></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Alternative</th>
+<th>Why not</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Raise <code>CONNECTION_POOL_MAXSIZE</code></td>
+<td>Undoes the point of #11136: more idle connections held open for the life of the client. A burst above the new cap would still warn.</td>
+</tr>
+<tr>
+<td>Set <code>urllib3.connectionpool</code> to ERROR</td>
+<td><code>Configuration</code> resets only the parent <code>urllib3</code>, so this would stick. But it also hides that logger's other warnings, such as &quot;Retrying (...) after connection broken&quot;, which are useful. And <code>setLevel()</code> takes the global lock (§2).</td>
+</tr>
+<tr>
+<td>Reassert the level more often in <code>_api_logging_decorator</code></td>
+<td>More <code>setLevel()</code> calls, which is what that decorator was rewritten to avoid. It would still race with a <code>Configuration</code> built in another thread.</td>
+</tr>
+<tr>
+<td><code>pool_block=True</code>, so parallel requests wait for a pooled connection</td>
+<td>Adds latency to the parallel pod operations the cap is meant to allow.</td>
+</tr>
+<tr>
+<td>Filter on the <code>urllib3</code> parent logger</td>
+<td>Logger filters don't run for records propagated from children, so it would never see the warning (§4).</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="6-compatibility-and-risks">6. Compatibility and risks <a class="header-anchor" href="#6-compatibility-and-risks">#</a></h2>
+<ul>
+<li><strong>No behaviour change</strong> beyond logging. No API, config or wire-format change.</li>
+<li><strong>A third-party urllib3 pool of size exactly 4 would also be filtered.</strong> Common defaults are 10 (requests, botocore), and only this one message is filtered, so the risk is small. Matching on the host would make the filter depend on the cluster's address.</li>
+<li><strong>The filter depends on urllib3's message text.</strong> If urllib3 rewords it, the warning comes back; nothing breaks. The unit test fixes the format the filter expects.</li>
+<li><strong>Hidden at every level, including debug.</strong> Under <code>SKYPILOT_DEBUG=1</code> the message is hidden too, for SkyPilot's capped pools only. Debugging pool exhaustion would need the filter removed.</li>
+</ul>
+<h2 id="7-testing">7. Testing <a class="header-anchor" href="#7-testing">#</a></h2>
+<ul>
+<li><strong>Unit test:</strong> <code>test_pool_full_warning_hidden_for_capped_clients</code> in <code>tests/unit_tests/test_sky/adaptors/test_kubernetes_adaptor.py</code>, parametrized on the pool size.
+<ul>
+<li>The <code>urllib3.connectionpool</code> logger is left at WARNING, as a <code>Configuration</code> built elsewhere would leave it, so the filter alone has to hide the message.</li>
+<li>It emits urllib3's exact call: hidden at <code>CONNECTION_POOL_MAXSIZE</code>, shown at <code>CONNECTION_POOL_MAXSIZE + 6</code>.</li>
+<li>An unrelated urllib3 warning (&quot;Retrying after connection broken&quot;) still gets through.</li>
+</ul>
+</li>
+<li><strong>Results:</strong> the adaptor test file passes (28 passed) on the branch, run against the branch's own code. yapf and isort are clean, pylint on <code>sky/</code> adds no messages, and mypy has only master's 2 errors.</li>
+<li><strong>Not yet done:</strong> an end-to-end check. Launch a cluster with more than 4 nodes (for example <code>ej/job.yaml</code> with <code>num_nodes: 6</code>) and confirm that no &quot;Connection pool is full&quot; line appears in the launch output or the managed job's controller log. Before the fix, each such job logged 6–7.</li>
+</ul>
+<h2 id="8-follow-up">8. Follow-up <a class="header-anchor" href="#8-follow-up">#</a></h2>
+<ol>
+<li>Run the end-to-end check in §7, and add it to the PR's Tested section.</li>
+<li>If urllib3's message ever changes, update the filter and the test together.</li>
+</ol>
+
+</main>
+
+</body>
+</html>
