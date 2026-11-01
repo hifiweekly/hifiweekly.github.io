@@ -77,8 +77,10 @@ img { max-width: 100%; }
 skylet started meanwhile).</li>
 <li><strong>Status:</strong> components A, B and D are implemented on <code>ej-prj-bonus</code>
 (uncommitted); component C is not. See section 9 for what was built, how it
-differs from this design, and the measured results.</li>
-<li><strong>Reproduction:</strong> <code>ej/sim_pod_delete.sh [worker|head]</code> (supersedes <code>ej/sim_ray_timeout.sh</code>). Head-side wait without a cluster:
+differs from this design, and the measured results. Tested end to end with
+both <code>sky launch</code> and <code>sky jobs launch</code> (9.4).</li>
+<li><strong>Reproduction:</strong> <code>ej/sim_pod_delete.sh [worker|head]</code> (supersedes <code>ej/sim_ray_timeout.sh</code>); for managed jobs,
+<code>ej/sim_jobs_pod_delete.sh [worker|head]</code>. Head-side wait without a cluster:
 <code>ej/sim_ray_wait_timeout.py</code>.</li>
 </ul>
 <h2 id="1-background">1. Background <a class="header-anchor" href="#1-background">#</a></h2>
@@ -324,7 +326,7 @@ launch exception as &quot;tear down, back off, retry&quot; (<code>recovery_strat
 It now gets there about 100 s sooner per lost pod. No controller change is
 needed. Optionally, it could classify <code>InstancesLostDuringSetupError</code> with
 its own retry code (<code>_error_kind</code>), so the job events say &quot;pod deleted
-during setup&quot; rather than a generic error.</li>
+during setup&quot; rather than a generic error. Confirmed on kind; see 9.4.</li>
 </ul>
 <h2 id="4-failure-handling">4. Failure handling <a class="header-anchor" href="#4-failure-handling">#</a></h2>
 <div class="table-wrap"><table>
@@ -421,7 +423,8 @@ about 12 s after the deletion (today it's about 106 s), with an error naming
 <code>...-worker1</code>.</li>
 <li>A variant that deletes the head instead: expect about 3 s.</li>
 <li><code>sky jobs launch</code> with a pod deleted during STARTING: check that the
-controller log shows the new error and that the relaunch starts sooner.</li>
+controller log shows the new error and that the relaunch starts sooner.
+Done with <code>ej/sim_jobs_pod_delete.sh</code>; see 9.4.</li>
 <li><strong>Happy-path regression:</strong> run the A/B benchmark
 (<code>tests/kubernetes/launching_benchmarks/bench_launch_latency.py</code>) with
 <code>ej-proj-0-1</code> as the baseline and <code>ej-prj-bonus</code> as the candidate.
@@ -580,6 +583,14 @@ the first attempt: worker after 12 s, head after 6 s, 41 s in total. With
 the fix stashed, the worker case fails as intended:
 <code>took 105s to notice the deletion (max 45s)</code>.</p>
 </li>
+<li>
+<p><strong>Managed jobs, end to end:</strong> <code>ej/sim_jobs_pod_delete.sh [worker|head]</code>.
+It runs <code>sky jobs launch -d</code> and polls the job's head pod the same way as
+the smoke test. It force-deletes the target pod once the Ray wait is
+running, then follows <code>sky jobs queue</code> until the job ends. It needs a
+local API server in <code>--deploy</code> mode, so the jobs controller runs the
+branch's code. Results are in 9.4.</p>
+</li>
 </ul>
 <h3 id="94-results-on-kind-6-node-ejjobyaml">9.4 Results on kind (6-node <code>ej/job.yaml</code>) <a class="header-anchor" href="#94-results-on-kind-6-node-ejjobyaml">#</a></h3>
 <div class="table-wrap"><table>
@@ -610,6 +621,64 @@ the fix stashed, the worker case fails as intended:
 </table></div>
 <p><code>sky launch</code> exits with code 1 in the failure cases. An earlier note that it
 exited 0 was caused by the old reproduction script, not by SkyPilot.</p>
+<h4 id="managed-jobs-sky-jobs-launch">Managed jobs (<code>sky jobs launch</code>) <a class="header-anchor" href="#managed-jobs-sky-jobs-launch">#</a></h4>
+<p>Run on 2026-10-31 with <code>ej/sim_jobs_pod_delete.sh</code> on <code>ej-prj-bonus</code>
+(<code>7aed7c84e</code>). The local API server ran in <code>--deploy</code> mode (consolidation),
+so the jobs controller ran the branch's code. Each job had 6 nodes, and the
+pod was force-deleted as soon as the head was running the Ray wait.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>Worker deleted (job 151)</th>
+<th>Head deleted (job 152)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Error in the controller</td>
+<td><strong>11.9 s after the deletion</strong> (20:39:05.2 → 20:39:17.2): <code>InstancesLostDuringSetupError: ... podloss203835-151-48017c75-worker1: not found</code></td>
+<td><strong>4.6 s after the deletion</strong> (20:42:22.3 → 20:42:26.9): <code>... podloss204158-152-48017c75-head: not found</code></td>
+</tr>
+<tr>
+<td>Controller back-off</td>
+<td><code>Retrying to launch the cluster in 76.8 seconds</code></td>
+<td><code>... in 68.1 seconds</code></td>
+</tr>
+<tr>
+<td>Second launch</td>
+<td>Cluster launched, job SUCCEEDED</td>
+<td>Cluster launched, job SUCCEEDED</td>
+</tr>
+<tr>
+<td>Deletion → SUCCEEDED</td>
+<td>146.6 s</td>
+<td>141.8 s</td>
+</tr>
+<tr>
+<td>Job states</td>
+<td>STARTING → PENDING (back-off) → STARTING → RUNNING → SUCCEEDED</td>
+<td>same</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>No controller change was needed.</strong> The error reaches the controller
+through <code>_await_launch_request</code> in <code>recovery_strategy.py</code>. The <code>_launch</code>
+loop tears the cluster down, backs off and relaunches, as section 3.6
+predicted. Detection takes about as long as with <code>sky launch</code> (10.9 s and
+5.0 s above).</li>
+<li><strong>Back-off now takes most of a recovery.</strong> It is about 70 s of the roughly
+145 s from deletion to SUCCEEDED (<code>RETRY_INIT_GAP_SECONDS = 60</code> with
+jitter). Detection takes 5–12 s, and the second launch and the job take
+the rest.</li>
+<li><strong><code>#RECOVERIES</code> stays 0.</strong> A pod lost during the first launch counts as a
+launch retry, not a recovery, and the job events show a generic launch
+failure.</li>
+<li><strong>Not measured: the same test without the fix.</strong> The ~100 s saving for
+managed jobs comes from the <code>sky launch</code> numbers above (~106 s before
+the fix), not from a managed-job run on <code>ej-proj-0-1</code>.</li>
+</ul>
 <h3 id="95-next-steps">9.5 Next steps <a class="header-anchor" href="#95-next-steps">#</a></h3>
 <ol>
 <li>Commit as described in section 8 (D, then A, then B), then run the A/B
@@ -617,7 +686,8 @@ benchmark against <code>ej-proj-0-1</code> to confirm the happy path is unchange
 <li>Jobs controller (<code>recovery_strategy.py</code>): give
 <code>InstancesLostDuringSetupError</code> its own retry code, and a short first
 back-off instead of 60 s, since a deleted pod isn't a capacity problem.
-With this change, back-off becomes the largest part of a recovery.</li>
+With this change, back-off becomes the largest part of a recovery:
+measured at 68–77 s of a ~145 s recovery (9.4, managed jobs).</li>
 <li>Optional: component C, and a Kubernetes-only check for pods that are
 terminating but still Running.</li>
 </ol>
