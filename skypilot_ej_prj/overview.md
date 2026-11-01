@@ -23,8 +23,10 @@ python ej/reproduce\_benchmarks.py pull-policy \--nodes 6  \# \~5 min
 python ej/reproduce\_benchmarks.py storage-probe          \# \~6 min  
 python ej/reproduce\_benchmarks.py sky-launch-ab \-- run \--candidate-ref ej-prj-3-job1 \--task ej/job.yaml \--runs 5
 
-**Result Table:** [https\://hifiweekly.github.io/skypilot\_ej\_prj/report.html](https://hifiweekly.github.io/skypilot_ej_prj/report.html)  
+**Result Table:** [https\://hifiweekly.github.io/skypilot\_ej\_prj/report.html](https://hifiweekly.github.io/skypilot_ej_prj/report.html)
+
 **TL;DR: 6 nodes, medians of 8 interleaved runs per side (range), seconds:**  
+Consult the UML Sequence diagram in SVG for Phase definition and transition: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_6nodes.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)   
 ┌───────────────────────────────────┬──────────────────┬──────────────────┬────────┬───────────────┐  
 │               Phase               │      master      │  ej-prj-3-job1   │ Change │ 4-node change │  
 ├───────────────────────────────────┼──────────────────┼──────────────────┼────────┼───────────────┤  
@@ -45,20 +47,27 @@ python ej/reproduce\_benchmarks.py sky-launch-ab \-- run \--candidate-ref ej-prj
 │ Client start → SUCCEEDED          │ 64.7             │ 51.7             │ −13.0  │ −10.6         │  
 ├───────────────────────────────────┼──────────────────┼──────────────────┼────────┼───────────────┤  
 │ Client total                      │ 70.8 (61.1–77.5) │ 54.8 (51.5–58.3) │ −16.0  │ −11.4         │  
-└───────────────────────────────────┴──────────────────┴──────────────────┴────────┴───────────────┘  
-Consult the UML Sequence diagram in SVG for Phase definition and transition: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_6nodes.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)   
+└───────────────────────────────────┴──────────────────┴──────────────────┴────────┴───────────────┘
+
 All run done on Ubuntu 26.04, i7-8700K, 32GB memory
 
 ### **Requirement 4: A short README explaining how to reproduce your numbers from a clean machine.**
 
 **Read Me:**  
-[https\://hifiweekly.github.io/skypilot\_ej\_prj/README.html](https://hifiweekly.github.io/skypilot_ej_prj/readme.html) 
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/README.html](https://hifiweekly.github.io/skypilot_ej_prj/README.html) 
+
+**Support Files:**  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/job.yaml](https://hifiweekly.github.io/skypilot_ej_prj/job.yaml)  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/bench\_launch\_latency.py](https://hifiweekly.github.io/skypilot_ej_prj/job.yaml)
+
+**Sample Run \#1: Ubuntu 26.04: [See Appendix C](#bookmark=id.ywa1lch5zkw3)**  
+**Sample Run \#2: MacOS Tahoe 26.7.1: [See Appendix D](#bookmark=id.2t62vgupmpad)**
 
 ---
 
 ## Project Write-up
 
-The refactoring in these branches ([https\://github.com/siliconej/skypilot/branches/yours](https://github.com/siliconej/skypilot/branches/yours)) is a set of optimizations stacked in a progressive fashion. The svg linked here (4 nodes \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence.svg)\], 6 nodes \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_6nodes.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)\]) shows the different updates that are prepared for your review. Overall there are two parts of the refactoring, first set focuses on section D (cycles between provision and job submission), second set focuses on the rest of the whole workflow. I also implemented the bonus feature and fixed a warning. See more detailed below.
+The refactoring in these branches ([https\://github.com/siliconej/skypilot/branches/](https://github.com/siliconej/skypilot/branches/yours)) is a set of optimizations stacked in a progressive fashion. The svg linked here (4 nodes \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence.svg)\], 6 nodes \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_6nodes.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)\]) shows the different updates that are prepared for your review. Overall there are two parts of the refactoring, first set focuses on section D (cycles between provision and job submission), second set focuses on the rest of the whole workflow. I also implemented the bonus feature and fixed a warning. See more detailed below.
 
 The priority of these optimizations is analyzed and determined based on the delta time reduction that could be achieved theoretically according to first trace analysis on the master HEAD.
 
@@ -105,11 +114,11 @@ PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_description
 **\* TL;DR**
 
 **Problem.** On a fresh Kubernetes cluster, waiting for every pod's Ray to join took 61–67% of a launch. Two causes:  
-\- The poll was slow. The provisioner checked once a second, but each check was a kubectl exec that started three Python interpreters (2.3–4 s), so it noticed readiness up to a whole probe late.  
+\- The poll was slow. The provisioner checked once a second, but each check was a kubectl exec that started three Python interpreters (2.3–4s), so it noticed readiness up to a whole probe late.  
 \- Skylet started late. It only started after the wait, although it needs only the head.
 
 **Change (provisioner.py, instance\_setup.py):**  
-\- One blocking call. A small script on the head (standard library plus ray, sent base64-encoded) keeps one GcsClient open and checks every 0.2 s until exactly num\_nodes are alive or the deadline passes.  
+\- One blocking call. A small script on the head (standard library plus ray, sent base64-encoded) keeps one GcsClient open and checks every 0.2s until exactly num\_nodes are alive or the deadline passes.  
   \- Its output matches the old probe's, plus a final SKY\_RAY\_WAIT\_DONE line.  
   \- A call that ends without that line means the exec dropped, so it is retried for the time left; it doesn't restart Ray.  
   \- A local timeout bounds a hung exec.  
@@ -135,8 +144,8 @@ PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_description
 **\* TL;DR**
 
 **Measured first.** A timestamped trace of the pod's startup script found two waste steps before ray start:  
-\- ray stop on a pod that never ran Ray: 1.4–1.5 s idle, 2.9–3.8 s while the pod was busy setting up.  
-\- Downloading setuptools\<70 from PyPI: the image ships setuptools 84, so every pod fetched the pin. This took 0.6 s usually and 12.1 s in one traced run.
+\- ray stop on a pod that never ran Ray: 1.4–1.5s idle, 2.9–3.8s while the pod was busy setting up.  
+\- Downloading setuptools\<70 from PyPI: the image ships setuptools 84, so every pod fetched the pin. This took 0.6s usually and 12.1s in one traced run.
 
 Because the workers wait for the head's GCS port, a late head delays the whole cluster.
 
@@ -168,15 +177,15 @@ PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_description
 
 **\* TL;DR**
 
-**Problem.** After provisioning, a managed job lost about 15–35 s to polling:  
-\- Confirming the job started took two kubectl exec round trips to the head, status and then submitted-at time, about 1.6 s each.  
-\- The monitor loop slept a random 0–15 s before its first status check, although the launch had just seen the job finish. It threw that status away.  
-\- The client's log follower re-checked the status only every 15 s. It usually missed the job's few seconds in RUNNING, so it noticed the end up to 15 s late.
+**Problem.** After provisioning, a managed job lost about 15–35s to polling:  
+\- Confirming the job started took two kubectl exec round trips to the head, status and then submitted-at time, about 1.6s each.  
+\- The monitor loop slept a random 0–15s before its first status check, although the launch had just seen the job finish. It threw that status away.  
+\- The client's log follower re-checked the status only every 15s. It usually missed the job's few seconds in RUNNING, so it noticed the end up to 15s late.
 
 **Changes:**  
 1\. One head command (JobLibCodeGen.get\_job\_status\_and\_submitted\_timestamp) returns both values. It calls only existing job\_lib functions, so older cluster runtimes work, and it falls back to the second call on gRPC or a missing time.  
 2\. The first check runs at once. pop\_job\_status\_seen\_at\_launch() hands the monitor loop the status the launch saw. If it's terminal, the loop checks immediately; a running job keeps the jittered gap.  
-3\. The follower re-checks the status as soon as the controller writes a plain log line (about 15 per launch). The 15 s check stays as a fallback.
+3\. The follower re-checks the status as soon as the controller writes a plain log line (about 15 per launch). The 15s check stays as a fallback.
 
 **Results (kind, 4 nodes):**  
 \- Job finished → RUNNING: 3.0 → 1.3 s.  
@@ -207,8 +216,8 @@ PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_description
 
 **Results:**  
 \- 14 new unit tests. Full unit suite: 10,704 passed; the 20 failures also fail on master or pass when run alone.  
-\- The probe on kind measured the second lookup at 0.18–0.25 s on master and 0.001 s with the change, so the gain is about 0.2 s, within phase A's noise.  
-\- The earlier 7.3 → 6.5 s comparison mixed sessions and is superseded.
+\- The probe on kind measured the second lookup at 0.18–0.25 s on master and 0.001s with the change, so the gain is about 0.2 s, within phase A's noise.  
+\- The earlier 7.3 → 6.5s comparison mixed sessions and is superseded.
 
 **Design Doc.** Section 12 of [https\://hifiweekly.github.io/skypilot\_ej\_prj/launch\_latency\_consolidated\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/launch_latency_consolidated_design.html) 
 
@@ -223,18 +232,18 @@ PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_description
 
 **Problem.**  
 \- The pod never comes back. A pod deleted after it started, by kubectl delete pod or an eviction, stays gone: SkyPilot pods use restartPolicy: Never.  
-\- The launch noticed only after about 106 s.  
-  \- The head's Ray wait ran its whole 90 s timeout, because a worker that never joined is invisible to it.  
+\- The launch noticed only after about 106s.  
+  \- The head's Ray wait ran its whole 90s timeout, because a worker that never joined is invisible to it.  
   \- The fallback then tried to start Ray on the missing pod, retrying six times.  
 \- The error never said a pod was gone.
 
 **Changes:**  
 1\. Don't retry an exec whose pod is gone (command\_runner.is\_exec\_target\_gone). \_auto\_retry stops on permanent kubectl errors: NotFound, a completed pod, phase Failed or Succeeded. Transient errors such as "unable to upgrade connection" are still retried.  
-2\. Check the instances. provision.query\_instances lists the cluster's pods. One missing, terminated or stopped in two listings 2 s apart raises the new InstancesLostDuringSetupError (a ClusterSetUpError) naming it. A failing check never fails the launch.  
-3\. Time-box the Ray wait into calls of at most 10 s, checking the instances between calls. Nothing changes when Ray is ready in the first call.  
+2\. Check the instances. provision.query\_instances lists the cluster's pods. One missing, terminated or stopped in two listings 2s apart raises the new InstancesLostDuringSetupError (a ClusterSetUpError) naming it. A failing check never fails the launch.  
+3\. Time-box the Ray wait into calls of at most 10s, checking the instances between calls. Nothing changes when Ray is ready in the first call.  
 4\. Name the pod in errors. Any failing setup stage checks the instances before re-raising, keeping the stage's error as context.
 
-**Results (kind):** a deleted worker fails the launch in about 11 s and a deleted head in about 5 s, instead of about 106 s. Managed jobs recover sooner.
+**Results (kind):** a deleted worker fails the launch in about 11s and a deleted head in about 5s, instead of about 106s. Managed jobs recover sooner.
 
 **Tests:**  
 \- 9 new unit tests.  
@@ -351,4 +360,84 @@ Managed Job ID: 57
 **real	0m48.028s**  
 user	0m2.512s  
 sys	0m0.283s
+
+## Appendix C: Ubuntu Benchmark Result
+
+This run is valid: on a 6-node sky launch, ej-prj-3-job1 (5cb8dace3) reached "Cluster launched" about 6 s (24%) faster than baseline 5ef55efa4, where it branched from master. All 10 measured launches succeeded on all 6 ranks, with 1 warm-up launch per build excluded, and no launch fell back to restarting Ray. The first table is your summary.md as a real ASCII table.
+
+\+--------------------------+--------------------------+--------------------------+---------------+--------+  
+\| Metric                   \| Baseline median          \| Candidate median         \| Change in     \| p (one \|  
+\|                          \| (mean ± sd, n)           \| (mean ± sd, n)           \| median        \| sided) \|  
+\+--------------------------+--------------------------+--------------------------+---------------+--------+  
+\| post\_runtime\_s (primary) \| 14.50s (15.05 ± 1.38, 5\) \| 8.38s (7.41 ± 2.44, 5\)   \| \-6.12s (-42%) \| 0.0041 \|  
+\| provision\_total\_s        \| 24.48s (24.88 ± 1.51, 5\) \| 18.52s (19.54 ± 2.49, 5\) \| \-5.96s (-24%) \| 0.0087 \|  
+\| pods\_ready\_s             \| 5.39s (5.62 ± 0.57, 5\)   \| 6.11s (5.87 ± 0.55, 5\)   \| \+0.72s (+13%) \| 0.7539 \|  
+\| runtime\_setup\_s          \| 4.05s (4.22 ± 0.45, 5\)   \| 4.35s (6.27 ± 4.58, 5\)   \| \+0.31s (+8%)  \| 0.7682 \|  
+\+--------------------------+--------------------------+--------------------------+---------------+--------+
+
+\+-----------------------------------------------------+--------+  
+\| Check                                               \| Result \|  
+\+-----------------------------------------------------+--------+  
+\| Each build ran its own, distinct commit             \| Pass   \|  
+\| All launches succeeded and ran on every rank        \| Pass   \|  
+\| No candidate launch fell back to restarting Ray     \| Pass   \|  
+\| Candidate never ran the old polling loop            \| Pass   \|  
+\| Primary metric lower with p \< 0.05                  \| Pass   \|  
+\+-----------------------------------------------------+--------+  
+\| Verdict                                             \| VALID  \|  
+\+-----------------------------------------------------+--------+
+
+These are the per-launch times in seconds, from results.csv:
+
+\+-----------+-----+-----------+--------------+-----------+------+---------------+  
+\| Build     \| Run \| Launch    \| post\_runtime \| provision \| pods \| runtime\_setup \|  
+\|           \|     \| wall time \|              \| total     \|      \|               \|  
+\+-----------+-----+-----------+--------------+-----------+------+---------------+  
+\| baseline  \|  0  \|  41.2     \|  14.7        \|  24.9     \| 6.3  \|   3.9         \|  
+\| baseline  \|  1  \|  41.3     \|  14.5        \|  24.5     \| 6.2  \|   3.8         \|  
+\| baseline  \|  2  \|  43.8     \|  17.5        \|  27.4     \| 5.0  \|   4.9         \|  
+\| baseline  \|  3  \|  40.2     \|  14.2        \|  24.1     \| 5.4  \|   4.4         \|  
+\| baseline  \|  4  \|  39.6     \|  14.3        \|  23.5     \| 5.2  \|   4.0         \|  
+\+-----------+-----+-----------+--------------+-----------+------+---------------+  
+\| candidate \|  0  \|  36.4     \|   9.7        \|  19.0     \| 6.1  \|   3.2         \|  
+\| candidate \|  1  \|  35.5     \|   8.5        \|  18.4     \| 6.2  \|   3.7         \|  
+\| candidate \|  2  \|  35.4     \|   8.4        \|  18.5     \| 5.8  \|   4.4         \|  
+\| candidate \|  3  \|  34.2     \|   7.1        \|  17.9     \| 4.9  \|   5.8         \|  
+\| candidate \|  4  \|  40.6     \|   3.3        \|  23.9     \| 6.3  \|  14.3         \|  
+\+-----------+-----+-----------+--------------+-----------+------+---------------+
+
+\- Where the gain is: all of it is in post\_runtime\_s (Ray wait \+ skylet start). Pod start and runtime setup show no significant change (p \= 0.75 and 0.77). The client's median launch wall time fell from 41.2 s to 35.5 s.  
+\- The slowest candidate run: candidate run 4 spent 14.3 s in runtime setup but only 3.3 s after it, for a 23.9 s total. This is the same pattern as the \~10 s single-pod stall we traced to PyPI earlier, but I didn't check this run's logs to confirm the cause. Even so, it took about the same as the fastest baseline run (23.5 s).  
+\- Report title: it still says "baseline vs. ej-prj-1" because that text is hardcoded in the script. The candidate here is ej-prj-3-job1, so the title understates what was tested.
+
+The results are in ej/bench\_results/20261031-234001-sky-launch-ab/, including summary.md, results.csv, meta.json and logs/.
+
+## Appendix D: MacOS Benchmark Result
+
+This run is valid, and the gain is clearer than in the last one: ej-prj-3-job1 reached "Cluster launched" 6.5 s (32%) faster than baseline 5ef55efa4. All 10 measured launches succeeded on all 6 ranks. Every candidate run also beat every baseline run on both post\_runtime\_s and total provisioning (12.6–15.7 s against 18.1–21.4 s), so p \= 0.0041 is about the lowest a 5-against-5 test can give.
+
+It seems to come from a different machine than the earlier runs: the paths are /Volumes/CRU2T1/... and /private/tmp/..., which suggests macOS. The pods also report about 14 CPUs, against 12 on the Linux box. That makes the comparison below one across two environments.
+
+Medians, seconds     Linux box (23:40 run)       This run (likely Mac)  
+                     baseline  candidate         baseline  candidate  
+\+------------------+---------+---------+       \+---------+---------+  
+\| Pods ready       \|     5.4 \|     6.1 \|       \|     5.6 \|     4.8 \|  
+\| File mounts      \|     1.4 \|     1.5 \|       \|     0.7 \|     0.8 \|  
+\| Runtime setup    \|     2.3 \|     2.6 \|       \|     8.0 \|     6.4 \|  
+\| Ray \+ skylet     \|    14.5 \|     8.4 \|       \|     5.9 \|     2.0 \|  
+\| Skylet start \*   \|     1.6 \|     4.8 \|       \|     0.8 \|     2.0 \|  
+\+------------------+---------+---------+       \+---------+---------+  
+\| Provision total  \|    24.5 \|    18.5 \|       \|    20.7 \|    14.1 \|  
+\| Client wall time \|    41.2 \|    35.5 \|       \|    35.0 \|    28.3 \|  
+\+------------------+---------+---------+       \+---------+---------+  
+\* On the candidate, skylet starts while Ray is being waited on, so it overlaps the  
+  row above. On the baseline it runs after that wait. The Ray \+ skylet row includes it either way.
+
+What the numbers show
+
+\- The Ray wait change is still the main gain (−3.9 s). The baseline polled 1 time here and 2–3 times on Linux, which is why its Ray \+ skylet step is so much shorter here.  
+\- The Ray wait has nearly disappeared here. In 4 of 5 candidate runs, Ray \+ skylet equals the skylet time (1.9–2.2 s), so all nodes had already joined when runtime setup ended.  
+\- Runtime setup is now the biggest stage on this machine (6.4 s). On Linux the Ray wait is what holds launches back, and faster setup just moves time into it. Here, faster setup should shorten the launch directly.  
+\- Runtime setup is 1.6 s faster on the candidate (p \= 0.045). This is plausible because the candidate no longer does a real PyPI install of SkyPilot during pod startup, but the Linux run didn't show the gain.  
+\- The pod-start gain is probably noise. It's 0.8 s faster here (p \= 0.045), but was 0.7 s slower on the same code in the last run, and no change targets it.
 
