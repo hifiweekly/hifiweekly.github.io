@@ -65,6 +65,8 @@ th { background: var(--th-bg); font-weight: 600; }
 blockquote { margin: 0 0 14px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
 hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
 img { max-width: 100%; }
+.toc a code { color: var(--accent); }
+h2, h3 { scroll-margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -72,19 +74,29 @@ img { max-width: 100%; }
 <main>
 <h1 id="pr-descriptions">PR descriptions <a class="header-anchor" href="#pr-descriptions">#</a></h1>
 <p>One section per branch on <code>fork</code> (https://github.com/siliconej/skypilot). Copy everything under a branch's heading into its PR.</p>
-<p><strong>Stacking.</strong> <code>ej-prj-bonus</code> contains <code>ej-prj-0</code> and a rebased <code>ej-prj-1</code>, and <code>ej-prj-3</code> is built on <code>ej-prj-bonus</code>. Open them in this order, or rebase each one after the previous one merges:</p>
-<p><code>ej-prj-0</code> → <code>ej-prj-1</code> → <code>ej-prj-bonus</code> → <code>ej-prj-3</code></p>
-<p><code>ej-prj-job0</code>, <code>ej-prj-job1</code> and <code>ej-k8s-pool-warning</code> branch directly off master and are independent.</p>
+<p><strong>Stacking.</strong> <a href="#ej-prj-bonus"><code>ej-prj-bonus</code></a> contains <a href="#ej-prj-0"><code>ej-prj-0</code></a> and a rebased <a href="#ej-prj-1"><code>ej-prj-1</code></a>, and <a href="#ej-prj-3"><code>ej-prj-3</code></a> is built on <a href="#ej-prj-bonus"><code>ej-prj-bonus</code></a>. Open them in this order, or rebase each one after the previous one merges:</p>
+<p><a href="#ej-prj-0"><code>ej-prj-0</code></a> → <a href="#ej-prj-1"><code>ej-prj-1</code></a> → <a href="#ej-prj-bonus"><code>ej-prj-bonus</code></a> → <a href="#ej-prj-3"><code>ej-prj-3</code></a></p>
+<p><a href="#ej-prj-job0"><code>ej-prj-job0</code></a>, <a href="#ej-prj-job1"><code>ej-prj-job1</code></a> and <a href="#ej-k8s-pool-warning"><code>ej-k8s-pool-warning</code></a> branch directly off master and are independent.</p>
 <p><strong>Test environment for every number below:</strong></p>
 <ul>
 <li><strong>Cluster:</strong> <code>kind-skypilot</code>, one kind node with 12 cores.</li>
 <li><strong>Task:</strong> <code>ej/job.yaml</code>, a one-line <code>echo</code> on 4 nodes unless stated.</li>
 <li><strong>Managed jobs:</strong> consolidation mode (<code>sky api start --deploy</code>).</li>
 </ul>
+<p><strong>Contents</strong></p>
+<ul class="toc">
+<li><a href="#ej-prj-0"><code>ej-prj-0</code></a>: [Kubernetes] Start Ray before preparing SkyPilot in the pod (<a href="#ej-prj-0-summary">summary</a>, <a href="#ej-prj-0-tested">tested</a>)</li>
+<li><a href="#ej-prj-1"><code>ej-prj-1</code></a>: [Kubernetes] Wait for Ray on the head in one call and start skylet meanwhile (<a href="#ej-prj-1-summary">summary</a>, <a href="#ej-prj-1-tested">tested</a>)</li>
+<li><a href="#ej-prj-bonus"><code>ej-prj-bonus</code></a>: [Provision] Fail setup fast when a pod is lost (<a href="#ej-prj-bonus-summary">summary</a>, <a href="#ej-prj-bonus-tested">tested</a>)</li>
+<li><a href="#ej-prj-3"><code>ej-prj-3</code></a>: [Kubernetes] Start the head's Ray sooner (<a href="#ej-prj-3-summary">summary</a>, <a href="#ej-prj-3-tested">tested</a>)</li>
+<li><a href="#ej-prj-job0"><code>ej-prj-job0</code></a>: [Jobs] Notice a short managed job's start and end sooner (<a href="#ej-prj-job0-summary">summary</a>, <a href="#ej-prj-job0-tested">tested</a>)</li>
+<li><a href="#ej-prj-job1"><code>ej-prj-job1</code></a>: [Data] Look up the enabled storage clouds once per request (<a href="#ej-prj-job1-summary">summary</a>, <a href="#ej-prj-job1-tested">tested</a>)</li>
+<li><a href="#ej-k8s-pool-warning"><code>ej-k8s-pool-warning</code></a>: [Kubernetes] Hide urllib3 pool-full warning from capped API clients (<a href="#ej-k8s-pool-warning-summary">summary</a>, <a href="#ej-k8s-pool-warning-tested">tested</a>)</li>
+</ul>
 <hr />
-<h2 id="ej-prj-0-kubernetes-start-ray-before-preparing-skypilot-in-the-pod"><code>ej-prj-0</code>: [Kubernetes] Start Ray before preparing SkyPilot in the pod <a class="header-anchor" href="#ej-prj-0-kubernetes-start-ray-before-preparing-skypilot-in-the-pod">#</a></h2>
+<h2 id="ej-prj-0"><span id="ej-prj-0-kubernetes-start-ray-before-preparing-skypilot-in-the-pod"></span><code>ej-prj-0</code>: [Kubernetes] Start Ray before preparing SkyPilot in the pod <a class="header-anchor" href="#ej-prj-0">#</a></h2>
 <p>Commit: <code>9c42bf108</code></p>
-<h3 id="summary">Summary <a class="header-anchor" href="#summary">#</a></h3>
+<h3 id="ej-prj-0-summary"><span id="summary"></span>Summary <a class="header-anchor" href="#ej-prj-0-summary">#</a></h3>
 <ul>
 <li><strong>Problem:</strong>
 <ul>
@@ -107,7 +119,7 @@ img { max-width: 100%; }
 </li>
 </ul>
 <p>Files: <code>sky/templates/kubernetes-ray.yml.j2</code>, <code>sky/provision/instance_setup.py</code> (docstrings), and a new template test.</p>
-<h3 id="tested">Tested <a class="header-anchor" href="#tested">#</a></h3>
+<h3 id="ej-prj-0-tested"><span id="tested"></span>Tested <a class="header-anchor" href="#ej-prj-0-tested">#</a></h3>
 <ul class="contains-task-list">
 <li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
 <li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Any manual or new tests for this PR (please specify below)
@@ -173,9 +185,9 @@ img { max-width: 100%; }
 </li>
 </ul>
 <hr />
-<h2 id="ej-prj-1-kubernetes-wait-for-ray-on-the-head-in-one-call-and-start-skylet-meanwhile"><code>ej-prj-1</code>: [Kubernetes] Wait for Ray on the head in one call and start skylet meanwhile <a class="header-anchor" href="#ej-prj-1-kubernetes-wait-for-ray-on-the-head-in-one-call-and-start-skylet-meanwhile">#</a></h2>
+<h2 id="ej-prj-1"><span id="ej-prj-1-kubernetes-wait-for-ray-on-the-head-in-one-call-and-start-skylet-meanwhile"></span><code>ej-prj-1</code>: [Kubernetes] Wait for Ray on the head in one call and start skylet meanwhile <a class="header-anchor" href="#ej-prj-1">#</a></h2>
 <p>Commits: <code>532cced15</code>, plus the benchmark <code>0392f886f</code> and <code>be7a199f8</code>. In the stacked branches these are rebased as <code>709688366</code>, <code>b889d71af</code> and <code>a291dec2a</code>.</p>
-<h3 id="summary-1">Summary <a class="header-anchor" href="#summary-1">#</a></h3>
+<h3 id="ej-prj-1-summary"><span id="summary-1"></span>Summary <a class="header-anchor" href="#ej-prj-1-summary">#</a></h3>
 <ul>
 <li><strong>Problem:</strong>
 <ul>
@@ -205,7 +217,7 @@ img { max-width: 100%; }
 </li>
 </ul>
 <p>Files: <code>sky/provision/instance_setup.py</code>, <code>sky/provision/provisioner.py</code>, a new unit test file, and the benchmark.</p>
-<h3 id="tested-1">Tested <a class="header-anchor" href="#tested-1">#</a></h3>
+<h3 id="ej-prj-1-tested"><span id="tested-1"></span>Tested <a class="header-anchor" href="#ej-prj-1-tested">#</a></h3>
 <ul class="contains-task-list">
 <li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.
 <ul>
@@ -258,9 +270,9 @@ img { max-width: 100%; }
 </li>
 </ul>
 <hr />
-<h2 id="ej-prj-bonus-provision-fail-setup-fast-when-a-pod-is-lost"><code>ej-prj-bonus</code>: [Provision] Fail setup fast when a pod is lost <a class="header-anchor" href="#ej-prj-bonus-provision-fail-setup-fast-when-a-pod-is-lost">#</a></h2>
+<h2 id="ej-prj-bonus"><span id="ej-prj-bonus-provision-fail-setup-fast-when-a-pod-is-lost"></span><code>ej-prj-bonus</code>: [Provision] Fail setup fast when a pod is lost <a class="header-anchor" href="#ej-prj-bonus">#</a></h2>
 <p>Commits: <code>24c6d876b</code>, <code>17411838d</code>, <code>6db5eba63</code>, <code>7aed7c84e</code>. Stacked on <code>ej-prj-0</code> and <code>ej-prj-1</code>.</p>
-<h3 id="summary-2">Summary <a class="header-anchor" href="#summary-2">#</a></h3>
+<h3 id="ej-prj-bonus-summary"><span id="summary-2"></span>Summary <a class="header-anchor" href="#ej-prj-bonus-summary">#</a></h3>
 <ul>
 <li><strong>Problem:</strong>
 <ul>
@@ -279,7 +291,7 @@ img { max-width: 100%; }
 </li>
 <li><strong>New smoke test:</strong> <code>test_kubernetes_pod_loss.py</code> with <code>scripts/delete_pod_mid_launch.sh</code>. It force-deletes the worker or head pod mid-setup and asserts the launch fails within 45 s with <code>InstancesLostDuringSetupError</code> naming the pod.</li>
 </ul>
-<h3 id="tested-2">Tested <a class="header-anchor" href="#tested-2">#</a></h3>
+<h3 id="ej-prj-bonus-tested"><span id="tested-2"></span>Tested <a class="header-anchor" href="#ej-prj-bonus-tested">#</a></h3>
 <ul class="contains-task-list">
 <li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>. <code>7aed7c84e</code> adds <code>is_exec_target_gone</code> to <code>sky/utils/command_runner.pyi</code>; without it, mypy failed on its use in <code>instance_setup._auto_retry</code>.</li>
 <li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Any manual or new tests for this PR (please specify below)
@@ -321,9 +333,9 @@ img { max-width: 100%; }
 </li>
 </ul>
 <hr />
-<h2 id="ej-prj-3-kubernetes-start-the-heads-ray-sooner"><code>ej-prj-3</code>: [Kubernetes] Start the head's Ray sooner <a class="header-anchor" href="#ej-prj-3-kubernetes-start-the-heads-ray-sooner">#</a></h2>
+<h2 id="ej-prj-3"><span id="ej-prj-3-kubernetes-start-the-heads-ray-sooner"></span><code>ej-prj-3</code>: [Kubernetes] Start the head's Ray sooner <a class="header-anchor" href="#ej-prj-3">#</a></h2>
 <p>Commits: <code>8cce4953b</code>, <code>b4b668cd7</code>. Stacked on <code>ej-prj-bonus</code>, and also carries that branch's stub fix (cherry-picked as <code>aeb9e96f7</code>).</p>
-<h3 id="summary-3">Summary <a class="header-anchor" href="#summary-3">#</a></h3>
+<h3 id="ej-prj-3-summary"><span id="summary-3"></span>Summary <a class="header-anchor" href="#ej-prj-3-summary">#</a></h3>
 <ul>
 <li><strong>Skip <code>ray stop</code> when no Ray is running.</strong>
 <ul>
@@ -341,7 +353,7 @@ img { max-width: 100%; }
 </ul>
 </li>
 </ul>
-<h3 id="tested-3">Tested <a class="header-anchor" href="#tested-3">#</a></h3>
+<h3 id="ej-prj-3-tested"><span id="tested-3"></span>Tested <a class="header-anchor" href="#ej-prj-3-tested">#</a></h3>
 <ul class="contains-task-list">
 <li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
 <li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Any manual or new tests for this PR (please specify below)
@@ -378,9 +390,9 @@ img { max-width: 100%; }
 </li>
 </ul>
 <hr />
-<h2 id="ej-prj-job0-jobs-notice-a-short-managed-jobs-start-and-end-sooner"><code>ej-prj-job0</code>: [Jobs] Notice a short managed job's start and end sooner <a class="header-anchor" href="#ej-prj-job0-jobs-notice-a-short-managed-jobs-start-and-end-sooner">#</a></h2>
+<h2 id="ej-prj-job0"><span id="ej-prj-job0-jobs-notice-a-short-managed-jobs-start-and-end-sooner"></span><code>ej-prj-job0</code>: [Jobs] Notice a short managed job's start and end sooner <a class="header-anchor" href="#ej-prj-job0">#</a></h2>
 <p>Commits: <code>30337ed94</code>, <code>7c26bd708</code>. Based on master <code>815e61a76</code>.</p>
-<h3 id="summary-4">Summary <a class="header-anchor" href="#summary-4">#</a></h3>
+<h3 id="ej-prj-job0-summary"><span id="summary-4"></span>Summary <a class="header-anchor" href="#ej-prj-job0-summary">#</a></h3>
 <ul>
 <li><strong>Status and submitted-at in one head command.</strong>
 <ul>
@@ -403,7 +415,7 @@ img { max-width: 100%; }
 </ul>
 </li>
 </ul>
-<h3 id="tested-4">Tested <a class="header-anchor" href="#tested-4">#</a></h3>
+<h3 id="ej-prj-job0-tested"><span id="tested-4"></span>Tested <a class="header-anchor" href="#ej-prj-job0-tested">#</a></h3>
 <ul class="contains-task-list">
 <li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
 <li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Any manual or new tests for this PR (please specify below)
@@ -463,9 +475,9 @@ img { max-width: 100%; }
 </li>
 </ul>
 <hr />
-<h2 id="ej-prj-job1-data-look-up-the-enabled-storage-clouds-once-per-request"><code>ej-prj-job1</code>: [Data] Look up the enabled storage clouds once per request <a class="header-anchor" href="#ej-prj-job1-data-look-up-the-enabled-storage-clouds-once-per-request">#</a></h2>
+<h2 id="ej-prj-job1"><span id="ej-prj-job1-data-look-up-the-enabled-storage-clouds-once-per-request"></span><code>ej-prj-job1</code>: [Data] Look up the enabled storage clouds once per request <a class="header-anchor" href="#ej-prj-job1">#</a></h2>
 <p>Commit: <code>d37133a6f</code>. Based on master <code>815e61a76</code>.</p>
-<h3 id="summary-5">Summary <a class="header-anchor" href="#summary-5">#</a></h3>
+<h3 id="ej-prj-job1-summary"><span id="summary-5"></span>Summary <a class="header-anchor" href="#ej-prj-job1-summary">#</a></h3>
 <ul>
 <li><strong>Problem:</strong>
 <ul>
@@ -488,7 +500,7 @@ img { max-width: 100%; }
 </ul>
 </li>
 </ul>
-<h3 id="tested-5">Tested <a class="header-anchor" href="#tested-5">#</a></h3>
+<h3 id="ej-prj-job1-tested"><span id="tested-5"></span>Tested <a class="header-anchor" href="#ej-prj-job1-tested">#</a></h3>
 <ul class="contains-task-list">
 <li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
 <li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Any manual or new tests for this PR (please specify below)
@@ -560,9 +572,9 @@ img { max-width: 100%; }
 </li>
 </ul>
 <hr />
-<h2 id="ej-k8s-pool-warning-kubernetes-hide-urllib3-pool-full-warning-from-capped-api-clients"><code>ej-k8s-pool-warning</code>: [Kubernetes] Hide urllib3 pool-full warning from capped API clients <a class="header-anchor" href="#ej-k8s-pool-warning-kubernetes-hide-urllib3-pool-full-warning-from-capped-api-clients">#</a></h2>
+<h2 id="ej-k8s-pool-warning"><span id="ej-k8s-pool-warning-kubernetes-hide-urllib3-pool-full-warning-from-capped-api-clients"></span><code>ej-k8s-pool-warning</code>: [Kubernetes] Hide urllib3 pool-full warning from capped API clients <a class="header-anchor" href="#ej-k8s-pool-warning">#</a></h2>
 <p>Commit: <code>5bb46b39a</code>. Based on master <code>5ef55efa4</code>.</p>
-<h3 id="summary-6">Summary <a class="header-anchor" href="#summary-6">#</a></h3>
+<h3 id="ej-k8s-pool-warning-summary"><span id="summary-6"></span>Summary <a class="header-anchor" href="#ej-k8s-pool-warning-summary">#</a></h3>
 <ul>
 <li><strong>Problem:</strong>
 <ul>
@@ -578,7 +590,7 @@ img { max-width: 100%; }
 </ul>
 </li>
 </ul>
-<h3 id="tested-6">Tested <a class="header-anchor" href="#tested-6">#</a></h3>
+<h3 id="ej-k8s-pool-warning-tested"><span id="tested-6"></span>Tested <a class="header-anchor" href="#ej-k8s-pool-warning-tested">#</a></h3>
 <ul class="contains-task-list">
 <li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
 <li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Any manual or new tests for this PR (please specify below)
