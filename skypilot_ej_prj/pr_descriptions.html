@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR descriptions</title>
+<meta name="description" content="One section per branch on fork (https://github.com/siliconej/skypilot). Copy everything under a branch&#x27;s heading into its PR.">
+<meta name="author" content="Edward Jiang">
+<link rel="icon" href="../favicon.ico">
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2e0;
+  --accent: #2f5bd3; --code-bg: #f0f0ed; --th-bg: #f3f3f1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+    --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+  --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+nav { max-width: 920px; margin: 0 auto; padding: 16px 16px 0; font-size: 14px; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--accent); }
+main {
+  max-width: 920px; margin: 12px auto 64px; padding: 28px 32px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+@media (max-width: 640px) { main { margin: 8px 16px 48px; padding: 20px 16px; } }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 16px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 17px; margin: 28px 0 10px; }
+h4 { font-size: 15px; margin: 22px 0 8px; }
+.header-anchor { color: var(--muted); text-decoration: none; opacity: 0; margin-left: -0.9em; padding-right: 0.25em; font-weight: 400; }
+h1:hover .header-anchor, h2:hover .header-anchor, h3:hover .header-anchor, h4:hover .header-anchor { opacity: 1; }
+a { color: var(--accent); }
+p, ul, ol { margin: 0 0 14px; }
+li { margin: 3px 0; }
+li > ul, li > ol { margin: 4px 0; }
+code {
+  font: 0.88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto; margin: 0 0 16px;
+}
+pre code { background: none; padding: 0; font-size: 13px; overflow-wrap: normal; }
+pre.mermaid { background: var(--panel); text-align: center; }
+.table-wrap { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; font-size: 14px; min-width: 50%; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--th-bg); font-weight: 600; }
+blockquote { margin: 0 0 14px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+img { max-width: 100%; }
+</style>
+</head>
+<body>
+<nav><a href="../">&larr; hifiweekly</a></nav>
+<main>
+<h1 id="pr-descriptions">PR descriptions <a class="header-anchor" href="#pr-descriptions">#</a></h1>
+<p>One section per branch on <code>fork</code> (https://github.com/siliconej/skypilot). Copy everything under a branch's heading into its PR.</p>
+<p><strong>Stacking.</strong> <code>ej-prj-bonus</code> contains <code>ej-prj-0</code> and a rebased <code>ej-prj-1</code>, and <code>ej-prj-3</code> is built on <code>ej-prj-bonus</code>. Open them in this order, or rebase each one after the previous one merges:</p>
+<p><code>ej-prj-0</code> → <code>ej-prj-1</code> → <code>ej-prj-bonus</code> → <code>ej-prj-3</code></p>
+<p><code>ej-prj-job0</code>, <code>ej-prj-job1</code> and <code>ej-k8s-pool-warning</code> branch directly off master and are independent.</p>
+<p><strong>Test environment for every number below:</strong></p>
+<ul>
+<li><strong>Cluster:</strong> <code>kind-skypilot</code>, one kind node with 12 cores.</li>
+<li><strong>Task:</strong> <code>ej/job.yaml</code>, a one-line <code>echo</code> on 4 nodes unless stated.</li>
+<li><strong>Managed jobs:</strong> consolidation mode (<code>sky api start --deploy</code>).</li>
+</ul>
+<hr />
+<h2 id="ej-prj-0-kubernetes-start-ray-before-preparing-skypilot-in-the-pod"><code>ej-prj-0</code>: [Kubernetes] Start Ray before preparing SkyPilot in the pod <a class="header-anchor" href="#ej-prj-0-kubernetes-start-ray-before-preparing-skypilot-in-the-pod">#</a></h2>
+<p>Commit: <code>9c42bf108</code></p>
+<h3 id="summary">Summary <a class="header-anchor" href="#summary">#</a></h3>
+<ul>
+<li><strong>Problem:</strong>
+<ul>
+<li>The Kubernetes pod's startup script installed <code>skypilot[kubernetes,remote]</code> from PyPI before <code>ray start</code>. The head started Ray late, and every worker, which waits for the head's GCS port, started late with it.</li>
+<li>Nothing before <code>ray start</code> imports <code>sky</code>: the Ray patches and the hostNetwork probe are shipped inline. <code>setup_commands</code> also replaced that copy with the cluster's own wheel later.</li>
+</ul>
+</li>
+<li><strong>Fix:</strong>
+<ul>
+<li>Drop the PyPI install from the non-HA path and start Ray in the background.</li>
+<li>Meanwhile, warm uv's cache with <code>uv pip install --dry-run</code>. It changes nothing in the environment, but without it the later wheel install resolves on a cold cache, about 5 s instead of about 20 ms.</li>
+</ul>
+</li>
+<li><strong>Unchanged:</strong>
+<ul>
+<li>The marker <code>setup_commands</code> waits on is still written before the wheel install.</li>
+<li>The step still waits for Ray (<code>wait $SKY_RAY_START_PID</code>) and fails if Ray fails.</li>
+<li>HA controllers keep the PyPI install, because their recovery path imports <code>sky</code> on a restarted pod.</li>
+</ul>
+</li>
+</ul>
+<p>Files: <code>sky/templates/kubernetes-ray.yml.j2</code>, <code>sky/provision/instance_setup.py</code> (docstrings), and a new template test.</p>
+<h3 id="tested">Tested <a class="header-anchor" href="#tested">#</a></h3>
+<ul class="contains-task-list">
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Any manual or new tests for this PR (please specify below)
+<ul>
+<li>
+<p><strong>New unit test:</strong> <code>test_pod_starts_ray_before_preparing_skypilot</code> in <code>tests/unit_tests/test_sky/clouds/test_kubernetes_ray_template_snapshot.py</code>, for the <code>base_cpu</code>, <code>multinode</code> and <code>high_availability</code> cases. It checks:</p>
+<ul>
+<li>the PyPI install is there only for HA, and the dry run only for non-HA;</li>
+<li>the order: Ray install → patches → <code>ray start</code> → dry run → marker → <code>wait</code>.</li>
+<li>It fails on master (2 of 3 cases) and passes here. The snapshot test file passes: 88 passed.</li>
+</ul>
+</li>
+<li>
+<p><strong>Launch latency A/B</strong> (<code>tests/kubernetes/launching_benchmarks/bench_launch_latency.py</code>, from <code>ej-prj-1</code>; interleaved runs with a permutation test). Runtime setup end → &quot;Cluster launched&quot;:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Before</th>
+<th>After</th>
+<th>Change</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>This change alone</td>
+<td>12.73 s</td>
+<td>12.43 s</td>
+<td>−2%</td>
+<td>Not significant: the old 1 s polling hides the earlier Ray</td>
+</tr>
+<tr>
+<td>With <code>ej-prj-1</code></td>
+<td>12.49 s</td>
+<td><strong>9.43 s</strong></td>
+<td><strong>−24%, p = 0.004</strong></td>
+<td>Significant. Provisioning total 20.85 → 16.77 s</td>
+</tr>
+</tbody>
+</table></div>
+</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>These ran locally with <code>--kubernetes</code> on kind, on the combined branch (this PR plus <code>ej-prj-1</code>, <code>ej-prj-bonus</code>, <code>ej-prj-3</code> and <code>ej-prj-job0</code>). All passed:
+<ul>
+<li><code>test_basic.py::test_minimal</code>, <code>test_launch_fast</code></li>
+<li><code>test_cluster_job.py::test_multi_hostname</code>, <code>test_multi_node_failure</code>, <code>test_kubernetes_non_debian_image[rockylinux:9-dnf-2]</code>, <code>test_kubernetes_non_debian_image[redhat/ubi9-dnf-2]</code></li>
+<li><code>test_kubernetes_host_network.py::test_kubernetes_host_network_multi_node_same_node</code></li>
+<li><code>test_images.py::test_kubernetes_default_image_no_conda</code>, <code>test_kubernetes_docker_image_and_ssh</code></li>
+<li><code>test_setup.py::test_kubernetes_post_provision_runcmd</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run. Only new pods get the new script; there's no API change.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="ej-prj-1-kubernetes-wait-for-ray-on-the-head-in-one-call-and-start-skylet-meanwhile"><code>ej-prj-1</code>: [Kubernetes] Wait for Ray on the head in one call and start skylet meanwhile <a class="header-anchor" href="#ej-prj-1-kubernetes-wait-for-ray-on-the-head-in-one-call-and-start-skylet-meanwhile">#</a></h2>
+<p>Commits: <code>532cced15</code>, plus the benchmark <code>0392f886f</code> and <code>be7a199f8</code>. In the stacked branches these are rebased as <code>709688366</code>, <code>b889d71af</code> and <code>a291dec2a</code>.</p>
+<h3 id="summary-1">Summary <a class="header-anchor" href="#summary-1">#</a></h3>
+<ul>
+<li><strong>Problem:</strong>
+<ul>
+<li>On a freshly booted Kubernetes cluster, the provisioner polled the head once a second until every pod's Ray had joined. Each poll was a <code>kubectl exec</code> that started three Python interpreters (2–4 s), so it could see readiness up to a whole poll late.</li>
+<li>The skylet only started after the wait, although it needs only the head.</li>
+</ul>
+</li>
+<li><strong>Fix:</strong>
+<ul>
+<li><strong>One blocking wait.</strong> <code>ray_wait_for_alive_nodes_command</code> makes one remote call that keeps a single <code>GcsClient</code> open on the head and checks every 0.2 s, until exactly <code>num_nodes</code> are alive or the deadline passes. Output keeps the old probe's format, plus a done marker.</li>
+<li><strong>A dropped call is retried.</strong> A call that ends without the done marker means the exec dropped, not that Ray is down, so it is retried for the time left. It doesn't trigger a Ray restart.</li>
+<li><strong>Skylet starts meanwhile.</strong> It runs in a background thread during the wait (<code>_run_alongside</code>), carrying over the thread-local provision log path and the context variables. It is joined before returning, and its errors are re-raised.</li>
+</ul>
+</li>
+<li><strong>Unchanged:</strong>
+<ul>
+<li>the 90 s fallback;</li>
+<li><code>no_restart</code> for workers;</li>
+<li>re-launches of existing clusters and other clouds, which keep the single probe.</li>
+</ul>
+</li>
+<li><strong>Also:</strong> adds <code>tests/kubernetes/launching_benchmarks/bench_launch_latency.py</code> with a README.
+<ul>
+<li>It launches one task from two SkyPilot builds (own worktree, venv and API server each), interleaved A B B A.</li>
+<li>It compares <code>provision.log</code> segments with a permutation test, and reports VALID only when the targeted segment is significantly faster.</li>
+</ul>
+</li>
+</ul>
+<p>Files: <code>sky/provision/instance_setup.py</code>, <code>sky/provision/provisioner.py</code>, a new unit test file, and the benchmark.</p>
+<h3 id="tested-1">Tested <a class="header-anchor" href="#tested-1">#</a></h3>
+<ul class="contains-task-list">
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.
+<ul>
+<li>Outside CI's pylint scope, <code>bench_launch_latency.py</code> has 3 pylint warnings: inconsistent quotes ×2, and <code>subprocess.run</code> without <code>check</code>.</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Any manual or new tests for this PR (please specify below)
+<ul>
+<li>
+<p><strong>New unit tests:</strong> 12 in <code>tests/unit_tests/test_sky/provision/test_provisioner_ray_wait.py</code>; 12 passed. They run the real wait script against a local socket and a fake <code>ray._raylet</code>:</p>
+<ul>
+<li>returns once every node has joined;</li>
+<li>retries while GCS comes up;</li>
+<li>reports the partial count at the deadline;</li>
+<li>reports &quot;no cluster&quot; when nothing listens;</li>
+<li>falls back to the default port without a port file;</li>
+<li>ships the script as one shell word.</li>
+</ul>
+<p>They also cover the provisioner:</p>
+<ul>
+<li>a ready cluster is waited for once;</li>
+<li>skylet starts while workers are still joining;</li>
+<li>a dropped wait is retried, not treated as dead Ray;</li>
+<li>workers that never join are started without a head restart;</li>
+<li>a head without Ray is started after the wait;</li>
+<li>a skylet failure still fails the launch.</li>
+</ul>
+</li>
+<li>
+<p><strong>Launch latency A/B</strong> (this benchmark, 4-node task on kind). Runtime setup end → &quot;Cluster launched&quot;: 12.47 → <strong>9.89 s (−21%, p = 0.004)</strong>, VALID. Provisioning total 20.38 → 17.38 s.</p>
+</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>These ran locally with <code>--kubernetes</code> on kind, on the combined branch. All passed:
+<ul>
+<li><code>test_cluster_job.py::test_multi_hostname</code>, <code>test_multi_node_failure</code>, <code>test_kubernetes_recovery</code></li>
+<li><code>test_provision_logs.py::test_provision_logs_streaming</code>, <code>test_worker_provision_logs_streaming</code> (skylet logs from its thread)</li>
+<li><code>test_setup.py::test_kubernetes_provision_command_timeout</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run. The change is server-side, and the wait script uses only the standard library and <code>ray</code>.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="ej-prj-bonus-provision-fail-setup-fast-when-a-pod-is-lost"><code>ej-prj-bonus</code>: [Provision] Fail setup fast when a pod is lost <a class="header-anchor" href="#ej-prj-bonus-provision-fail-setup-fast-when-a-pod-is-lost">#</a></h2>
+<p>Commits: <code>24c6d876b</code>, <code>17411838d</code>, <code>6db5eba63</code>, <code>7aed7c84e</code>. Stacked on <code>ej-prj-0</code> and <code>ej-prj-1</code>.</p>
+<h3 id="summary-2">Summary <a class="header-anchor" href="#summary-2">#</a></h3>
+<ul>
+<li><strong>Problem:</strong>
+<ul>
+<li>A pod deleted after it started (<code>kubectl delete pod</code>, an eviction) never comes back: SkyPilot pods use <code>restartPolicy: Never</code>.</li>
+<li>The launch only noticed after about 106 s. The head-side Ray wait ran its whole 90 s timeout, because a worker that never joined is invisible to it. The fallback then tried to start Ray on the missing pod, retrying six times.</li>
+<li>The error didn't say a pod was gone.</li>
+</ul>
+</li>
+<li><strong>Fix:</strong>
+<ul>
+<li><strong>Don't retry an exec whose pod is gone.</strong> <code>command_runner.is_exec_target_gone()</code> matches the kubectl errors that are permanent: NotFound, a completed pod, phase Failed or Succeeded. <code>instance_setup._auto_retry</code> stops on those. Errors that can be transient, such as &quot;unable to upgrade connection&quot;, are still retried.</li>
+<li><strong>Liveness check.</strong> <code>provision.query_instances(non_terminated_only=False)</code> lists the cluster's instances. One that is missing, terminated or stopped in two listings 2 s apart raises the new <code>InstancesLostDuringSetupError</code> (a <code>ClusterSetUpError</code>) naming it. A check that fails never fails the launch.</li>
+<li><strong>Time-boxed Ray wait.</strong> The Kubernetes wait runs in calls of at most 10 s, with the check between calls. When Ray is ready within the first call, nothing changes.</li>
+<li><strong>Clearer errors.</strong> When any setup stage fails, the check runs before the error is re-raised, so the error names a lost pod and keeps the stage's error as context.</li>
+</ul>
+</li>
+<li><strong>New smoke test:</strong> <code>test_kubernetes_pod_loss.py</code> with <code>scripts/delete_pod_mid_launch.sh</code>. It force-deletes the worker or head pod mid-setup and asserts the launch fails within 45 s with <code>InstancesLostDuringSetupError</code> naming the pod.</li>
+</ul>
+<h3 id="tested-2">Tested <a class="header-anchor" href="#tested-2">#</a></h3>
+<ul class="contains-task-list">
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>. <code>7aed7c84e</code> adds <code>is_exec_target_gone</code> to <code>sky/utils/command_runner.pyi</code>; without it, mypy failed on its use in <code>instance_setup._auto_retry</code>.</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Any manual or new tests for this PR (please specify below)
+<ul>
+<li>
+<p><strong>New unit tests</strong> in <code>tests/unit_tests/test_sky/provision/test_provisioner_ray_wait.py</code>:</p>
+<ul>
+<li>a worker deleted mid-wait fails at the next chunk;</li>
+<li>a deleted head fails without retrying the wait;</li>
+<li>a pod missing from one listing doesn't fail the launch;</li>
+<li>a failing instance check doesn't fail the launch;</li>
+<li>a stage failing on a deleted pod names the pod;</li>
+<li>a stage failing with every pod present keeps its own error;</li>
+<li>which exec errors mean the pod is gone;</li>
+<li>a stage isn't retried once its pod is gone.</li>
+</ul>
+<p>Together with the template tests: 112 passed.</p>
+</li>
+<li>
+<p><strong>Manual, on kind:</strong> a deleted worker now fails the launch about 11 s after the deletion, and a deleted head about 5 s after, instead of about 106 s.</p>
+</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>These ran locally with <code>--kubernetes</code> on kind, on the combined branch. All passed:
+<ul>
+<li><code>test_kubernetes_pod_loss.py::test_launch_fails_fast_when_pod_deleted[worker]</code> (42 s) and <code>[head]</code> (45 s), both new</li>
+<li><code>test_cluster_job.py::test_kubernetes_recovery</code>, <code>test_kubernetes_pod_failure_detection</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run. There's no API change; the new exception subclasses <code>ClusterSetUpError</code>.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="ej-prj-3-kubernetes-start-the-heads-ray-sooner"><code>ej-prj-3</code>: [Kubernetes] Start the head's Ray sooner <a class="header-anchor" href="#ej-prj-3-kubernetes-start-the-heads-ray-sooner">#</a></h2>
+<p>Commits: <code>8cce4953b</code>, <code>b4b668cd7</code>. Stacked on <code>ej-prj-bonus</code>, and also carries that branch's stub fix (cherry-picked as <code>aeb9e96f7</code>).</p>
+<h3 id="summary-3">Summary <a class="header-anchor" href="#summary-3">#</a></h3>
+<ul>
+<li><strong>Skip <code>ray stop</code> when no Ray is running.</strong>
+<ul>
+<li>Both start commands ran <code>ray stop</code> before <code>ray start</code>. On a fresh pod there's nothing to stop, but it still costs a Python start: 1.4–1.5 s idle, 2.9–3.8 s while the pod is busy setting up. On the head that delays every worker.</li>
+<li><code>RAY_STOP_IF_RUNNING</code> now stops Ray only if <code>pgrep</code> finds a GCS, raylet or dashboard process, so restarts still stop Ray first.</li>
+<li>The pattern brackets one letter of each name (<code>[g]cs_server</code>), so it can't match the shell running it.</li>
+<li>Without <code>pgrep</code>, Ray is stopped as before.</li>
+</ul>
+</li>
+<li><strong>Pre-install the runtime pins in the image.</strong>
+<ul>
+<li>The pod pins <code>setuptools&lt;70</code> and <code>click&lt;8.3.0</code> at startup, but the image ships setuptools 84, so every pod downloaded setuptools from PyPI before <code>ray start</code>: 0.6 s usually, 12 s in one traced launch.</li>
+<li><code>Dockerfile_k8s</code>, <code>Dockerfile_k8s_gpu</code> and the docs' custom-image snippet now install both pins, so a pod only checks them (about 2 ms).</li>
+<li>This takes effect once the image is rebuilt and published.</li>
+</ul>
+</li>
+</ul>
+<h3 id="tested-3">Tested <a class="header-anchor" href="#tested-3">#</a></h3>
+<ul class="contains-task-list">
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Any manual or new tests for this PR (please specify below)
+<ul>
+<li><strong>New unit tests:</strong> 3 in <code>tests/unit_tests/test_sky/provision/test_ray_stop_if_running.py</code>. The <code>test_ray_is_stopped_only_when_running</code> cases cover three situations: <code>pgrep</code> finds Ray, finds nothing, or isn't installed. The others check that the real <code>pgrep</code> doesn't match the guard's own command line, and that both start commands stop Ray only through the guard, before <code>ray start</code>. With the provision and template tests: 118 passed.</li>
+<li><strong>In a live pod:</strong> with Ray running, the guard stopped it; after Ray stopped, it skipped; it never matched its own <code>bash -c</code>.</li>
+<li><strong>Image:</strong> <code>docker build -f Dockerfile_k8s</code> succeeds.</li>
+<li><strong>On kind</strong> (4 nodes; 3 runs against 5 for the baseline):
+<ul>
+<li>head container start → GCS up: 7.31 → 5.89 s;</li>
+<li>head container start → whole cluster in Ray: 12.95 → 11.37 s;</li>
+<li>client total, for runs without a slow pod: about 2 s faster.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>These ran locally with <code>--kubernetes</code> on kind, on the combined branch. All passed:
+<ul>
+<li><code>test_kubernetes_host_network.py::test_kubernetes_host_network_relaunch_after_head_ray_stopped</code> and <code>test_basic.py::test_launch_fast</code>: relaunches where Ray must still be stopped.</li>
+<li><code>test_cluster_job.py::test_kubernetes_non_debian_image</code> (both cases), with images that may lack <code>pgrep</code>.</li>
+<li><code>test_images.py::test_kubernetes_docker_image_and_ssh</code>, with a custom image.</li>
+</ul>
+</li>
+<li><strong>Not run:</strong> <code>test_kubernetes_host_network_relaunch_after_ray_stopped</code> needs 2 schedulable nodes, and kind has 1.</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run. Only new pods get the new commands; custom images without the pins download them at pod start, as before.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="ej-prj-job0-jobs-notice-a-short-managed-jobs-start-and-end-sooner"><code>ej-prj-job0</code>: [Jobs] Notice a short managed job's start and end sooner <a class="header-anchor" href="#ej-prj-job0-jobs-notice-a-short-managed-jobs-start-and-end-sooner">#</a></h2>
+<p>Commits: <code>30337ed94</code>, <code>7c26bd708</code>. Based on master <code>815e61a76</code>.</p>
+<h3 id="summary-4">Summary <a class="header-anchor" href="#summary-4">#</a></h3>
+<ul>
+<li><strong>Status and submitted-at in one head command.</strong>
+<ul>
+<li>After a job's cluster is launched, the controller confirmed the job had started with two commands on the head: status, then submitted-at. Without gRPC, each is a <code>kubectl exec</code> or SSH round trip of about 1.6 s.</li>
+<li><code>JobLibCodeGen.get_job_status_and_submitted_timestamp</code> now returns both. It calls only the <code>job_lib</code> functions the two commands already call, so older cluster runtimes support it.</li>
+<li>Over gRPC, or if the time is missing, the old second call is still made. Error classification is shared with <code>get_job_status</code>.</li>
+</ul>
+</li>
+<li><strong>No first-check sleep when the launch already saw the job finish.</strong>
+<ul>
+<li>The monitor loop slept a random 0–15 s before its first status check, even when the launch had just seen the job finish.</li>
+<li>The executor now remembers the status its launch (or recovery) saw, and the loop checks at once if that status is terminal.</li>
+<li>A job still running keeps the jittered first gap, so loops that start together still spread out.</li>
+</ul>
+</li>
+<li><strong>The client follower checks the status when the controller logs.</strong>
+<ul>
+<li><code>sky jobs launch</code> and <code>sky jobs logs</code> follow a not-yet-RUNNING job by reading the controller's per-job log every second, but re-checked the status only every 15 s. A short job is RUNNING for only a few seconds, so the follower usually missed it, then found the job finished up to 15 s late.</li>
+<li>The controller writes a plain line of its own around each status change, and only about 15 while a cluster is set up. The follower now re-checks as soon as it sees one, and keeps the 15 s check as a fallback.</li>
+</ul>
+</li>
+</ul>
+<h3 id="tested-4">Tested <a class="header-anchor" href="#tested-4">#</a></h3>
+<ul class="contains-task-list">
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Any manual or new tests for this PR (please specify below)
+<ul>
+<li>
+<p><strong>New unit tests:</strong></p>
+<ul>
+<li><code>TestJobStatusAndSubmittedAt</code> in <code>tests/unit_tests/test_sky/jobs/test_utils.py</code>: one command returns both; a missing timestamp gives None; gRPC fetches only the status; the codegen runs against a real job table.</li>
+<li>The follower tests: reports whether the controller logged a line; checks the status as soon as it does; otherwise every 15 s.</li>
+<li><code>TestFirstCheckAfterLaunch</code> in <code>test_controller.py</code>.</li>
+<li>Submit-wait tests in <code>test_recovery_strategy.py</code>.</li>
+</ul>
+<p><code>tests/unit_tests/test_sky/jobs</code>: 1367 passed, 1 failed. The failure, <code>test_details_is_none_when_no_state_or_failure</code>, also fails on master.</p>
+</li>
+<li>
+<p><strong>Managed-job benchmark on kind</strong> (5 runs each, median):</p>
+<ul>
+<li>job finished → RUNNING: 3.0 → 1.3 s;</li>
+<li>RUNNING → SUCCEEDED: 7.7 s (random 4.9–10.5) → 3.4 s (3.3–3.4).</li>
+<li>The client exits 2.1–2.9 s after SUCCEEDED in 6/6 runs, against 1.6–12.6 s before; before, it missed RUNNING in 4 of 7 runs.</li>
+</ul>
+</li>
+<li>
+<p><strong>Interleaved A/B with all launch-latency changes against master</strong> (8 runs per side): RUNNING → SUCCEEDED 11.1 s (random 3.7–16.1) → 3.5 s (3.4–3.6) in every run. <code>sky jobs launch</code> total 61.5 → 50.1 s on 4 nodes, and 70.8 → 54.8 s on 6 nodes.</p>
+</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>These ran locally with <code>--kubernetes</code> on kind, consolidation mode, on the combined branch. All passed:
+<ul>
+<li><code>test_managed_job.py</code>:
+<ul>
+<li><code>test_managed_jobs_basic</code>, <code>test_job_pipeline</code></li>
+<li>recovery: <code>test_managed_jobs_recovery_kubernetes_multinode</code>, <code>test_managed_jobs_recovery_default_resources</code>, <code>test_managed_jobs_exit_code_recovery_single</code>, <code>test_managed_jobs_exit_code_recovery_multinode</code>, <code>test_managed_jobs_retry_logs</code></li>
+<li><code>test_managed_jobs_wait_success</code>, <code>test_managed_job_node_names_multi_node</code></li>
+<li>follower: <code>test_managed_jobs_logs_tail</code>, <code>test_managed_jobs_cli_exit_codes</code>, <code>test_managed_jobs_cancelled_job_logs</code></li>
+</ul>
+</li>
+<li><code>test_basic.py::test_jobs_launch_and_logs</code></li>
+</ul>
+</li>
+<li><strong>Not run here:</strong>
+<ul>
+<li><code>test_managed_jobs_log_tail_cleanup</code> is skipped in consolidation mode.</li>
+<li>The <code>ha_kill_*</code> tests need an HA controller.</li>
+<li>The non-consolidation (controller cluster) path still needs a CI run.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run; recommended. The codegen uses only <code>job_lib</code> payload functions that existing cluster runtimes have, and falls back when the timestamp is missing.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="ej-prj-job1-data-look-up-the-enabled-storage-clouds-once-per-request"><code>ej-prj-job1</code>: [Data] Look up the enabled storage clouds once per request <a class="header-anchor" href="#ej-prj-job1-data-look-up-the-enabled-storage-clouds-once-per-request">#</a></h2>
+<p>Commit: <code>d37133a6f</code>. Based on master <code>815e61a76</code>.</p>
+<h3 id="summary-5">Summary <a class="header-anchor" href="#summary-5">#</a></h3>
+<ul>
+<li><strong>Problem:</strong>
+<ul>
+<li>With no storage cloud enabled, the cached list of enabled storage clouds is empty, and <code>get_cached_enabled_clouds_or_refresh</code> treats empty as &quot;not checked yet&quot;. Every <code>get_cached_enabled_storage_cloud_names_or_refresh()</code> call re-ran the storage check.</li>
+<li>A <code>jobs.launch</code> request in consolidation mode looks twice: the file-mount translation (4.8 s), then the controller's packages (0.18–0.25 s).</li>
+</ul>
+</li>
+<li><strong>Fix:</strong> reuse the answer, including an empty one, for the rest of the request.
+<ul>
+<li><strong>Cache:</strong> <code>annotations.ttl_cache(scope='request', ttl=60, lock=...)</code>, keyed by workspace and config fingerprint.</li>
+<li><strong>A process that never clears request caches,</strong> such as a jobs controller, keeps workspaces and configs apart, and the 60 s TTL limits how stale its answer can get.</li>
+<li><strong><code>_is_storage_cloud_enabled</code> clears the cache after its <code>sky check</code> re-check,</strong> so the re-check is still seen.</li>
+<li><strong>Failed lookups aren't cached,</strong> and callers still get their own list.</li>
+</ul>
+</li>
+<li><strong>Supporting changes:</strong>
+<ul>
+<li><code>annotations.ttl_cache</code> takes an optional <code>lock</code>.</li>
+<li><code>check._config_fingerprint</code> is renamed to the public <code>current_config_fingerprint</code>.</li>
+</ul>
+</li>
+</ul>
+<h3 id="tested-5">Tested <a class="header-anchor" href="#tested-5">#</a></h3>
+<ul class="contains-task-list">
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Any manual or new tests for this PR (please specify below)
+<ul>
+<li>
+<p><strong>New unit tests:</strong></p>
+<ul>
+<li>11 in <code>tests/unit_tests/test_sky/data/test_enabled_storage_clouds_cache.py</code>:
+<ul>
+<li>an empty answer is looked up once per request, and enabled clouds and storage-only clouds are reused;</li>
+<li><code>raise_if_no_cloud_access</code> still raises from the reused answer, and callers get their own list;</li>
+<li>a new request looks again; workspaces and configs are kept apart;</li>
+<li>a failed lookup isn't reused;</li>
+<li>a <code>sky check</code> fix is seen in the same request, and a cloud still disabled after it stays disabled.</li>
+</ul>
+</li>
+<li>3 for <code>ttl_cache</code> in <code>test_annotations.py</code>: request scope, lock and no lock.</li>
+</ul>
+<p>With the check, annotation and <code>controller_utils</code> tests: 113 passed. Full unit suite: 10,704 passed; the 20 failures also fail on master or pass when run alone.</p>
+</li>
+<li>
+<p><strong>Probe on kind</strong> (temporary logging around the lookup, 3 <code>sky jobs launch</code> runs per side):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>1st lookup</th>
+<th>2nd lookup</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>master</td>
+<td>4.76–4.85 s</td>
+<td>0.18–0.25 s</td>
+</tr>
+<tr>
+<td>this change</td>
+<td>4.73–4.80 s</td>
+<td>0.001–0.002 s</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>The saving is about 0.2 s per launch, which is within phase A's noise in end-to-end runs.</li>
+<li>The first lookup's 4.8 s remains. Caching across requests would be a follow-up.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>Not yet run with this change. Suggested:
+<ul>
+<li><code>test_managed_job.py::test_managed_jobs_basic</code></li>
+<li><code>test_managed_job.py::test_managed_jobs_storage</code>, which needs a storage cloud</li>
+<li><code>test_mount_and_storage.py</code>, which needs a storage cloud</li>
+<li><code>test_basic.py::test_jobs_launch_and_logs</code></li>
+</ul>
+</li>
+<li>The 20 managed-job A/B runs on kind (all five changes) succeeded with it.</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run. The change is server-side only, with no API change.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="ej-k8s-pool-warning-kubernetes-hide-urllib3-pool-full-warning-from-capped-api-clients"><code>ej-k8s-pool-warning</code>: [Kubernetes] Hide urllib3 pool-full warning from capped API clients <a class="header-anchor" href="#ej-k8s-pool-warning-kubernetes-hide-urllib3-pool-full-warning-from-capped-api-clients">#</a></h2>
+<p>Commit: <code>5bb46b39a</code>. Based on master <code>5ef55efa4</code>.</p>
+<h3 id="summary-6">Summary <a class="header-anchor" href="#summary-6">#</a></h3>
+<ul>
+<li><strong>Problem:</strong>
+<ul>
+<li>SkyPilot's Kubernetes API clients cap their connection pool at <code>CONNECTION_POOL_MAXSIZE</code> (4). Going past it is by design, for example when creating or inspecting more than 4 pods in parallel.</li>
+<li>urllib3 then warns &quot;Connection pool is full, discarding connection&quot; each time it closes an extra connection.</li>
+<li><code>_api_logging_decorator</code> keeps the urllib3 logger at ERROR during API calls. But any <code>kubernetes.client.Configuration</code> built elsewhere, or in another thread mid-call, resets the logger to WARNING, so the warning still reached users.</li>
+</ul>
+</li>
+<li><strong>Fix:</strong>
+<ul>
+<li>A <code>logging.Filter</code> on <code>urllib3.connectionpool</code> drops exactly this warning when the pool size in it equals <code>CONNECTION_POOL_MAXSIZE</code>. Pool-full warnings from other pools still show.</li>
+<li>A level reset doesn't undo a filter, and a filter takes no lock per record.</li>
+</ul>
+</li>
+</ul>
+<h3 id="tested-6">Tested <a class="header-anchor" href="#tested-6">#</a></h3>
+<ul class="contains-task-list">
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on <code>sky/</code> adds no messages over master. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="checked" disabled="disabled" type="checkbox"> Any manual or new tests for this PR (please specify below)
+<ul>
+<li><strong>New unit test:</strong> <code>test_pool_full_warning_hidden_for_capped_clients</code> in <code>tests/unit_tests/test_sky/adaptors/test_kubernetes_adaptor.py</code>. The file passes: 28 passed.</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>Not run. Suggested: a multi-node Kubernetes launch with more than 4 pods, e.g. <code>test_cluster_job.py::test_multi_hostname</code> with <code>--num-nodes 6</code>, checking that no &quot;Connection pool is full&quot; warning is printed.</li>
+</ul>
+</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run. The change only affects logging.</li>
+</ul>
+</li>
+</ul>
+
+</main>
+
+</body>
+</html>

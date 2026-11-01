@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Managed-job launch latency on ej-prj-3</title>
+<meta name="description" content="The managed job takes about 31 s longer than a plain launch. Almost all of that is controller and polling overhead, not provisioning.">
+<meta name="author" content="Edward Jiang">
+<link rel="icon" href="../favicon.ico">
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2e0;
+  --accent: #2f5bd3; --code-bg: #f0f0ed; --th-bg: #f3f3f1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+    --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+  --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+nav { max-width: 920px; margin: 0 auto; padding: 16px 16px 0; font-size: 14px; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--accent); }
+main {
+  max-width: 920px; margin: 12px auto 64px; padding: 28px 32px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+@media (max-width: 640px) { main { margin: 8px 16px 48px; padding: 20px 16px; } }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 16px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 17px; margin: 28px 0 10px; }
+h4 { font-size: 15px; margin: 22px 0 8px; }
+.header-anchor { color: var(--muted); text-decoration: none; opacity: 0; margin-left: -0.9em; padding-right: 0.25em; font-weight: 400; }
+h1:hover .header-anchor, h2:hover .header-anchor, h3:hover .header-anchor, h4:hover .header-anchor { opacity: 1; }
+a { color: var(--accent); }
+p, ul, ol { margin: 0 0 14px; }
+li { margin: 3px 0; }
+li > ul, li > ol { margin: 4px 0; }
+code {
+  font: 0.88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto; margin: 0 0 16px;
+}
+pre code { background: none; padding: 0; font-size: 13px; overflow-wrap: normal; }
+pre.mermaid { background: var(--panel); text-align: center; }
+.table-wrap { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; font-size: 14px; min-width: 50%; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--th-bg); font-weight: 600; }
+blockquote { margin: 0 0 14px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+img { max-width: 100%; }
+</style>
+</head>
+<body>
+<nav><a href="../">&larr; hifiweekly</a></nav>
+<main>
+<h1 id="managed-job-launch-latency-on-ej-prj-3">Managed-job launch latency on <code>ej-prj-3</code> <a class="header-anchor" href="#managed-job-launch-latency-on-ej-prj-3">#</a></h1>
+<ul>
+<li><strong>Command:</strong> <code>sky jobs launch -y -c ej-prj-3 ej/job.yaml</code> (4 nodes on kind).</li>
+<li><strong>Setup:</strong> local API server in <code>--deploy</code> mode, so the jobs controller runs on the server (consolidation mode).</li>
+<li><strong>Runs:</strong> 5 in a row (managed jobs 4–8), one at a time. Each run waited until the previous job's pods were gone.</li>
+<li><strong>Sources:</strong>
+<ul>
+<li>client wall clock;</li>
+<li><code>spot</code> rows (<code>created_at</code>, <code>start_at</code>, <code>end_at</code>) and <code>job_events</code> in <code>~/.sky/spot_jobs.db</code>;</li>
+<li><code>cluster_events</code> in <code>~/.sky/state.db</code> (1 s resolution);</li>
+<li>one extra run traced with <code>SKYPILOT_TIMELINE_FILE_PATH</code> (job 9).</li>
+</ul>
+</li>
+</ul>
+<h2 id="1-result">1. Result <a class="header-anchor" href="#1-result">#</a></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>Median</th>
+<th>Range</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sky jobs launch</code> client total</td>
+<td><strong>63.0 s</strong></td>
+<td>57.4–64.9</td>
+</tr>
+<tr>
+<td><code>sky launch</code> client total, same branch and YAML (from <a href="ray_start_sooner_ej-prj-3.html"><code>ray_start_sooner_ej-prj-3.md</code></a>)</td>
+<td>32.0–32.4 s</td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<p>The managed job takes about <strong>31 s longer</strong> than a plain launch. Almost all of that is controller and polling overhead, not provisioning.</p>
+<h2 id="2-where-the-time-goes-median-of-5">2. Where the time goes (median of 5) <a class="header-anchor" href="#2-where-the-time-goes-median-of-5">#</a></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Median</th>
+<th>Range</th>
+<th>Managed-job only?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A. Client start → job row created (client start ~1.6 s, then the server's <code>jobs.launch</code> request)</td>
+<td>7.5</td>
+<td>6.8–8.7</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>B. Row created → controller picks it up (STARTING)</td>
+<td>2.5</td>
+<td>2.3–3.7</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>C. STARTING → provisioning begins</td>
+<td>2.8</td>
+<td>2.7–3.8</td>
+<td>mostly</td>
+</tr>
+<tr>
+<td>D1. Provisioning → pods up</td>
+<td>5.0</td>
+<td>4.0–5.0</td>
+<td>no</td>
+</tr>
+<tr>
+<td>D2. Pods up → runtime set up (Ray, skylet)</td>
+<td>11.0</td>
+<td>10.0–16.0</td>
+<td>no</td>
+</tr>
+<tr>
+<td>D3. → job submitted on the cluster</td>
+<td>4.2</td>
+<td>3.9–5.1</td>
+<td>no</td>
+</tr>
+<tr>
+<td>E. Job runs on the cluster (an <code>echo</code> on 4 nodes)</td>
+<td>7.7</td>
+<td>7.4–7.8</td>
+<td>no</td>
+</tr>
+<tr>
+<td>F. Job finished → controller marks it RUNNING</td>
+<td>3.1</td>
+<td>2.8–3.5</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><strong>G. RUNNING → SUCCEEDED</strong></td>
+<td><strong>14.5</strong></td>
+<td>9.0–17.9</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>H. SUCCEEDED → client exits</td>
+<td>4.5</td>
+<td>1.9–6.5</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>63.0</strong></td>
+<td>57.4–64.9</td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>The shared launch path is about the same as a plain launch.</strong> D1+D2+D3+E is 27.9 s here, against about 28 s inside <code>sky launch</code>. So the ej-prj-0/1/3 changes carry over to managed jobs.</li>
+<li><strong>About 35 s is managed-job overhead:</strong> A+B+C+F+G+H.</li>
+<li><strong>Phase F means the controller is late.</strong> On every run, the job had already finished on the cluster before the controller even marked it RUNNING.</li>
+</ul>
+<h2 id="3-causes-from-code-and-trace">3. Causes, from code and trace <a class="header-anchor" href="#3-causes-from-code-and-trace">#</a></h2>
+<h3 id="g-145-s-the-monitor-loops-first-status-check">G (14.5 s): the monitor loop's first status check <a class="header-anchor" href="#g-145-s-the-monitor-loops-first-status-check">#</a></h3>
+<p><code>controller.py::_status_check_gap_seconds(first_check=True)</code> sleeps <code>random.uniform(0, JOB_STATUS_CHECK_GAP_SECONDS=15)</code> before the first status check. The check itself is a network check plus 1–2 <code>kubectl exec</code> calls to the head (about 1.6–3.4 s in the trace). Only then does it see SUCCEEDED.</p>
+<ul>
+<li><strong>Effect:</strong> every managed job finishes 0–15 s (7.5 s on average) after its job ends.</li>
+<li><strong>Why it's there:</strong> the jitter spreads out monitor loops that start together.</li>
+<li><strong>Why it's wasted on this path:</strong> the controller already polled the job's status during F (<code>_wait_until_job_starts_on_cluster</code>) and saw it past INIT. It throws that status away, then sleeps before asking again.</li>
+</ul>
+<h3 id="f-31-s-waiting-for-the-job-to-start">F (3.1 s): waiting for the job to start <a class="header-anchor" href="#f-31-s-waiting-for-the-job-to-start">#</a></h3>
+<p>After <code>sky.launch</code> returns, <code>_wait_until_job_starts_on_cluster</code> makes one status call, then one <code>get_job_timestamp</code> call, each a <code>kubectl exec</code> of about 1.6 s.</p>
+<h3 id="a-75-s-the-servers-jobslaunch-request">A (7.5 s): the server's <code>jobs.launch</code> request <a class="header-anchor" href="#a-75-s-the-servers-jobslaunch-request">#</a></h3>
+<ul>
+<li><strong>No timeline spans for most of it.</strong> In the traced run, about 5.7 s of <code>sky.jobs.server.core.launch</code> had no instrumented spans.</li>
+<li><strong>One confirmed contributor: three <code>sky check</code> runs for storage.</strong> The client shows &quot;Checking infra choices...&quot; 3 times.
+<ul>
+<li><code>storage.get_cached_enabled_storage_cloud_names_or_refresh()</code> is called 3 times per launch: <code>jobs/server/core.py:191</code>, and <code>controller_utils.py:438</code> and <code>:1188</code>.</li>
+<li>With only Kubernetes enabled, the cached storage-cloud list is empty, and <code>get_cached_enabled_clouds_or_refresh</code> treats empty as &quot;refresh&quot;. So every call runs a full check of every allowed context, including the remote GKE one.</li>
+<li>Measured directly: 1.5 s in a cold process, 0.22 s warm, every time.</li>
+</ul>
+</li>
+<li><strong>The rest is unaccounted for.</strong> It's probably the optimizer, DAG dumps and admin policy. A profiler (py-spy) would pin it down.</li>
+</ul>
+<h3 id="b-25-s-and-c-28-s-handoffs">B (2.5 s) and C (2.8 s): handoffs <a class="header-anchor" href="#b-25-s-and-c-28-s-handoffs">#</a></h3>
+<ul>
+<li><strong>B:</strong> the scheduler's handoff to a controller process.</li>
+<li><strong>C:</strong> the controller sends the launch as its own API request. In the trace, <code>write_cluster_config</code> took 3.1 s here, against 0.5–0.8 s in a plain <code>sky launch</code>, probably because the server process is busy with other work.</li>
+</ul>
+<h3 id="h-45-s-the-clients-log-stream">H (4.5 s): the client's log stream <a class="header-anchor" href="#h-45-s-the-clients-log-stream">#</a></h3>
+<p>The client follows the job through status polls, with 2–5 s gaps (<code>_LOG_STREAM_CHECK_CONTROLLER_GAP_SECONDS=5</code>), so it notices SUCCEEDED late.</p>
+<h2 id="4-optimization-ideas-by-expected-gain">4. Optimization ideas, by expected gain <a class="header-anchor" href="#4-optimization-ideas-by-expected-gain">#</a></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Idea</th>
+<th>Expected gain</th>
+<th>Risk</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Skip the first-check sleep when the launch already observed the job. Pass the status seen in <code>_wait_until_job_starts_on_cluster</code> into the monitor loop. If it's terminal, handle it at once; otherwise make the first check sooner (e.g. <code>uniform(0, 3)</code>).</td>
+<td><strong>~7–12 s</strong> for short jobs; up to 15 s off every job's end</td>
+<td>Low. Jitter is still kept for resumed controllers (the thundering-herd case)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Return the job's submitted-at time with the status in F, so it takes one <code>kubectl exec</code> instead of two. Gets cheaper again with gRPC (<code>SKYPILOT_ENABLE_GRPC=1</code>), as measured earlier.</td>
+<td>~1.6 s</td>
+<td>Low</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Cache &quot;no storage cloud enabled&quot; for the rest of the request (<code>lru_cache(scope='request')</code>) instead of refreshing on each of the 3 calls.</td>
+<td>0.5–4 s</td>
+<td>Low. A storage cloud enabled mid-request is only seen by the next request</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Make the client notice the end sooner: a shorter status gap once the job is RUNNING, or a push from the controller.</td>
+<td>~2–4 s</td>
+<td>Low</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Profile the remaining ~4 s of <code>jobs.launch</code>, and the 3 s <code>write_cluster_config</code> inside the controller's launch.</td>
+<td>unknown</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p>Ideas 1–4 together could bring a short managed job from about 63 s to about 45 s. None of them touches the provisioning path.</p>
+<h2 id="5-caveats">5. Caveats <a class="header-anchor" href="#5-caveats">#</a></h2>
+<ul>
+<li><strong>Only one trace.</strong> Job 9 was traced, but at the time a stray jobs controller cluster existed on kind (see §6). That added a 4 s controller status refresh plus a 1.7 s head command to <code>jobs.launch</code> (72 s total). The 5 untraced runs had no such cluster, and their numbers above are clean.</li>
+<li><strong>The pod-image change in <code>ej-prj-3</code> isn't measured.</strong> It needs a published image (see <a href="ray_start_sooner_ej-prj-3.html"><code>ray_start_sooner_ej-prj-3.md</code></a>).</li>
+</ul>
+<h2 id="6-environment-changes-left-behind">6. Environment changes left behind <a class="header-anchor" href="#6-environment-changes-left-behind">#</a></h2>
+<ul>
+<li>
+<p><strong>A stray jobs controller cluster.</strong> While enabling tracing, the API server was restarted once without <code>--deploy</code>. That turned consolidation mode off, so a test job launched a real jobs controller cluster, <code>sky-jobs-controller-48017c75</code> (4 CPU, 16 GB), on kind. It is still up.</p>
+</li>
+<li>
+<p><strong>The API server runs on a temporary config.</strong> It is the user's config plus <code>jobs.controller.consolidation_mode: true</code>, at <code>/tmp/claude-1000/-run-media-ejiang-2T2-Projects-skypilot/17cc7554-b867-4c70-ae9c-b1ee77b2fc34/scratchpad/consolidated_config.yaml</code>, with timeline tracing on.</p>
+</li>
+<li>
+<p><strong>To restore:</strong></p>
+<pre><code class="language-bash">sky down sky-jobs-controller-48017c75
+sky api stop &amp;&amp; sky api start --deploy
+</code></pre>
+</li>
+</ul>
+<h2 id="7-ideas-1-and-2-implemented-branch-ej-prj-job0">7. Ideas 1 and 2 implemented: branch <code>ej-prj-job0</code> <a class="header-anchor" href="#7-ideas-1-and-2-implemented-branch-ej-prj-job0">#</a></h2>
+<ul>
+<li><strong>Branch:</strong> <code>ej-prj-job0</code>, from <code>origin/master</code> <code>815e61a76</code>. Commit <code>30337ed94</code>, pushed to the fork.</li>
+<li><strong>Idea 2:</strong> <code>JobLibCodeGen.get_job_status_and_submitted_timestamp</code> and <code>managed_job_utils.get_job_status_and_submitted_at</code> return the status and the submitted-at time in one head command.
+<ul>
+<li>It calls only existing job_lib functions, so it works on older cluster runtimes.</li>
+<li>With gRPC, or if the time is missing, it falls back to the old second call.</li>
+</ul>
+</li>
+<li><strong>Idea 1:</strong> <code>StrategyExecutor.pop_job_status_seen_at_launch()</code> hands the monitor loop the status that the launch (or a recovery) saw.
+<ul>
+<li>If that status is terminal, the first check runs immediately.</li>
+<li>Otherwise the jittered first gap is unchanged.</li>
+</ul>
+</li>
+</ul>
+<p>A/B on kind: 4 nodes, the same <code>ej/job.yaml</code>, 5 runs each, alternated by restarting <code>sky api start --deploy</code> (master: jobs 10–14; branch: jobs 15–19).</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>master</th>
+<th><code>ej-prj-job0</code></th>
+<th>Δ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>F. Job finished → RUNNING</td>
+<td>3.0 (2.6–3.5)</td>
+<td>1.3 (0.9–1.8)</td>
+<td>−1.7</td>
+</tr>
+<tr>
+<td>G. RUNNING → SUCCEEDED</td>
+<td>7.7 (4.9–10.5)</td>
+<td>3.4 (3.3–3.4)</td>
+<td>−4.3</td>
+</tr>
+<tr>
+<td>H. SUCCEEDED → client exits</td>
+<td>2.8 (2.4–3.6)</td>
+<td>4.6 (3.6–7.9)</td>
+<td>+1.8 (client poll alignment, noise)</td>
+</tr>
+<tr>
+<td>Total</td>
+<td>62.9 (61.7–66.1)</td>
+<td>58.9 (58.0–64.0)</td>
+<td><strong>−4.0</strong></td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>The new path ran in all 5 branch runs.</strong> The controller logged &quot;already finished when its launch returned&quot; each time.</li>
+<li><strong>The master runs were lucky.</strong> On master, G's expected value is about 7.5 s of random wait plus 3.4 s of checks, so about 11 s. The 5 master runs drew short random waits, which makes the −4.3 s measured gap smaller than the long-run gain (about −7.5 s on average).</li>
+<li><strong>About 3.4 s of G remains:</strong> a network check plus two head commands (status and end time).</li>
+<li><strong>Possible next step:</strong> reuse the terminal status the launch saw and fetch the end time along with it. That would cut G to about one command.</li>
+</ul>
+<h2 id="8-combined-branch-ej-prj-3-job1">8. Combined branch <code>ej-prj-3-job1</code> <a class="header-anchor" href="#8-combined-branch-ej-prj-3-job1">#</a></h2>
+<ul>
+<li><strong>Branch:</strong> <code>ej-prj-3</code> with <code>ej-prj-job0</code> cherry-picked on top (<code>81bd4cf57</code>, a clean cherry-pick).</li>
+<li><strong>Code it contains:</strong> ej-prj-0, ej-prj-1, ej-prj-bonus, ej-prj-3 (minus the image change, which needs a published image) and job0.</li>
+<li><strong>Unit tests:</strong> 3141 passed, 2 failed.
+<ul>
+<li><code>test_details_is_none_when_no_state_or_failure</code> also fails on master.</li>
+<li><code>test_pending_volume_probe::...one_cluster_event_per_second</code> is timing-sensitive; it passes when run alone.</li>
+</ul>
+</li>
+<li><strong>Runs:</strong> 5 runs (jobs 20–24), then 5 fresh master runs in the same session (jobs 25–29, &quot;master2&quot;).</li>
+</ul>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Phase (median)</th>
+<th>master</th>
+<th>master2</th>
+<th>job0</th>
+<th>ej-prj-3</th>
+<th><strong>combined</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D. Provisioning → job submitted</td>
+<td>26.8</td>
+<td>27.2</td>
+<td>25.5</td>
+<td>19.2</td>
+<td><strong>18.7</strong></td>
+</tr>
+<tr>
+<td>F. Job finished → RUNNING</td>
+<td>3.0</td>
+<td>2.9</td>
+<td>1.3</td>
+<td>3.1</td>
+<td><strong>1.8</strong></td>
+</tr>
+<tr>
+<td>G. RUNNING → SUCCEEDED</td>
+<td>7.7</td>
+<td>15.8</td>
+<td>3.4</td>
+<td>14.5</td>
+<td><strong>3.4</strong></td>
+</tr>
+<tr>
+<td>H. SUCCEEDED → client exits</td>
+<td>2.8</td>
+<td>2.6</td>
+<td>4.6</td>
+<td>4.5</td>
+<td>6.7 (2.6–12.3)</td>
+</tr>
+<tr>
+<td><strong>Client start → SUCCEEDED</strong></td>
+<td>60.4</td>
+<td>70.1</td>
+<td>55.0</td>
+<td>59.6</td>
+<td><strong>45.3</strong></td>
+</tr>
+<tr>
+<td>Client total</td>
+<td>62.9</td>
+<td>72.4</td>
+<td>58.9</td>
+<td>63.0</td>
+<td><strong>57.6</strong> (46.4–67.1)</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>The gains add up as expected.</strong> The controller has the job SUCCEEDED by 45.3 s, against 60–70 s on master: the provisioning gain (~8 s) plus job0 (~1.5 s in F, and G reduced to a steady 3.4 s).</li>
+<li><strong>Run 20 was a warm-up</strong> right after the API server restart: A took 13.4 s and C 9.0 s.</li>
+<li><strong>The client's exit is now the largest source of variance</strong> (H: 2.6–12.3 s).
+<ul>
+<li>The two runs where H was short finished in 46.4 s and 46.9 s end to end.</li>
+<li>Likely cause, not yet confirmed: the client's 5 s status poll (<code>_LOG_STREAM_CHECK_CONTROLLER_GAP_SECONDS</code>), and its wait for the controller to save the job's logs after SUCCEEDED (<code>_PERSISTED_LOG_WAIT_TIMEOUT_SECONDS</code>).</li>
+<li>This is idea 4, the next target.</li>
+</ul>
+</li>
+</ul>
+<h2 id="9-why-the-clients-exit-varies-confirmed-with-clean-traces">9. Why the client's exit varies (confirmed with clean traces) <a class="header-anchor" href="#9-why-the-clients-exit-varies-confirmed-with-clean-traces">#</a></h2>
+<p><strong>Cause.</strong> While a managed job isn't RUNNING, the client's log follower re-checks the job's status only every <code>JOB_STATUS_CHECK_GAP_SECONDS</code> (15 s). This is in <code>_stream_logs_by_id</code>, <code>sky/jobs/utils.py:2975-3010</code>. Meanwhile it reads the controller log every 1 s, but only for the spinner text.</p>
+<p><strong>Two outcomes:</strong></p>
+<ul>
+<li><strong>The check catches RUNNING:</strong> the client streams the logs from the cluster, then polls the status every 1 s and exits about 2 s after SUCCEEDED.</li>
+<li><strong>RUNNING falls between checks:</strong> the next check, up to 15 s later, already sees SUCCEEDED, and the client prints the saved logs then.</li>
+</ul>
+<p><strong>Why job0 made it worse.</strong> <code>ej-prj-job0</code> shortened the RUNNING window to about 3.4 s, so it now usually falls between two checks.</p>
+<p><strong>Method.</strong> 7 runs on <code>ej-prj-3-job1</code> (jobs 36–42), using <code>trace_job2.py</code>. Each run was verified to be the only managed job in progress; <code>jobs_seen</code> had one id. The client ran with <code>SKYPILOT_DEBUG=1</code>, so every status check shows up as a server-timestamped &quot;The log is not ready yet&quot; line.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Run</th>
+<th>Client status checks (s)</th>
+<th>RUNNING</th>
+<th>SUCCEEDED</th>
+<th>Caught RUNNING?</th>
+<th>Exit after SUCCEEDED</th>
+<th>Total</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>probe</td>
+<td>10.6, 25.6, 40.6</td>
+<td>42.3</td>
+<td>45.6</td>
+<td>no</td>
+<td>11.7</td>
+<td>57.2</td>
+</tr>
+<tr>
+<td>r1</td>
+<td>10.8, 25.8, 40.8</td>
+<td>41.4</td>
+<td>44.6</td>
+<td>no</td>
+<td>12.6</td>
+<td>57.2</td>
+</tr>
+<tr>
+<td>r2</td>
+<td>10.6, 25.6, 40.6</td>
+<td>41.2</td>
+<td>44.5</td>
+<td>no</td>
+<td>12.6</td>
+<td>57.1</td>
+</tr>
+<tr>
+<td>r3</td>
+<td>10.7, 25.7, (40.7 → RUNNING)</td>
+<td>40.7</td>
+<td>44.2</td>
+<td><strong>yes</strong></td>
+<td>1.6</td>
+<td><strong>45.7</strong></td>
+</tr>
+<tr>
+<td>r4</td>
+<td>10.9, 25.9, 40.9</td>
+<td>42.1</td>
+<td>45.5</td>
+<td>no</td>
+<td>11.8</td>
+<td>57.3</td>
+</tr>
+<tr>
+<td>r5</td>
+<td>10.8, 25.8, (40.8 → RUNNING)</td>
+<td>40.5</td>
+<td>44.1</td>
+<td><strong>yes</strong></td>
+<td>2.2</td>
+<td><strong>46.3</strong></td>
+</tr>
+<tr>
+<td>r6</td>
+<td>11.1, 26.1, (41.1 → RUNNING)</td>
+<td>41.1</td>
+<td>44.5</td>
+<td><strong>yes</strong></td>
+<td>2.1</td>
+<td><strong>46.5</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>What the traces show:</strong></p>
+<ul>
+<li><strong>The client's checks run every 15.02 s exactly,</strong> starting about 10.8 s after the CLI starts.</li>
+<li><strong>Provisioning is so steady now</strong> that RUNNING always lands within about 1.5 s of the third check (40.5–42.3 s).</li>
+<li><strong>A sub-second race decides the result.</strong> If the check comes first, the run takes 57 s; if RUNNING comes first, 46 s.</li>
+<li><strong>The 11–12 s penalty is the rest of the 15 s gap, less the 3.4 s RUNNING window.</strong> The &quot;missed&quot; exits came 0.1–0.4 s after the next check, so the wait for the saved logs is negligible.</li>
+</ul>
+<p><strong>Fix idea.</strong> Re-check the status as soon as the controller log, which the loop already reads every second, has new lines. The controller writes there just before it marks the job RUNNING and when the job finishes. Expected result: every run takes about 46 s, with no extra database queries while nothing changes.</p>
+<h2 id="10-fix-implemented-check-the-status-when-the-controller-logs-ej-prj-job0-uncommitted">10. Fix implemented: check the status when the controller logs (<code>ej-prj-job0</code>, uncommitted) <a class="header-anchor" href="#10-fix-implemented-check-the-status-when-the-controller-logs-ej-prj-job0-uncommitted">#</a></h2>
+<p><strong>What changed</strong> (<code>sky/jobs/utils.py</code>):</p>
+<ul>
+<li><code>_read_controller_log</code> does what <code>read_provision_status_from_log</code> did, and also reports whether a plain (non-payload) line was read. <code>read_provision_status_from_log</code> now wraps it.</li>
+<li>The wait loop in <code>_stream_logs_by_id</code> re-checks the job's status as soon as the controller has logged a line of its own. The 15 s check is still there as a fallback.</li>
+<li>The controller writes only about 15 plain lines while a cluster is being set up, so the change adds few database queries.</li>
+</ul>
+<p><strong>Tests:</strong></p>
+<ul>
+<li>3 new unit tests: the reader reports plain lines, including when a line is still being written; the loop checks right after the controller logs; and it still checks every 15 s otherwise.</li>
+<li>2 existing tests were repointed to patch the new reader.</li>
+<li>Jobs and skylet suites: 1532 passed, 1 failed. The failure (<code>test_details_is_none_when_no_state_or_failure</code>) also fails on master.</li>
+</ul>
+<p><strong>On kind:</strong> 6 clean runs (jobs 43–48), no <code>SKYPILOT_DEBUG</code>, <code>ej-prj-job0</code> with the fix.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Run</th>
+<th>RUNNING</th>
+<th>SUCCEEDED</th>
+<th>First log line</th>
+<th>Streamed before SUCCEEDED</th>
+<th>Exit after SUCCEEDED</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>r1</td>
+<td>59.8</td>
+<td>63.2</td>
+<td>61.4</td>
+<td>yes</td>
+<td>2.1</td>
+</tr>
+<tr>
+<td>r2</td>
+<td>47.3</td>
+<td>50.9</td>
+<td>49.3</td>
+<td>yes</td>
+<td>2.3</td>
+</tr>
+<tr>
+<td>r3</td>
+<td>47.2</td>
+<td>50.7</td>
+<td>49.0</td>
+<td>yes</td>
+<td>2.3</td>
+</tr>
+<tr>
+<td>r4</td>
+<td>47.7</td>
+<td>57.9</td>
+<td>50.4</td>
+<td>yes</td>
+<td>2.9</td>
+</tr>
+<tr>
+<td>r5</td>
+<td>49.8</td>
+<td>53.3</td>
+<td>51.8</td>
+<td>yes</td>
+<td>2.3</td>
+</tr>
+<tr>
+<td>r6</td>
+<td>46.4</td>
+<td>49.9</td>
+<td>48.6</td>
+<td>yes</td>
+<td>2.4</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Reading the results:</strong></p>
+<ul>
+<li><strong>The client caught RUNNING every time,</strong> so it streamed the logs as the job ran. It exited 2.1–2.9 s after SUCCEEDED, against 1.6–12.6 s before (7 traced runs, §9).</li>
+<li><strong>r1</strong> was the first run after the server restart.</li>
+<li><strong>r4's</strong> launch saw the job still RUNNING, so the controller kept its jittered first check, as designed.</li>
+<li><strong>These totals don't include the provisioning changes,</strong> because <code>ej-prj-job0</code> is based on master.</li>
+</ul>
+<h2 id="11-combined-branch-with-the-client-fix">11. Combined branch with the client fix <a class="header-anchor" href="#11-combined-branch-with-the-client-fix">#</a></h2>
+<ul>
+<li><strong>Branch:</strong> <code>ej-prj-3-job1</code>, now with the client fix cherry-picked on top (<code>f506c2f1c</code>; on <code>ej-prj-job0</code> it is <code>7c26bd708</code>, pushed).</li>
+<li><strong>Runs:</strong> 6 clean runs (jobs 49–54) after an API server restart, without <code>SKYPILOT_DEBUG</code>.</li>
+</ul>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Phase (median)</th>
+<th>master</th>
+<th>master (re-run)</th>
+<th>combined</th>
+<th><strong>combined + client fix</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Provisioning → job submitted</td>
+<td>26.8</td>
+<td>27.2</td>
+<td>18.7</td>
+<td>19.0</td>
+</tr>
+<tr>
+<td>Job finished → RUNNING</td>
+<td>3.0</td>
+<td>2.9</td>
+<td>1.8</td>
+<td>1.7</td>
+</tr>
+<tr>
+<td>RUNNING → SUCCEEDED</td>
+<td>7.7</td>
+<td>15.8</td>
+<td>3.4</td>
+<td>3.4</td>
+</tr>
+<tr>
+<td>SUCCEEDED → client exits</td>
+<td>2.8</td>
+<td>2.6</td>
+<td>6.7 (2.6–12.3)</td>
+<td><strong>2.7 (2.4–3.0)</strong></td>
+</tr>
+<tr>
+<td>Client start → SUCCEEDED</td>
+<td>60.4</td>
+<td>70.1</td>
+<td>45.3</td>
+<td>46.4</td>
+</tr>
+<tr>
+<td><strong>Client total</strong></td>
+<td>62.9</td>
+<td>72.4</td>
+<td>57.6 (46.4–67.1)</td>
+<td><strong>49.0 (46.4–58.0)</strong></td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>The exit spread is gone:</strong> every run exited 2.4–3.0 s after SUCCEEDED.</li>
+<li><strong>The 58.0 s run was a warm-up:</strong> it was the first after the restart, and its submit and launch handoff took 10.4 s and 9.4 s.</li>
+<li><strong>Without it:</strong> 46.4–51.6 s, median 48.8 s. That's about 14 s faster than master (62.9 s), and 23 s faster than today's re-run of master (72.4 s).</li>
+</ul>
+<h2 id="12-storage-cloud-lookup-once-per-request-ej-prj-job1">12. Storage-cloud lookup once per request (<code>ej-prj-job1</code>) <a class="header-anchor" href="#12-storage-cloud-lookup-once-per-request-ej-prj-job1">#</a></h2>
+<p>Idea 3 of §4 (the storage check in A). Committed as <code>d37133a6f</code> on <code>ej-prj-job1</code> (pushed) and cherry-picked onto <code>ej-prj-3-job1</code> (renamed from <code>ej-prj-3-job0</code>) as <code>7aeec8ede</code>. Design: <a href="launch_latency_consolidated_design.html"><code>launch_latency_consolidated_design.md</code></a> §12.</p>
+<ul>
+<li><strong>Cause:</strong> with no storage cloud enabled, each of the three lookups in <code>jobs.launch</code> re-ran the storage check (0.3–0.7 s warm).</li>
+<li><strong>Fix:</strong> reuse the answer, including an empty one, for the rest of the request, keyed by workspace and config.</li>
+<li><strong>First result</strong> (jobs 73–78, against an earlier session): A 7.3 → 6.5 s; client total 48.8 → 46.9 s. <strong>Superseded by §13:</strong> that comparison mixed sessions.</li>
+<li><strong>Probed gain:</strong> <code>jobs.launch</code> in consolidation mode looks up storage twice, not three times: 4.8 s, then 0.2 s on master; 4.8 s, then 0.001 s with the cache. The saving is about 0.2 s. The first lookup (4.8 s of A) remains; caching it across requests is the next step.</li>
+</ul>
+<h2 id="13-ab-against-master-interleaved-all-changes">13. A/B against master (interleaved, all changes) <a class="header-anchor" href="#13-ab-against-master-interleaved-all-changes">#</a></h2>
+<p>Master <code>815e61a76</code> against <code>ej-prj-3-job1</code> <code>7aeec8ede</code>, 4 alternating blocks of 1 warm-up + 4 measured runs (8 measured runs per arm, jobs 79–98). Details: <a href="launch_latency_consolidated_design.html"><code>launch_latency_consolidated_design.md</code></a> §13.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Phase (median)</th>
+<th>master</th>
+<th><strong><code>ej-prj-3-job1</code></strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td>6.8</td>
+<td>6.8</td>
+</tr>
+<tr>
+<td>B</td>
+<td>2.7</td>
+<td>2.5</td>
+</tr>
+<tr>
+<td>C</td>
+<td>3.0</td>
+<td>3.1</td>
+</tr>
+<tr>
+<td>D</td>
+<td>24.9</td>
+<td><strong>22.5</strong> (19.1–20.1 in 4 runs, about 25 in 4)</td>
+</tr>
+<tr>
+<td>E</td>
+<td>7.6</td>
+<td>7.7</td>
+</tr>
+<tr>
+<td>F</td>
+<td>3.2</td>
+<td><strong>1.4</strong></td>
+</tr>
+<tr>
+<td>G</td>
+<td>11.1 (3.7–16.1)</td>
+<td><strong>3.5</strong> (3.4–3.6)</td>
+</tr>
+<tr>
+<td>H</td>
+<td>2.8 (1.4–6.7)</td>
+<td><strong>2.5</strong> (1.3–2.9)</td>
+</tr>
+<tr>
+<td>Client start → SUCCEEDED</td>
+<td>59.0</td>
+<td><strong>48.4</strong></td>
+</tr>
+<tr>
+<td><strong>Client total</strong></td>
+<td>61.5 (58.1–67.4)</td>
+<td><strong>50.1</strong> (46.1–54.0)</td>
+</tr>
+</tbody>
+</table></div>
+
+</main>
+
+</body>
+</html>

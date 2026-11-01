@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Launch latency analysis: ej/job.yaml on kind-skypilot</title>
+<meta name="description" content="The other runs show the same pattern:">
+<meta name="author" content="Edward Jiang">
+<link rel="icon" href="../favicon.ico">
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2e0;
+  --accent: #2f5bd3; --code-bg: #f0f0ed; --th-bg: #f3f3f1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+    --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+  --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+nav { max-width: 920px; margin: 0 auto; padding: 16px 16px 0; font-size: 14px; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--accent); }
+main {
+  max-width: 920px; margin: 12px auto 64px; padding: 28px 32px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+@media (max-width: 640px) { main { margin: 8px 16px 48px; padding: 20px 16px; } }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 16px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 17px; margin: 28px 0 10px; }
+h4 { font-size: 15px; margin: 22px 0 8px; }
+.header-anchor { color: var(--muted); text-decoration: none; opacity: 0; margin-left: -0.9em; padding-right: 0.25em; font-weight: 400; }
+h1:hover .header-anchor, h2:hover .header-anchor, h3:hover .header-anchor, h4:hover .header-anchor { opacity: 1; }
+a { color: var(--accent); }
+p, ul, ol { margin: 0 0 14px; }
+li { margin: 3px 0; }
+li > ul, li > ol { margin: 4px 0; }
+code {
+  font: 0.88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto; margin: 0 0 16px;
+}
+pre code { background: none; padding: 0; font-size: 13px; overflow-wrap: normal; }
+pre.mermaid { background: var(--panel); text-align: center; }
+.table-wrap { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; font-size: 14px; min-width: 50%; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--th-bg); font-weight: 600; }
+blockquote { margin: 0 0 14px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+img { max-width: 100%; }
+</style>
+</head>
+<body>
+<nav><a href="../">&larr; hifiweekly</a></nav>
+<main>
+<h1 id="launch-latency-analysis-ejjobyaml-on-kind-skypilot">Launch latency analysis: <code>ej/job.yaml</code> on <code>kind-skypilot</code> <a class="header-anchor" href="#launch-latency-analysis-ejjobyaml-on-kind-skypilot">#</a></h1>
+<h2 id="scope">Scope <a class="header-anchor" href="#scope">#</a></h2>
+<ul>
+<li><strong>Task:</strong> <code>ej/job.yaml</code> (<code>multinode-bench</code>): 4 nodes, <code>cpus: 1+</code>, <code>memory: 1+</code>, <code>infra: k8s/kind-skypilot</code>.</li>
+<li><strong>Log analysed:</strong> <code>ej/oct27_1039.log</code>, the run starting at 10:37:38. There is no <code>oct27_1037.log</code>; this is the closest run. The other runs in <code>ej/</code> were used for comparison.</li>
+<li><strong>What the log covers:</strong> provisioning only, up to <code>✓ Cluster launched</code>. It doesn't include job submission or how long the <code>run:</code> step took.</li>
+<li><strong>Code version:</strong> SkyPilot <code>1.0.0-dev0</code>, commit <code>1f9136510d0c</code> (dirty), Ray 2.56.1.</li>
+</ul>
+<h2 id="where-the-time-goes-231-s-total">Where the time goes (23.1 s total) <a class="header-anchor" href="#where-the-time-goes-231-s-total">#</a></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Wall time</th>
+<th>Share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>K8s services/RBAC, <code>create_namespaced_pod</code> x4, waiting for pods to reach Running</td>
+<td>4.1 s</td>
+<td>18%</td>
+</tr>
+<tr>
+<td><code>internal_file_mounts</code></td>
+<td>1.0 s</td>
+<td>4%</td>
+</tr>
+<tr>
+<td><code>setup_runtime_on_cluster</code> (dev wheel install)</td>
+<td>2.1 s</td>
+<td>9%</td>
+</tr>
+<tr>
+<td><strong>Waiting for all 4 Ray nodes to join</strong></td>
+<td><strong>14.0 s</strong></td>
+<td><strong>61%</strong></td>
+</tr>
+<tr>
+<td><code>start_skylet_on_head_node</code></td>
+<td>1.6 s</td>
+<td>7%</td>
+</tr>
+</tbody>
+</table></div>
+<p>The other runs show the same pattern:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Log</th>
+<th>Ray wait</th>
+<th>Total</th>
+<th>Ray share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>oct27_1022.log</code></td>
+<td>17.6 s</td>
+<td>27.1 s</td>
+<td>65%</td>
+</tr>
+<tr>
+<td><code>oct27_1033.log</code></td>
+<td>20.1 s</td>
+<td>29.9 s</td>
+<td>67%</td>
+</tr>
+<tr>
+<td><code>oct27_1039.log</code></td>
+<td>14.0 s</td>
+<td>23.1 s</td>
+<td>61%</td>
+</tr>
+<tr>
+<td><code>oct30_1022.log</code></td>
+<td>20.2 s</td>
+<td>30.2 s</td>
+<td>67%</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="root-causes">Root causes <a class="header-anchor" href="#root-causes">#</a></h2>
+<h3 id="1-ray-starts-late-inside-the-pods">1. Ray starts late inside the pods <a class="header-anchor" href="#1-ray-starts-late-inside-the-pods">#</a></h3>
+<p>The pod startup script (<code>sky/templates/kubernetes-ray.yml.j2</code>, around lines 1457–1500) runs these steps one after another before it starts Ray:</p>
+<ol>
+<li><code>uv pip install 'setuptools&lt;70'</code>, which replaces the setuptools 84.0 already in the image.</li>
+<li><code>uv pip install 'skypilot[kubernetes,remote]'</code>, which resolves 107 packages and downloads <strong>skypilot 0.14.2 from PyPI</strong>.</li>
+<li>Applies 6 Ray source patches (<code>apply_patches.py</code>).</li>
+<li><code>ray stop</code>, then <code>ray start --head</code>, followed by <code>RAY_HEAD_WAIT_INITIALIZED_COMMAND</code>.</li>
+</ol>
+<p>The PyPI install in step 2 is wasted work. About 2 s later, <code>setup_runtime_on_cluster</code> uninstalls it and installs the dev wheel:</p>
+<pre><code>- skypilot==0.14.2
++ skypilot==1.0.0.dev0 (from file:///home/sky/.sky/wheels/.../skypilot-1.0.0.dev0-py3-none-any.whl)
+</code></pre>
+<p>The workers loop until the head's GCS port is reachable (<code>kubernetes-ray.yml.j2</code>, around line 1536). Only then do they run their own <code>ray start</code>, so any delay on the head pushes back every worker.</p>
+<h3 id="2-each-readiness-check-is-slow">2. Each readiness check is slow <a class="header-anchor" href="#2-each-readiness-check-is-slow">#</a></h3>
+<p><code>check_ray_port_and_cluster_healthy()</code> (<code>sky/provision/provisioner.py:790</code>) runs <code>RAY_ALIVE_NODE_COUNT_COMMAND</code> (<code>sky/provision/instance_setup.py:360</code>) through <code>kubectl exec</code>. That command starts three separate Python interpreters:</p>
+<ol>
+<li>one to read the Ray port file,</li>
+<li>one that imports <code>sky.utils.message_utils</code> to encode the payload,</li>
+<li>one that imports <code>ray._raylet.GcsClient</code> to count alive nodes.</li>
+</ol>
+<p>The checks were logged at 45.67 → 49.67 → 53.33 → 56.68 → 59.67, so each probe costs <strong>about 2.3–4 s</strong>, and the loop also sleeps 1 s between probes (<code>provisioner.py:834-851</code>). The launch therefore finds out the cluster is ready up to a full probe cycle after it actually is.</p>
+<h3 id="3-the-setup-stages-run-one-after-another">3. The setup stages run one after another <a class="header-anchor" href="#3-the-setup-stages-run-one-after-another">#</a></h3>
+<p>In <code>sky/provision/provisioner.py:760-910</code>, these steps run in order:</p>
+<p><code>internal_file_mounts</code> → <code>setup_runtime_on_cluster</code> → Ray wait → <code>start_skylet_on_head_node</code></p>
+<p>Skylet startup, and the head's runtime setup, only need the head's Ray up, not all the workers.</p>
+<h3 id="4-a-smaller-cost-imagepullpolicy-always">4. A smaller cost: <code>imagePullPolicy: Always</code> <a class="header-anchor" href="#4-a-smaller-cost-imagepullpolicy-always">#</a></h3>
+<p><code>kubernetes-ray.yml.j2:612</code> sets <code>imagePullPolicy: Always</code>. Every pod therefore checks the registry (the &quot;Pulling image&quot; lines in the log), even on kind where the image is already cached. This step takes about 3.8 s of the pod-wait phase.</p>
+<h2 id="top-3-refactoring-ideas">Top 3 refactoring ideas <a class="header-anchor" href="#top-3-refactoring-ideas">#</a></h2>
+<h3 id="1-make-the-pod-bootstrap-ray-first-and-stop-installing-skypilot-from-pypi-in-it">1. Make the pod bootstrap Ray-first and stop installing SkyPilot from PyPI in it <a class="header-anchor" href="#1-make-the-pod-bootstrap-ray-first-and-stop-installing-skypilot-from-pypi-in-it">#</a></h3>
+<ul>
+<li>Remove <code>pip install skypilot[kubernetes,remote]</code> from the template's Ray step. Nothing in the pod needs SkyPilot before the dev wheel arrives. The host-network probe is already shipped inline for this exact reason (<code>instance_setup.py:285-292</code>).</li>
+<li>Build the <code>setuptools&lt;70</code> pin and the Ray patches into the default image. Keep the runtime step only as a fallback that runs when they're missing, for custom <code>image_id</code> images.</li>
+<li>Start <code>ray start --head</code> as early as possible, in parallel with any remaining installs, so workers can join sooner.</li>
+</ul>
+<p><strong>Expected gain:</strong> about 3–5 s on the critical path, and it removes a PyPI round-trip from every launch.</p>
+<h3 id="2-replace-the-polling-loop-with-one-blocking-wait-on-the-head">2. Replace the polling loop with one blocking wait on the head <a class="header-anchor" href="#2-replace-the-polling-loop-with-one-blocking-wait-on-the-head">#</a></h3>
+<ul>
+<li>Replace the <code>while True: probe(); sleep(1)</code> loop with a single <code>kubectl exec</code> that runs one Python process on the head. That process reads the port, opens one <code>GcsClient</code>, and checks <code>get_all_node_info()</code> every 0.2 s until <code>alive == num_nodes</code> or a timeout. It then prints the payload once.</li>
+<li>If you keep the loop instead, at least merge the three Python calls in <code>RAY_ALIVE_NODE_COUNT_COMMAND</code> into one interpreter.</li>
+</ul>
+<p><strong>Expected gain:</strong> about 3–6 s. The wait ends within about 0.2 s of the last worker joining.</p>
+<h3 id="3-run-head-only-setup-in-parallel-with-waiting-for-the-workers">3. Run head-only setup in parallel with waiting for the workers <a class="header-anchor" href="#3-run-head-only-setup-in-parallel-with-waiting-for-the-workers">#</a></h3>
+<ul>
+<li>Wait for the head GCS first. Then run <code>start_skylet_on_head_node</code>, and the head's <code>setup_runtime</code>, in a thread while the workers are still joining. Gate only job submission on the full node count.</li>
+<li>Use <code>imagePullPolicy: IfNotPresent</code> for pinned, versioned image tags.</li>
+</ul>
+<p><strong>Expected gain:</strong> about 1.6 s from overlapping skylet startup, plus up to about 3 s from the pull-policy change on local clusters.</p>
+<h2 id="expected-outcome">Expected outcome <a class="header-anchor" href="#expected-outcome">#</a></h2>
+<p>Together, these changes could bring this 4-node kind launch from <strong>about 23 s to roughly 8–11 s</strong>. This is an estimate from the log timings and hasn't been measured.</p>
+<h2 id="risks-and-testing">Risks and testing <a class="header-anchor" href="#risks-and-testing">#</a></h2>
+<ul>
+<li><strong>Idea 1</strong> changes the pod bootstrap, which every Kubernetes launch uses. Test with custom <code>image_id</code> images (non-Debian, no Ray installed), with host-network mode, and in offline or minimal environments.</li>
+<li><strong>Idea 3</strong> changes the order of steps in <code>sky/provision/provisioner.py</code>, which is shared with cluster restarts and recovery. Run <code>/smoke-test --kubernetes</code> on any change.</li>
+<li>To also measure job submission and the <code>run:</code> step, rerun with <code>SKYPILOT_DEBUG=1</code> and capture <code>sky logs</code> output, in addition to <code>sky logs --provision</code>.</li>
+</ul>
+
+</main>
+
+</body>
+</html>

@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Launch latency after ideas #1, #2 and #3</title>
+<meta name="description" content="The first run (ej-analyze) had no slow pod: runtime setup took 1.7 s. There, Ray was the critical path instead: all 6 nodes joined 12.2 s after runtime setup ended. Total time was the same, 45.6 s. Wh">
+<meta name="author" content="Edward Jiang">
+<link rel="icon" href="../favicon.ico">
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2e0;
+  --accent: #2f5bd3; --code-bg: #f0f0ed; --th-bg: #f3f3f1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+    --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+  --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+nav { max-width: 920px; margin: 0 auto; padding: 16px 16px 0; font-size: 14px; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--accent); }
+main {
+  max-width: 920px; margin: 12px auto 64px; padding: 28px 32px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+@media (max-width: 640px) { main { margin: 8px 16px 48px; padding: 20px 16px; } }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 16px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 17px; margin: 28px 0 10px; }
+h4 { font-size: 15px; margin: 22px 0 8px; }
+.header-anchor { color: var(--muted); text-decoration: none; opacity: 0; margin-left: -0.9em; padding-right: 0.25em; font-weight: 400; }
+h1:hover .header-anchor, h2:hover .header-anchor, h3:hover .header-anchor, h4:hover .header-anchor { opacity: 1; }
+a { color: var(--accent); }
+p, ul, ol { margin: 0 0 14px; }
+li { margin: 3px 0; }
+li > ul, li > ol { margin: 4px 0; }
+code {
+  font: 0.88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto; margin: 0 0 16px;
+}
+pre code { background: none; padding: 0; font-size: 13px; overflow-wrap: normal; }
+pre.mermaid { background: var(--panel); text-align: center; }
+.table-wrap { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; font-size: 14px; min-width: 50%; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--th-bg); font-weight: 600; }
+blockquote { margin: 0 0 14px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+img { max-width: 100%; }
+</style>
+</head>
+<body>
+<nav><a href="../">&larr; hifiweekly</a></nav>
+<main>
+<h1 id="launch-latency-after-ideas-1-2-and-3">Launch latency after ideas #1, #2 and #3 <a class="header-anchor" href="#launch-latency-after-ideas-1-2-and-3">#</a></h1>
+<ul>
+<li><strong>Branch:</strong> <code>ej-prj-bonus</code> (<code>6db5eba63</code>). It contains idea #1 (pods start
+Ray first), idea #2 (one blocking Ray wait), idea #3 (skylet started during
+the wait), and the fail-fast change for deleted pods.</li>
+<li><strong>Task:</strong> <code>ej/job.yaml</code>, 6 nodes on <code>kind-skypilot</code> (one kind node, 12 host
+cores).</li>
+<li><strong>Runs:</strong> <code>ej-analyze</code> (provision log only) and <code>ej-analyze2</code> (also traced
+with <code>SKYPILOT_TIMELINE_FILE_PATH</code>, plus timestamps of the bootstrap marker
+files and Ray's first log lines in every pod).</li>
+</ul>
+<h2 id="1-where-the-455-s-go-ej-analyze2-as-the-client-sees-it">1. Where the 45.5 s go (<code>ej-analyze2</code>, as the client sees it) <a class="header-anchor" href="#1-where-the-455-s-go-ej-analyze2-as-the-client-sees-it">#</a></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Phase</th>
+<th>Time</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>CLI start, <code>/validate</code>, request queued</td>
+<td>3.7 s</td>
+<td>Client start 21:35:41.9; <code>execution.launch</code> starts ~21:35:45.6. The optimizer itself takes 0.06 s</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>write_cluster_config</code></td>
+<td><strong>3.0 s</strong></td>
+<td>Timeline span. Not instrumented inside</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Create pods, wait until all are Running</td>
+<td>5.7 s</td>
+<td><code>_create_pods</code> 5.68 s. Each pod sits in <code>Pulling</code> (from <code>imagePullPolicy: Always</code>) for 1–6 s</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>internal_file_mounts</code></td>
+<td>1.3 s</td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>setup_runtime_on_cluster</code></td>
+<td><strong>14.3 s</strong></td>
+<td>Waits for the slowest pod's step-2 marker. worker4 wrote it 15.3 s after its container started; the other pods took 2.6–7.0 s (table below)</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Skylet start, with the Ray wait alongside</td>
+<td>3.3 s</td>
+<td>Ray was already up when runtime setup ended, so this run waited on skylet, not Ray</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Job submission: <code>add_job</code> + <code>queue_job</code></td>
+<td><strong>3.3 s</strong></td>
+<td>Two <code>run_on_head</code> calls of 1.64 s each (<code>kubectl exec</code> + Python start). gRPC is off by default (<code>SKYPILOT_ENABLE_GRPC=False</code>)</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Driver <code>ray.init</code>, placement group, first rank starts</td>
+<td>~3.7 s</td>
+<td>Job dir created 16.8, driver connected to Ray 19.5, tasks started 22.1</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Ranks starting one after another</td>
+<td>2.1 s</td>
+<td>rank 0 at 22.07, last rank at 24.15</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Client log tail ends, status</td>
+<td>~3.2 s</td>
+<td><code>run.log</code> last written 24.19; client returned 27.39</td>
+</tr>
+</tbody>
+</table></div>
+<p>The first run (<code>ej-analyze</code>) had no slow pod: runtime setup took 1.7 s. There,
+<strong>Ray</strong> was the critical path instead: all 6 nodes joined 12.2 s after runtime
+setup ended. Total time was the same, 45.6 s. Which step is the bottleneck
+varies from run to run, so the fixes below target all of them.</p>
+<h3 id="per-pod-bootstrap-ej-analyze2-utc-from-file-times-inside-each-pod">Per-pod bootstrap (<code>ej-analyze2</code>, UTC, from file times inside each pod) <a class="header-anchor" href="#per-pod-bootstrap-ej-analyze2-utc-from-file-times-inside-each-pod">#</a></h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Pod</th>
+<th>Container start</th>
+<th>Step-2 marker (Ray installed + uv cache warmed)</th>
+<th>Wheel installed</th>
+<th>Ray: first log line</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>head</td>
+<td>35:54</td>
+<td>35:58.18 (+4.2 s)</td>
+<td>35:58.67</td>
+<td>GCS 36:01.78, raylet 36:06.09</td>
+</tr>
+<tr>
+<td>worker1</td>
+<td>35:52</td>
+<td>35:55.17 (+3.2 s)</td>
+<td>35:57.79</td>
+<td>raylet 36:09.50</td>
+</tr>
+<tr>
+<td>worker2</td>
+<td>35:53</td>
+<td>36:00.81 (+7.0 s)</td>
+<td>36:01.09</td>
+<td>raylet 36:07.87</td>
+</tr>
+<tr>
+<td>worker3</td>
+<td>35:51</td>
+<td>35:54.62 (+2.6 s)</td>
+<td>35:57.68</td>
+<td>raylet 36:07.95</td>
+</tr>
+<tr>
+<td>worker4</td>
+<td>35:55</td>
+<td><strong>36:10.53 (+15.3 s)</strong></td>
+<td>36:11.19</td>
+<td>raylet 36:09.49</td>
+</tr>
+<tr>
+<td>worker5</td>
+<td>35:53</td>
+<td>35:56.53 (+3.5 s)</td>
+<td>35:57.72</td>
+<td>raylet 36:07.55</td>
+</tr>
+</tbody>
+</table></div>
+<p>Observations:</p>
+<ul>
+<li><strong>The straggler is the uv-cache dry run.</strong> It resolves
+<code>skypilot[kubernetes,remote]</code> against PyPI on all six pods at once.
+worker4's Ray was running (raylet at 36:09.5) before its own marker
+(36:10.5), so the slow part ran after <code>ray start</code> began, and that is the dry
+run. Runtime setup waits on that marker, so one slow PyPI round trip delays
+the whole launch.</li>
+<li><strong>Ray on the head is slow to start.</strong> About 3.6 s pass from the marker to
+the GCS's first log line. That includes <code>ray stop</code> on a pod that has never
+run Ray. Another 4.3 s pass before the raylet, while the dashboard and agents
+start. Workers can only start Ray once the GCS port is up, and their raylets
+then take another 6–8 s on a busy kind node.</li>
+<li><strong>Six pods start Ray, uv and Python at the same moment on one node,</strong> so
+kind overstates contention. A real multi-node cluster will be less noisy,
+but the order of the steps is the same.</li>
+</ul>
+<h2 id="1b-four-traced-runs-runs-25">1b. Four traced runs (runs 2–5) <a class="header-anchor" href="#1b-four-traced-runs-runs-25">#</a></h2>
+<p>Runs 3–5 used the same task, branch and tracing as run 2. Each was torn down
+before the next one started. Times are in seconds.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>run2</th>
+<th>run3</th>
+<th>run4</th>
+<th>run5</th>
+<th>median</th>
+<th>range</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Client total</strong></td>
+<td>45.5</td>
+<td>43.5</td>
+<td>39.8</td>
+<td>44.2</td>
+<td><strong>43.8</strong></td>
+<td>39.8–45.5</td>
+</tr>
+<tr>
+<td>CLI start → launch starts</td>
+<td>3.7</td>
+<td>3.8</td>
+<td>1.5</td>
+<td>1.6</td>
+<td>2.6</td>
+<td>1.5–3.8 (slower right after a server restart)</td>
+</tr>
+<tr>
+<td><code>write_cluster_config</code></td>
+<td>3.0</td>
+<td>3.0</td>
+<td>2.7</td>
+<td>2.7</td>
+<td><strong>2.9</strong></td>
+<td>2.7–3.0</td>
+</tr>
+<tr>
+<td>Create pods, wait for Running</td>
+<td>5.7</td>
+<td>5.7</td>
+<td>5.7</td>
+<td>5.9</td>
+<td><strong>5.7</strong></td>
+<td>5.7–5.9</td>
+</tr>
+<tr>
+<td><code>internal_file_mounts</code></td>
+<td>1.3</td>
+<td>1.4</td>
+<td>1.3</td>
+<td>1.2</td>
+<td>1.3</td>
+<td>1.2–1.4</td>
+</tr>
+<tr>
+<td><code>setup_runtime_on_cluster</code></td>
+<td>14.3</td>
+<td>11.2</td>
+<td>2.7</td>
+<td>13.6</td>
+<td>12.4</td>
+<td><strong>2.7–14.3</strong></td>
+</tr>
+<tr>
+<td>Runtime setup end → &quot;Cluster launched&quot; (Ray wait ∥ skylet)</td>
+<td>3.4</td>
+<td>4.1</td>
+<td>12.4</td>
+<td>6.1</td>
+<td>5.1</td>
+<td><strong>3.4–12.4</strong></td>
+</tr>
+<tr>
+<td>↳ skylet start (runs alongside)</td>
+<td>3.3</td>
+<td>4.1</td>
+<td>4.1</td>
+<td>4.1</td>
+<td>4.1</td>
+<td>3.3–4.1</td>
+</tr>
+<tr>
+<td><strong>Runtime setup + Ray wait</strong></td>
+<td>17.7</td>
+<td>15.3</td>
+<td>15.1</td>
+<td>19.7</td>
+<td><strong>16.5</strong></td>
+<td>15.1–19.7</td>
+</tr>
+<tr>
+<td>Job submission (2 × <code>run_on_head</code>)</td>
+<td>3.3</td>
+<td>3.3</td>
+<td>3.3</td>
+<td>3.2</td>
+<td><strong>3.3</strong></td>
+<td>3.2–3.3</td>
+</tr>
+<tr>
+<td>&quot;Cluster launched&quot; → first rank starts</td>
+<td>7.4</td>
+<td>7.4</td>
+<td>7.5</td>
+<td>7.1</td>
+<td><strong>7.4</strong></td>
+<td>7.1–7.5</td>
+</tr>
+<tr>
+<td>First → last rank</td>
+<td>2.1</td>
+<td>2.5</td>
+<td>2.1</td>
+<td>2.2</td>
+<td>2.2</td>
+<td>2.1–2.5</td>
+</tr>
+<tr>
+<td>Last rank → client returns</td>
+<td>3.2</td>
+<td>3.1</td>
+<td>3.1</td>
+<td>3.0</td>
+<td>3.1</td>
+<td>3.0–3.2</td>
+</tr>
+</tbody>
+</table></div>
+<p>Pod side (per run: slowest pod and median pod):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>run2</th>
+<th>run3</th>
+<th>run4</th>
+<th>run5</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Container start → step-2 marker, <strong>slowest pod</strong></td>
+<td>15.3 (w4)</td>
+<td>15.1 (w5)</td>
+<td>6.5 (w3)</td>
+<td>15.9 (w3)</td>
+</tr>
+<tr>
+<td>Container start → step-2 marker, median pod</td>
+<td>~3.9</td>
+<td>4.1</td>
+<td>3.5</td>
+<td>4.1</td>
+</tr>
+<tr>
+<td>Head: marker → GCS first log</td>
+<td>3.6</td>
+<td>3.9</td>
+<td>3.4</td>
+<td>3.9</td>
+</tr>
+<tr>
+<td>Head: GCS → raylet</td>
+<td>4.3</td>
+<td>4.3</td>
+<td>4.6</td>
+<td>3.1</td>
+</tr>
+<tr>
+<td>Head GCS up → last raylet</td>
+<td>7.7</td>
+<td>6.3</td>
+<td>6.8</td>
+<td>14.2</td>
+</tr>
+</tbody>
+</table></div>
+<p>What is consistent:</p>
+<ul>
+<li><strong>The setup stretch (runtime setup + Ray wait) is ~15–20 s and varies.</strong>
+Most of it is on the pods, not in SkyPilot's server.
+<ul>
+<li>In 3 of 4 runs, one pod's step-2 marker came ~15 s after its container
+started, against ~4 s for the median pod. Runtime setup waits for every
+pod's marker, so that slowest pod sets the pace. The dry run that warms
+the uv cache (a PyPI resolve on every pod at once) is the only network
+step there.</li>
+<li>When no pod straggles (run 4), the Ray wait takes over (12.4 s). Fixing
+only one of the two moves the bottleneck to the other.</li>
+</ul>
+</li>
+<li><strong>After &quot;Cluster launched&quot;, 12–13 s go to the job every time:</strong> 7.4 s
+until the first rank starts, 2.2 s until the last, 3.1 s until the client
+returns. That's as much as provisioning (2.9 + 5.7 + 1.3 s) and almost
+no variance, which makes it the most predictable gain. Of the 7.4 s,
+3.3 s are the two <code>kubectl exec</code> calls that submit the job, since gRPC is
+off by default. The other ~4 s are the driver connecting to Ray, the
+STRICT_SPREAD placement group, and cold Ray worker processes.</li>
+<li><strong>The fixed provisioning costs are stable:</strong> <code>write_cluster_config</code>
+2.7–3.0 s, pods 5.7–5.9 s, file mounts 1.2–1.4 s.</li>
+<li><strong>The head's Ray start is consistent:</strong> 3.4–3.9 s to the GCS (that includes
+<code>ray stop</code> on a new pod), then 3.1–4.6 s to the raylet.</li>
+</ul>
+<h2 id="2-what-else-could-be-done-ranked-by-expected-gain-see-1b-for-the-data">2. What else could be done (ranked by expected gain; see 1b for the data) <a class="header-anchor" href="#2-what-else-could-be-done-ranked-by-expected-gain-see-1b-for-the-data">#</a></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Idea</th>
+<th>Phase</th>
+<th>Expected gain</th>
+<th>Effort / risk</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>Install the wheel offline first.</strong> In <code>SKYPILOT_WHEEL_INSTALLATION_COMMANDS</code>, try <code>uv pip install --offline &lt;wheel&gt;[...]</code> and fall back to the online install. Then drop the step-2 dry run</td>
+<td>5</td>
+<td>Removes the straggler (~10 s in run 2), ~1–1.5 s of CPU and network per pod, and the per-launch dependency on PyPI</td>
+<td>Low. The default image already has all 107 dependencies, and the online fallback keeps custom images working</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Submit the job over gRPC.</strong> Turn on <code>SKYPILOT_ENABLE_GRPC</code> (find out why it's off by default), or merge <code>add_job</code> and <code>queue_job</code> into one exec</td>
+<td>7</td>
+<td>~3 s (two <code>kubectl exec</code> + Python starts → two gRPC calls of a few ms), on every launch and every <code>sky exec</code></td>
+<td>Low–medium: the gRPC path exists but is behind a flag</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Start the head's Ray sooner.</strong> Skip <code>ray stop</code> on a freshly booted pod (<code>pgrep -f raylet &amp;&amp; ray stop</code>). Bake the <code>setuptools&lt;70</code> / <code>click</code> pins and the Ray patches into the image (the rest of idea #1). Check whether SkyPilot needs the Ray dashboard; if not, pass <code>--include-dashboard=false</code></td>
+<td>Ray (run 1)</td>
+<td>2–4 s when Ray is the critical path. Workers can only start Ray after the GCS is up, so every second saved on the head is saved on every node</td>
+<td>Medium: the dashboard question needs checking; the image change needs a rebuild</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Start skylet earlier or faster.</strong> Start skylet in the same exec as the head's runtime setup, or from the pod bootstrap right after the wheel install. Don't wait for gRPC readiness in that exec</td>
+<td>6</td>
+<td>~2–3 s when Ray is already up (run 2)</td>
+<td>Medium: skylet has to survive the provisioner's restart logic and version checks</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Resolve the image tag to a digest once on the server,</strong> then use <code>image@sha256:...</code> with <code>imagePullPolicy: IfNotPresent</code></td>
+<td>3</td>
+<td>1–4 s of pod wait on kind (each pod's <code>Pulling</code> step makes a registry round trip). It also guarantees every pod runs the same image</td>
+<td>Low–medium: needs a registry lookup with a cache, and a fallback to <code>Always</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>Profile <code>write_cluster_config</code></strong> (3.0 s). The likely cost is Kubernetes API calls building the deploy variables (contexts, nodes, labels); cache them per context with a short TTL</td>
+<td>2</td>
+<td>1–2 s</td>
+<td>Low to measure. The fix depends on what the profile shows</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>Start the job's ranks sooner.</strong> The driver's <code>ray.init</code> plus a STRICT_SPREAD placement group plus cold Ray workers take ~3.7 s before rank 0, and ranks start 2.1 s apart. Options: prestart a Python worker per node during setup; reuse a warm driver</td>
+<td>8–9</td>
+<td>2–4 s</td>
+<td>Medium–high: Ray internals</td>
+</tr>
+<tr>
+<td>8</td>
+<td><strong>Client side:</strong> CLI start plus <code>/validate</code> (~1.7 s before the first request), and the log tail ending ~3 s after the job finished</td>
+<td>1, 10</td>
+<td>1–3 s of perceived latency</td>
+<td>Low–medium</td>
+</tr>
+</tbody>
+</table></div>
+<p>Rough total if 1–6 land: ~10–15 s off the ~45 s launch on kind. Ideas 1 and 2
+alone are the cheapest and remove the most variance.</p>
+<h2 id="3-suggested-next-step">3. Suggested next step <a class="header-anchor" href="#3-suggested-next-step">#</a></h2>
+<p>Ideas 1 and 2 are small, separate changes with clear before/after metrics.
+Measure each with the A/B benchmark
+(<code>tests/kubernetes/launching_benchmarks/bench_launch_latency.py</code>), using
+<code>ej-prj-bonus</code> as the baseline. The benchmark's current metrics cover up to
+&quot;Cluster launched&quot;. To capture ideas 2, 7 and 8, add a metric for the time
+until the first rank starts (the task already prints each rank's start
+time).</p>
+
+</main>
+
+</body>
+</html>
