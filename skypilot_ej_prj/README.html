@@ -197,6 +197,9 @@ throwaway launch so that no measured run includes the pull:</p>
 <pre><code class="language-bash">sky api start --deploy
 sky launch -y -c bench-warm --infra k8s/kind-skypilot --cpus 1+ --memory 1+ 'echo ok'
 sky down -y bench-warm
+
+# switch to ej-prj-3-job1 branch so all the dependency is ready.
+git checkout ej-prj-3-job1
 </code></pre>
 <h2 id="3-run-the-benchmarks">3. Run the benchmarks <a class="header-anchor" href="#3-run-the-benchmarks">#</a></h2>
 <p>Run every command from the repo root, with the venv active.</p>
