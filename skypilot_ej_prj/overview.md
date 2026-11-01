@@ -16,6 +16,9 @@ This Doc, see details at Project Write-up below, markdown: [https\://hifiweekly.
 **Benchmark script:**  
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/reproduce\_benchmarks.py](https://hifiweekly.github.io/skypilot_ej_prj/reproduce_benchmarks.py)
 
+**Read Me:**  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/README.html](https://hifiweekly.github.io/skypilot_ej_prj/README.html) 
+
 **\- Sample benchmark run:**  
 python ej/reproduce\_benchmarks.py jobs-ab \--nodes 6      \# \~22 min, 8 measured runs per side  
 python ej/reproduce\_benchmarks.py pod-probe \--nodes 6    \# \~2 min  
@@ -57,21 +60,21 @@ All run done on Ubuntu 26.04, i7-8700K, 32GB memory
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/README.html](https://hifiweekly.github.io/skypilot_ej_prj/README.html) 
 
 **Support Files:**  
-[https\://hifiweekly.github.io/skypilot\_ej\_prj/job.yaml](https://hifiweekly.github.io/skypilot_ej_prj/job.yaml)  
-[https\://hifiweekly.github.io/skypilot\_ej\_prj/bench\_launch\_latency.py](https://hifiweekly.github.io/skypilot_ej_prj/job.yaml)
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/job.yaml](https://hifiweekly.github.io/skypilot_ej_prj/job.yaml) (same as the file in the pdf given)  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/bench\_launch\_latency.py](https://hifiweekly.github.io/skypilot_ej_prj/job.yaml) (a pending utility script in branch)
 
-**Sample Run \#1: Ubuntu 26.04: [See Appendix C](#bookmark=id.ywa1lch5zkw3)**  
-**Sample Run \#2: MacOS Tahoe 26.7.1: [See Appendix D](#bookmark=id.2t62vgupmpad)**
+**Sample Run Result \#1: Ubuntu 26.04: [See Appendix C](#bookmark=id.ywa1lch5zkw3)**  
+**Sample Run Result \#2: MacOS Tahoe 26.7.1: [See Appendix D](#bookmark=id.2t62vgupmpad)**
 
 ---
 
 ## Project Write-up
 
-The refactoring in these branches ([https\://github.com/siliconej/skypilot/branches/](https://github.com/siliconej/skypilot/branches/yours)) is a set of optimizations stacked in a progressive fashion. The svg linked here (4 nodes \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence.svg)\], 6 nodes \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_6nodes.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)\]) shows the different updates that are prepared for your review. Overall there are two parts of the refactoring, first set focuses on section D (cycles between provision and job submission), second set focuses on the rest of the whole workflow. I also implemented the bonus feature and fixed a warning. See more detailed below.
+The refactoring in these branches ([https\://github.com/siliconej/skypilot/branches/](https://github.com/siliconej/skypilot/branches/yours)) is a set of optimizations stacked in a progressive fashion. The svg diagrams linked here (4 nodes test \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence.svg)\], 6 nodes test \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_6nodes.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)\]) show the different updates that are prepared for your review. Overall there are two parts of the refactoring, first set focuses on section D (cycles between provision and job submission), second set focuses on the rest of the whole workflow. I also implemented the bonus feature and fixed a warning on linux. See more detailed below.
 
 The priority of these optimizations is analyzed and determined based on the delta time reduction that could be achieved theoretically according to first trace analysis on the master HEAD.
 
-A more length consolidated design doc of all the optimization included so far this project is at: [https\://hifiweekly.github.io/skypilot\_ej\_prj/launch\_latency\_consolidated\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/launch_latency_consolidated_design.html) 
+A more lengthy consolidated design doc of all the optimization included so far in this project is at: [https\://hifiweekly.github.io/skypilot\_ej\_prj/launch\_latency\_consolidated\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/launch_latency_consolidated_design.html) 
 
 ### **First Set: ej-prj-0, ej-prj-1, and ej-prj-3**
 
@@ -94,7 +97,7 @@ PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_description
 \- The marker for setup\_commands keeps its meaning.  
 \- wait \$SKY\_RAY\_START\_PID keeps a Ray failure fatal.
 
-**Gain.** About 1.3 s earlier Ray on the default image, more on custom images. Alone, the old 3–5 s polling hid it: an A/B showed −2%, not significant. Combined with ej-prj-1's blocking wait, the A/B was significant: runtime setup end → launched went from 12.49 s to 9.43 s (−24%, p \= 0.004).
+**Gain.** About 1.3s earlier Ray on the default image, more on custom images. Alone, the old 3–5 s polling hid it: an A/B showed −2%, not significant. Combined with ej-prj-1's blocking wait, the A/B was significant: runtime setup end → launched went from 12.49s to 9.43s (−24%, p \= 0.004).
 
 **Risks.**  
 \- The dry run still depends on PyPI.  
@@ -225,6 +228,7 @@ PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_description
 
 ### **Bonus: 90s timeout handling** 
 
+**\* Branch ej-prj-bonus: skip the 90s wait when a pod is deleted.**  
 [https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-bonus?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-bonus?expand=1)  
 PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions.html\#ej-prj-bonus](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions.html#ej-prj-bonus) 
 
@@ -257,6 +261,7 @@ PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_description
 
 ### **Fix: k8s-pool-warning suppression**
 
+**\* Branch ej-k8s-pool-warning: suppress pool warning on linux.**  
 [https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-k8s-pool-warning?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-k8s-pool-warning?expand=1)  
 PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions.html\#ej-k8s-pool-warning](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions.html#ej-k8s-pool-warning) 
 
@@ -264,7 +269,7 @@ PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_description
 \- The pool overflows by design. SkyPilot's Kubernetes API clients cap their connection pool at CONNECTION\_POOL\_MAXSIZE (4). Going past it is normal, for example when creating or inspecting more than 4 pods in parallel.  
 \- Each extra connection prints a warning. When urllib3 closes one, it logs WARNING:urllib3.connectionpool:Connection pool is full, discarding connection: ... Connection pool size: 4\.  
 \- The existing guard leaks. \_api\_logging\_decorator keeps the urllib3 logger at ERROR during API calls. But any kubernetes.client.Configuration built elsewhere, or in another thread mid-call, resets it to WARNING, so the noise reached users.  
-\- It's visible today. Each 6-node managed job's controller log from today's benchmark has 6–7 of these warnings (jobs 105–124). Neither master nor ej-prj-3-job1 includes this fix.
+\- It's visible today on linux, not reproducible on macOS. Each 6-node managed job's controller log from today's benchmark has 6–7 of these warnings (jobs 105–124). Neither master nor ej-prj-3-job1 includes this fix.
 
 **Change** (sky/adaptors/kubernetes.py, commit 5bb46b39a):  
 \- A filter on the urllib3.connectionpool logger drops exactly this message, and only when its pool size equals CONNECTION\_POOL\_MAXSIZE.  
@@ -282,6 +287,8 @@ Zip file of other markdown version of the linked design docs: [https\://hifiweek
 ## Appendix B: User’s Perceived Time
 
 ### **ej-prj-3-job0: sky jobs launch**
+
+### **Linux**
 
 (skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot/ej\$ time sky jobs launch \-y \-c ej-prj-3-job0  ej/job.yaml  
 'ej/job.yaml' looks like a yaml path but does not exist. Please check if the path is correct.  
@@ -361,7 +368,51 @@ Managed Job ID: 57
 user	0m2.512s  
 sys	0m0.283s
 
-## Appendix C: Ubuntu Benchmark Result
+---
+
+### **MacOS**
+
+(skypilot-bench) ejiang@kodaly skypilot-bench % time sky jobs launch \-y \-c last\_test ej/job.yaml  
+YAML to run: ej/job.yaml  
+Launching managed job 'last\_test'...  
+├── Waiting for task resources on 4 nodes.  
+└── Job started. Streaming logs... (Ctrl-C to exit log streaming; job will not be killed)  
+(head, rank=0, pid=1435) \[rank 0\] started at 1793553909.024757212 on last-test-8-a83a3d8f-head  
+(worker3, rank=3, pid=666, ip=10.244.0.166) \[rank 3\] started at 1793553910.141855254 on last-test-8-a83a3d8f-worker3  
+(worker2, rank=2, pid=584, ip=10.244.0.168) \[rank 2\] started at 1793553910.141324462 on last-test-8-a83a3d8f-worker2  
+(worker1, rank=1, pid=656, ip=10.244.0.167) \[rank 1\] started at 1793553910.142494629 on last-test-8-a83a3d8f-worker1  
+✓ Job finished (status: SUCCEEDED).  
+✓ Managed job finished: 8 (status: SUCCEEDED).
+
+📋 Useful Commands  
+Managed Job ID: 8  
+├── To cancel the job:		sky jobs cancel 8  
+├── To stream job logs:		sky jobs logs 8  
+├── To stream controller logs:	sky jobs logs \--controller 8  
+└── To view all managed jobs:	sky jobs queue  
+sky jobs launch \-y \-c last\_test ej/job.yaml  **0.89s user 0.26s system 3% cpu 33.986 total**
+
+(skypilot-bench) ejiang@kodaly skypilot-bench % time sky jobs launch \-y \-c last\_test ej/job.yaml  
+YAML to run: ej/job.yaml  
+Launching managed job 'last\_test'...  
+├── Waiting for task resources on 4 nodes.  
+└── Job started. Streaming logs... (Ctrl-C to exit log streaming; job will not be killed)  
+(head, rank=0, pid=1433) \[rank 0\] started at 1793553948.910087217 on last-test-9-a83a3d8f-head  
+(worker3, rank=3, pid=669, ip=10.244.0.170) \[rank 3\] started at 1793553950.038120550 on last-test-9-a83a3d8f-worker3  
+(worker2, rank=2, pid=578, ip=10.244.0.172) \[rank 2\] started at 1793553950.027564592 on last-test-9-a83a3d8f-worker2  
+(worker1, rank=1, pid=640, ip=10.244.0.169) \[rank 1\] started at 1793553950.042590384 on last-test-9-a83a3d8f-worker1  
+✓ Job finished (status: SUCCEEDED).  
+✓ Managed job finished: 9 (status: SUCCEEDED).
+
+📋 Useful Commands  
+Managed Job ID: 9  
+├── To cancel the job:		sky jobs cancel 9  
+├── To stream job logs:		sky jobs logs 9  
+├── To stream controller logs:	sky jobs logs \--controller 9  
+└── To view all managed jobs:	sky jobs queue  
+sky jobs launch \-y \-c last\_test ej/job.yaml  **0.90s user 0.26s system 3% cpu 30.486 total**
+
+##   Appendix C: Ubuntu Benchmark Result
 
 This run is valid: on a 6-node sky launch, ej-prj-3-job1 (5cb8dace3) reached "Cluster launched" about 6 s (24%) faster than baseline 5ef55efa4, where it branched from master. All 10 measured launches succeeded on all 6 ranks, with 1 warm-up launch per build excluded, and no launch fell back to restarting Ray. The first table is your summary.md as a real ASCII table.
 
@@ -439,5 +490,4 @@ What the numbers show
 \- The Ray wait has nearly disappeared here. In 4 of 5 candidate runs, Ray \+ skylet equals the skylet time (1.9–2.2 s), so all nodes had already joined when runtime setup ended.  
 \- Runtime setup is now the biggest stage on this machine (6.4 s). On Linux the Ray wait is what holds launches back, and faster setup just moves time into it. Here, faster setup should shorten the launch directly.  
 \- Runtime setup is 1.6 s faster on the candidate (p \= 0.045). This is plausible because the candidate no longer does a real PyPI install of SkyPilot during pod startup, but the Linux run didn't show the gain.  
-\- The pod-start gain is probably noise. It's 0.8 s faster here (p \= 0.045), but was 0.7 s slower on the same code in the last run, and no change targets it.
-
+\- The pod-start gain is probably noise. It's 0.8 s faster here (p \= 0.045), but was 0.7 s slower on the same code in the last run, and no change targets it.  
