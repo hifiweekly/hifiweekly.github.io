@@ -117,7 +117,7 @@ design docs in this directory:</p>
 </tr>
 <tr>
 <td><code>sky-launch-ab</code></td>
-<td>The <code>sky launch</code> A/B, run through <code>bench_launch_latency.py</code></td>
+<td>The <code>sky launch</code> A/B, run through <code>tests/kubernetes/launching_benchmarks/bench_launch_latency.py</code></td>
 <td>§7.1</td>
 <td>~30 min</td>
 </tr>
@@ -170,7 +170,7 @@ uv pip install -e &quot;.[kubernetes]&quot;
 <p><code>ej/</code> is not committed on any branch, so a fresh clone doesn't have it. Copy
 it in from a working tree that does:</p>
 <pre><code class="language-bash">mkdir -p ej
-cp /path/to/your/skypilot/ej/{reproduce_benchmarks.py,bench_launch_latency.py,job.yaml,README.md} ej/
+cp /path/to/your/skypilot/ej/{reproduce_benchmarks.py,README.md} ej/
 
 # Have git ignore ej/ locally.
 echo 'ej/' &gt;&gt; .git/info/exclude
@@ -276,11 +276,27 @@ policy through the task's <code>config.kubernetes.pod_config</code>.</li>
 <li><strong>Sample size:</strong> use <code>--runs</code> and <code>--baseline-runs</code>.</li>
 </ul>
 <h3 id="sky-launch-ab"><code>sky-launch-ab</code> <a class="header-anchor" href="#sky-launch-ab">#</a></h3>
-<pre><code class="language-bash">python ej/reproduce_benchmarks.py sky-launch-ab -- \
-    run --candidate-ref ej-prj-3-job1 --task ej/job.yaml --runs 5
+<pre><code class="language-bash">python ej/reproduce_benchmarks.py sky-launch-ab --nodes 6 -- \
+    run --candidate-ref ej-prj-3-job1 --runs 5
 </code></pre>
 <ul>
-<li><strong>What it does:</strong> passes its arguments to <code>ej/bench_launch_latency.py</code>.</li>
+<li><strong>What it does:</strong> runs
+<code>tests/kubernetes/launching_benchmarks/bench_launch_latency.py</code> with the
+arguments after <code>--</code>.
+<ul>
+<li>That script is committed on <code>ej-prj-1</code> and the branches built on it, such
+as <code>ej-prj-3-job1</code>. Run from a checkout of one of them; master doesn't
+have it.</li>
+<li>For <code>run</code>, the wrapper adds what you leave out: <code>--task</code> (a task YAML it
+writes from <code>--nodes</code> and <code>--context</code>), <code>--context</code>, and <code>--out</code>
+(<code>ej/bench_results/&lt;timestamp&gt;-sky-launch-ab/</code>). Pass <code>--task FILE</code> after
+<code>--</code> to launch your own YAML instead.</li>
+<li>Other subcommands, such as <code>analyze</code>, are passed through unchanged.</li>
+</ul>
+</li>
+<li><strong>Verdict:</strong> its &quot;VALID&quot; check tests only the time from runtime installed to
+cluster launched, the step <code>ej-prj-1</code> changed. Read the per-stage table for
+the other changes.</li>
 <li><strong>Isolation:</strong> each build gets its own git worktree in <code>/tmp/sky-bench-ab</code>,
 its own <code>uv</code> venv, and its own API server, on ports 46601 and 46602.</li>
 <li><strong>What it leaves alone:</strong> your checkout and your main API server.</li>

@@ -17,7 +17,10 @@ Subcommands (see `--help` of each):
   pull-policy    Pod start time with imagePullPolicy IfNotPresent (through
                  pod_config) against the template's Always.
                  -> launch_latency_consolidated_design.md §15.
-  sky-launch-ab  Runs the `sky launch` A/B (bench_launch_latency.py).
+  sky-launch-ab  Runs the `sky launch` A/B,
+                 tests/kubernetes/launching_benchmarks/bench_launch_latency.py.
+                 For `run`, it supplies --task (from --nodes), --context and
+                 --out unless they are given.
                  -> launch_latency_consolidated_design.md §7.1.
 
 Requirements:
@@ -882,16 +885,46 @@ def cmd_pull_policy(args: argparse.Namespace) -> None:
 
 
 # ----------------------------------------------------------- sky-launch-ab
+BENCH_LAUNCH_LATENCY = (REPO / 'tests' / 'kubernetes' / 'launching_benchmarks' /
+                        'bench_launch_latency.py')
+
+
 def cmd_sky_launch_ab(args: argparse.Namespace) -> None:
-    candidates = [
-        REPO / 'ej' / 'bench_launch_latency.py', REPO / 'tests' / 'kubernetes' /
-        'launching_benchmarks' / 'bench_launch_latency.py'
-    ]
-    script = next((p for p in candidates if p.exists()), None)
-    if script is None:
-        sys.exit('bench_launch_latency.py not found (it is on ej-prj-1 and '
-                 'later branches, and in ej/).')
-    cmd = [sys.executable, str(script), *args.passthrough]
+    """Runs tests/kubernetes/launching_benchmarks/bench_launch_latency.py.
+
+    For `run`, fills in what that script needs but this one already knows:
+    a task YAML (it has no default) built from --nodes and --context, the
+    context, and an output directory under ej/bench_results/.
+    """
+    if not BENCH_LAUNCH_LATENCY.exists():
+        sys.exit(f'{BENCH_LAUNCH_LATENCY.relative_to(REPO)} not found: check '
+                 'out a branch that has it (ej-prj-1 or later).')
+    # argparse.REMAINDER keeps the `--` that separates our arguments from
+    # the passthrough ones; bench_launch_latency.py would take it as its
+    # subcommand.
+    passthrough = list(args.passthrough)
+    if passthrough[:1] == ['--']:
+        passthrough = passthrough[1:]
+    if not passthrough:
+        sys.exit('sky-launch-ab needs bench_launch_latency.py arguments, '
+                 'e.g.: sky-launch-ab -- run --candidate-ref ej-prj-3-job1')
+    if passthrough[0] == 'run':
+
+        def given(flag: str) -> bool:
+            return any(
+                a == flag or a.startswith(flag + '=') for a in passthrough)
+
+        out = (None
+               if given('--out') else new_out_dir('sky-launch-ab', args.out))
+        if not given('--task'):
+            task = (out or new_out_dir('sky-launch-ab', args.out)) / 'task.yaml'
+            write_task(task, args.nodes, args.context)
+            passthrough += ['--task', str(task)]
+        if not given('--context'):
+            passthrough += ['--context', args.context]
+        if out is not None:
+            passthrough += ['--out', str(out)]
+    cmd = [sys.executable, str(BENCH_LAUNCH_LATENCY), *passthrough]
     log(f'Running: {" ".join(cmd)}')
     sys.exit(subprocess.call(cmd, cwd=REPO))
 
@@ -961,7 +994,9 @@ def main() -> None:
     p.set_defaults(func=cmd_pull_policy)
 
     p = sub.add_parser('sky-launch-ab',
-                       help='run bench_launch_latency.py with the given args')
+                       help='run tests/kubernetes/launching_benchmarks/'
+                       'bench_launch_latency.py with the given args')
+    common(p)
     p.add_argument('passthrough', nargs=argparse.REMAINDER)
     p.set_defaults(func=cmd_sky_launch_ab)
 
