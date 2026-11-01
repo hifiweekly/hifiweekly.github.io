@@ -1,15 +1,17 @@
-### **SkyPilot Take-Home Task for System Engineering: Design Doc**
+# SkyPilot Take-Home Task for System Engineering: Design Doc
 
 ---
 
-**\* Your prototype on a branch:**  
+### **Requirement 1: Your prototype on a branch:**
+
 **List:** [https\://github.com/siliconej/skypilot/branches](https://github.com/siliconej/skypilot/branches)  
 **Consolidated single PR:** [https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-3-job1?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-3-job1?expand=1) 
 
-**\* Your design doc (markdown, in-repo or linked):**  
-This Doc, see details at Project Write-up below, markdown:
+### **Requirement 2: Your design doc (markdown, in-repo or linked):**
 
-**\* Your benchmark script and a result table:**
+This Doc, see details at Project Write-up below, markdown: [https\://hifiweekly.github.io/skypilot\_ej\_prj/overview.md](https://hifiweekly.github.io/skypilot_ej_prj/overview.md) 
+
+### **Requirement 3: Your benchmark script and a result table:**
 
 **Benchmark script:**  
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/reproduce\_benchmarks.py](https://hifiweekly.github.io/skypilot_ej_prj/reproduce_benchmarks.py)
@@ -47,13 +49,14 @@ python ej/reproduce\_benchmarks.py sky-launch-ab \-- run \--candidate-ref ej-prj
 Consult the UML Sequence diagram in SVG for Phase definition and transition: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_6nodes.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)   
 All run done on Ubuntu 26.04, i7-8700K, 32GB memory
 
-**\* A short README explaining how to reproduce your numbers from a clean machine.**
+### **Requirement 4: A short README explaining how to reproduce your numbers from a clean machine.**
 
-**Read Me:**
+**Read Me:**  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/README.html](https://hifiweekly.github.io/skypilot_ej_prj/readme.html) 
 
 ---
 
-**\* Project Write-up**
+## Project Write-up
 
 The refactoring in these branches ([https\://github.com/siliconej/skypilot/branches/yours](https://github.com/siliconej/skypilot/branches/yours)) is a set of optimizations stacked in a progressive fashion. The svg linked here (4 nodes \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence.svg)\], 6 nodes \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_6nodes.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)\]) shows the different updates that are prepared for your review. Overall there are two parts of the refactoring, first set focuses on section D (cycles between provision and job submission), second set focuses on the rest of the whole workflow. I also implemented the bonus feature and fixed a warning. See more detailed below.
 
@@ -254,3 +257,86 @@ These two changes focus on the skypilot tasks before and after the job preparati
 **Tests:** 1 new parametrized test (test\_pool\_full\_warning\_hidden\_for\_capped\_clients) checks the warning is hidden at the capped size, still shown at other sizes, and that other warnings pass through. The adaptor test file passes: 28 passed.
 
 Design doc: [https\://hifiweekly.github.io/skypilot\_ej\_prj/k8s\_pool\_full\_warning\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/k8s_pool_full_warning_design.html) 
+
+## Appendix A: User’s Perceived Time
+
+### **ej-prj-3-job0: sky jobs launch**
+
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot/ej\$ time sky jobs launch \-y \-c ej-prj-3-job0  ej/job.yaml  
+'ej/job.yaml' looks like a yaml path but does not exist. Please check if the path is correct.  
+It will be treated as a command to be run remotely. Continue? \[y/N\]: ^CAborted\!
+
+real	0m13.373s  
+user	0m2.104s  
+sys	0m0.211s  
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot/ej\$ time sky jobs launch \-y \-c ej-prj-3-job0  ej/job.yaml^C  
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot/ej\$ cd ..  
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y \-c ej-prj-3-job0  ej/job.yaml  
+YAML to run: ej/job.yaml  
+Launching managed job 'ej-prj-3-job0'...  
+├── Waiting for task resources on 4 nodes.  
+└── Job started. Streaming logs... (Ctrl-C to exit log streaming; job will not be killed)  
+(head, rank=0, pid=1317) \[rank 0\] started at 1793467500.240161246 on ej-prj-3-job0-55-48017c75-head  
+(worker1, rank=1, pid=652, ip=10.244.0.227) \[rank 1\] started at 1793467502.030684619 on ej-prj-3-job0-55-48017c75-worker1  
+(worker2, rank=2, pid=699, ip=10.244.0.225) \[rank 2\] started at 1793467502.093509092 on ej-prj-3-job0-55-48017c75-worker2  
+(worker3, rank=3, pid=610, ip=10.244.0.228) \[rank 3\] started at 1793467502.080429595 on ej-prj-3-job0-55-48017c75-worker3  
+✓ Job finished (status: SUCCEEDED).  
+✓ Managed job finished: 55 (status: SUCCEEDED).
+
+📋 Useful Commands  
+Managed Job ID: 55  
+├── To cancel the job:		sky jobs cancel 55  
+├── To stream job logs:		sky jobs logs 55  
+├── To stream controller logs:	sky jobs logs \--controller 55  
+└── To view all managed jobs:	sky jobs queue
+
+**real	0m47.945s**  
+user	0m2.568s  
+sys	0m0.266s
+
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y \-c ej-prj-3-job0  ej/job.yaml  
+YAML to run: ej/job.yaml  
+Launching managed job 'ej-prj-3-job0'...  
+├── Waiting for task resources on 4 nodes.  
+└── Job started. Streaming logs... (Ctrl-C to exit log streaming; job will not be killed)  
+(head, rank=0, pid=1315) \[rank 0\] started at 1793467988.581994637 on ej-prj-3-job0-56-48017c75-head  
+(worker2, rank=2, pid=565, ip=10.244.0.230) \[rank 2\] started at 1793467990.358667314 on ej-prj-3-job0-56-48017c75-worker2  
+(worker3, rank=3, pid=562, ip=10.244.0.231) \[rank 3\] started at 1793467990.438768959 on ej-prj-3-job0-56-48017c75-worker3  
+(worker1, rank=1, pid=563, ip=10.244.0.232) \[rank 1\] started at 1793467990.447552834 on ej-prj-3-job0-56-48017c75-worker1  
+✓ Job finished (status: SUCCEEDED).  
+✓ Managed job finished: 56 (status: SUCCEEDED).
+
+📋 Useful Commands  
+Managed Job ID: 56  
+├── To cancel the job:		sky jobs cancel 56  
+├── To stream job logs:		sky jobs logs 56  
+├── To stream controller logs:	sky jobs logs \--controller 56  
+└── To view all managed jobs:	sky jobs queue
+
+**real	0m46.723s**  
+user	0m2.684s  
+sys	0m0.258s
+
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y \-c ej-prj-3-job0  ej/job.yaml  
+YAML to run: ej/job.yaml  
+Launching managed job 'ej-prj-3-job0'...  
+├── Waiting for task resources on 4 nodes.  
+└── Job started. Streaming logs... (Ctrl-C to exit log streaming; job will not be killed)  
+(head, rank=0, pid=1305) \[rank 0\] started at 1793468130.556993036 on ej-prj-3-job0-57-48017c75-head  
+(worker1, rank=1, pid=633, ip=10.244.0.234) \[rank 1\] started at 1793468132.477528286 on ej-prj-3-job0-57-48017c75-worker1  
+(worker3, rank=3, pid=595, ip=10.244.0.236) \[rank 3\] started at 1793468132.585763930 on ej-prj-3-job0-57-48017c75-worker3  
+(worker2, rank=2, pid=572, ip=10.244.0.235) \[rank 2\] started at 1793468132.645533742 on ej-prj-3-job0-57-48017c75-worker2  
+✓ Job finished (status: SUCCEEDED).  
+✓ Managed job finished: 57 (status: SUCCEEDED).
+
+📋 Useful Commands  
+Managed Job ID: 57  
+├── To cancel the job:		sky jobs cancel 57  
+├── To stream job logs:		sky jobs logs 57  
+├── To stream controller logs:	sky jobs logs \--controller 57  
+└── To view all managed jobs:	sky jobs queue
+
+**real	0m48.028s**  
+user	0m2.512s  
+sys	0m0.283s
+
