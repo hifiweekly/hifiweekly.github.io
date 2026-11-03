@@ -30,39 +30,34 @@ python ej/reproduce\_benchmarks.py sky-launch-ab \-- run \--candidate-ref ej-prj
 **Result Table:** [https\://hifiweekly.github.io/skypilot\_ej\_prj/report.html](https://hifiweekly.github.io/skypilot_ej_prj/report.html)
 
 **TL;DR: 6 nodes, medians of 8 interleaved runs per side (range), seconds:**  
-Consult the UML Sequence diagram in SVG for Phase definition and transition: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_6nodes.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)   
-┌───────────────────────────────────┬──────────────────┬──────────────────┬────────┬───────────────┐  
-│               Phase               │      master      │  ej-prj-3-job1   │ Change │ 4-node change │  
-├───────────────────────────────────┼──────────────────┼──────────────────┼────────┼───────────────┤  
-│ A: client start → job row created │ 6.8 (6.4–7.2)    │ 7.1 (6.5–7.2)    │ \+0.3   │ 0             │  
-├───────────────────────────────────┼──────────────────┼──────────────────┼────────┼───────────────┤  
-│ B+C: hand-off to controller       │ 5.6              │ 5.4              │ −0.2   │ −0.1          │  
-├───────────────────────────────────┼──────────────────┼──────────────────┼────────┼───────────────┤  
-│ D: provisioning → job submitted   │ 32.7 (29.6–41.5) │ 26.3 (22.3–28.3) │ −6.4   │ −2.4          │  
-├───────────────────────────────────┼──────────────────┼──────────────────┼────────┼───────────────┤  
-│ E: job runs                       │ 8.5              │ 8.8              │ \+0.3   │ 0             │  
-├───────────────────────────────────┼──────────────────┼──────────────────┼────────┼───────────────┤  
-│ F: job ended → RUNNING            │ 2.8 (2.2–3.3)    │ 1.2 (0.8–1.8)    │ −1.6   │ −1.8          │  
-├───────────────────────────────────┼──────────────────┼──────────────────┼────────┼───────────────┤  
-│ G: RUNNING → SUCCEEDED            │ 8.4 (3.9–14.0)   │ 3.5 (3.4–3.6)    │ −4.9   │ −7.6          │  
-├───────────────────────────────────┼──────────────────┼──────────────────┼────────┼───────────────┤  
-│ H: SUCCEEDED → client exits       │ 3.0 (2.4–11.0)   │ 2.9 (2.6–3.3)    │ −0.1   │ −0.3          │  
-├───────────────────────────────────┼──────────────────┼──────────────────┼────────┼───────────────┤  
-│ Client start → SUCCEEDED          │ 64.7             │ 51.7             │ −13.0  │ −10.6         │  
-├───────────────────────────────────┼──────────────────┼──────────────────┼────────┼───────────────┤  
-│ Client total                      │ 70.8 (61.1–77.5) │ 54.8 (51.5–58.3) │ −16.0  │ −11.4         │  
-└───────────────────────────────────┴──────────────────┴──────────────────┴────────┴───────────────┘
+Consult the UML Sequence diagram in SVG for Phase definition and transition: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_i2.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)    
+┌─────────────────────────────┬───────────────────┬──────────────────┬────────┐  
+│ Phase (s)                   │ master            │ ej-prj-i2-5      │ Change │  
+├─────────────────────────────┼───────────────────┼──────────────────┼────────┤  
+│ A: client start → job row   │  6.7 (6.4–7.1)    │  7.0 (6.9–7.4)   │  \+0.2  │  
+│ B: row → STARTING           │  2.6 (2.2–4.4)    │  2.5 (2.1–4.4)   │  −0.1  │  
+│ C: STARTING → provisioning  │  3.4 (3.1–3.9)    │  2.9 (2.5–4.0)   │  −0.4  │  
+│ **D: provisioning → submitted │ 37.4 (29.5–124.8) │ 17.8 (13.8–21.9) │ −19.6**  │ **\<\< \-52.4%**  
+│ E: job runs                 │  8.5 (8.2–8.5)    │  6.7 (6.4–6.8)   │  −1.8  │  
+│ F: job ended → RUNNING      │  2.8 (1.8–3.6)    │  2.6 (2.0–3.1)   │  −0.2  │  
+│ **G: RUNNING → SUCCEEDED      │ 14.5 (10.3–17.6)  │  0.1 (0.1–1.6)   │ −14.4**  │ \<\< **\-99.3%**  
+│ H: SUCCEEDED → client exits │  2.8 (2.3–5.4)    │  3.9 (2.6–5.1)   │  \+1.2  │  
+├─────────────────────────────┼───────────────────┼──────────────────┼────────┤  
+│ **Client total                │ 79.1 (70.0–166.7) │ 45.0 (39.1–49.2) │ −34.0  │ \<\< \-43.0%**  
+└─────────────────────────────┴───────────────────┴──────────────────┴────────┘
 
-All run done on Ubuntu 26.04, i7-8700K, 32GB memory
+Against master, ej-prj-i2-5 run diff: sky launch by 14.5 s (33%) and sky jobs launch by 34.0 s (43%). Every ej-prj-i2-5 launch beat every master launch on both benchmarks, and all 40 launches succeeded. All run done on Ubuntu 26.04, i7-8700K, 32GB memory
 
 ### **Requirement 4: A short README explaining how to reproduce your numbers from a clean machine.**
 
 **Read Me:**  
-[https\://hifiweekly.github.io/skypilot\_ej\_prj/README.html](https://hifiweekly.github.io/skypilot_ej_prj/README.html) 
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i2.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i2.html)
 
 **Support Files:**  
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/job.yaml](https://hifiweekly.github.io/skypilot_ej_prj/job.yaml) (same as the file in the pdf given)  
-[https\://hifiweekly.github.io/skypilot\_ej\_prj/bench\_launch\_latency.py](https://hifiweekly.github.io/skypilot_ej_prj/job.yaml) (a pending utility script in branch)
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/task\_bytecode.yaml](https://hifiweekly.github.io/skypilot_ej_prj/task_bytecode.yaml)  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/task\_published\_ifnotpresent.yaml](https://hifiweekly.github.io/skypilot_ej_prj/task_published_ifnotpresent.yaml)  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/bench\_launch\_latency.py](https://hifiweekly.github.io/skypilot_ej_prj/bench_launch_latency.py) (a pending utility script in branch)
 
 **Sample Run Result \#1: Ubuntu 26.04: [See Appendix C](#bookmark=id.ywa1lch5zkw3)**  
 **Sample Run Result \#2: MacOS Tahoe 26.7.1: [See Appendix D](#bookmark=id.2t62vgupmpad)**
@@ -73,17 +68,23 @@ All run done on Ubuntu 26.04, i7-8700K, 32GB memory
 
 The refactoring in these branches ([https\://github.com/siliconej/skypilot/branches/](https://github.com/siliconej/skypilot/branches/yours)) is a set of optimizations stacked in a progressive fashion. The svg diagrams linked here (4 nodes test \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence.svg)\], 6 nodes test \[[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_6nodes.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)\]) show the different updates that are prepared for your review. Overall there are two parts of the refactoring, first set focuses on section D (cycles between provision and job submission), second set focuses on the rest of the whole workflow. I also implemented the bonus feature and fixed a warning on linux. See more detailed below.
 
+**Oct 30 \~ Oct 31: First Iteration**
+
 The priority of these optimizations is analyzed and determined based on the delta time reduction that could be achieved theoretically according to first trace analysis on the master HEAD. I also spent some time on a fast code walkthrough of the current job launch workflow ([https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_workflow.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_workflow.svg)). More than 5 optimization strategies picked during the first cut, only the benchmark results that show statistical significance were pushed to branches.
 
 Notice that all the analysis is based on the tracing and profiling on a Linux box running Ubuntu 26.04. I did notice the subtle differences of the benchmark results between Linux and MacOS. For example, on Linux during each pod’s Runtime setup, Ray init is slower than the MacOS, so we see less effect of optimizing slow PyPI access using “uv pip install \--offline” on Linux, but potentially it could benefit MacOS’s Runtime setup speed.
 
-A more lengthy consolidated design doc of all the optimization included so far in this project is at: [https\://hifiweekly.github.io/skypilot\_ej\_prj/launch\_latency\_consolidated\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/launch_latency_consolidated_design.html) 
+A more lengthy consolidated design doc of all the optimization included so far in this project is at: [https\://hifiweekly.github.io/skypilot\_ej\_prj/launch\_latency\_consolidated\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/launch_latency_consolidated_design.html).
 
-### **Optimization not included in the branch**
+**Nov 1 \~ Nov 2: Second Iteration**
 
-I also profiled the precompiled version of the skypilot image. And it does show that the pod runtime loading time has about 2 to 3s reduction. As the precompiled version may have other side-effects on the pod’s functionalities beyond a mere ‘echo’, I decide not to include it in this doc. We probably could offer a precompiled image as an option and run production A/B testing. See the detailed design: [https\://hifiweekly.github.io/skypilot\_ej\_prj/precompile\_runtime\_bytecode\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/precompile_runtime_bytecode_design.html).
+The [second iteration](#bookmark=id.ksoj6pws011n) focused on more aggressive code refactoring on Phase D and Phase G. I also profiled all the thread waiting time. And was able to expand the increase reduction to over 40% in total.
 
-### **First Set: ej-prj-0, ej-prj-1, and ej-prj-3**
+During the refactoring, I also found a gRPC data conversion bug, causing some of the timestamps to be malformed. As the current gRPC is not enabled by default, and there are other fixes pending according to the commit logs. I didn’t enable gRPC for the benchmark. According to the profiling, by enabling the gRPC, it can also cut down the latency in Phase D, E, and F. (see [https\://hifiweekly.github.io/skypilot\_ej\_prj/grpc\_latency\_analysis.html](https://hifiweekly.github.io/skypilot_ej_prj/grpc_latency_analysis.html).
+
+See more details in [https\://hifiweekly.github.io/skypilot\_ej\_prj/launch\_latency\_design\_after\_job2.html](https://hifiweekly.github.io/skypilot_ej_prj/launch_latency_design_after_job2.html).
+
+### **Interaction 1 \- First Set: ej-prj-0, ej-prj-1, and ej-prj-3**
 
 These three changes focus on the job preparation and per node job submission, and will have impact on unmanaged job scheduling by ‘sky launch’ as well.
 
@@ -177,7 +178,7 @@ Because the workers wait for the head's GCS port, a late head delays the whole c
 
 ---
 
-### **Second Set: ej-prj-job0 and ej-prj-job1**
+### **Iteration 1 \- Second Set: ej-prj-job0 and ej-prj-job1**
 
 These two changes focus on the skypilot tasks before and after the job preparation and job submission, including whole job request processing, submission, job monitoring, and job exit.
 
@@ -232,6 +233,147 @@ PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_description
 **Design Doc.** Section 12 of [https\://hifiweekly.github.io/skypilot\_ej\_prj/launch\_latency\_consolidated\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/launch_latency_consolidated_design.html) 
 
 ---
+
+### **Iteration 2**
+
+**\* Branch ej-prj-i2-2: \[Fix\] gRPC timestamps format bug**  
+[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-2?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-2?expand=1)   
+**PR Description:** [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions\_i2.html\#ej-prj-i2-2](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions_i2.html#ej-prj-i2-2) 
+
+**\* TL;DR**
+
+**Problem:**  
+GetJobSubmittedTimestamp and GetJobEndedTimestamp return the time in a protobuf float, which can hold a current Unix time only to the nearest 128 s.  
+With SKYPILOT\_ENABLE\_GRPC on, a managed job's start and end times were off by up to about a minute, and a short job's duration was recorded as 0 s.
+
+**Fix:**  
+Add optional double timestamp\_double to both responses. A float can't be widened in place without breaking the wire format.  
+Keep setting the float, so older clients still work.  
+When a skylet doesn't set the new field, read the exact value through the existing head command instead of accepting the rounded one.  
+Bump SKYLET\_VERSION to 44, so existing clusters pick this up.
+
+**Not a speedup: gRPC is off by default, so launch times don't change.**
+
+**Design Doc.**  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/grpc\_latency\_analysis.html](https://hifiweekly.github.io/skypilot_ej_prj/grpc_latency_analysis.html) 
+
+**\* Branch ej-prj-i2-3: \[refactoring\] focusing on Phase D and Phase E**  
+[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-3?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-3?expand=1)  
+**PR Description:** [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions\_i2.html\#ej-prj-i2-3](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions_i2.html#ej-prj-i2-3) 
+
+**\* TL;DR**
+
+**Problem**  
+On 6 nodes on kind, sky launch drops from 43.1 s to 26.9 s (−38%), and sky jobs launch from 71.8 s to 41.8 s (−42%).
+
+\- Pods and Ray startup: Ray comes up sooner, which matters because every worker waits for the head.  
+  \- Start Ray before preparing SkyPilot in the pod, and skip ray stop when no Ray is running.  
+  \- Pre-install the runtime pins in the image, so pods don't download them at startup.  
+  \- New on this branch:  
+    \- Precompile runtime bytecode in the k8s images (cab8b302a).  
+    \- Stop importing Ray Serve in ray start (0038650ac).  
+    \- Watch pods between polls, so the last running pod is noticed sooner (16738238e).  
+\- Provisioner: wait for Ray in one blocking call on the head instead of polling, and start skylet during that wait.  
+\- Managed jobs:  
+  \- Fetch a job's status and submitted-at time in one head command.  
+  \- Skip the random first-check sleep when the launch already saw the job finish.  
+  \- Re-check the status as soon as the controller writes a log line.  
+  \- Look up the enabled storage clouds once per request.  
+\- Bug fixes (no speedup):  
+  \- Keep job timestamps exact over gRPC, which adds optional proto fields and bumps SKYLET\_VERSION to 44\.  
+  \- Fail fast when a pod is lost during setup: about 5–11 s instead of about 106 s.  
+\- Benchmark: add bench\_launch\_latency.py, an A/B of sky launch between two builds.
+
+Compatibility: no API change. Generated head commands call only functions older cluster runtimes already have. The image changes take effect only once a new image is published.
+
+This branch also includes couple of low risk optimization in Phase D.
+
+**Tested**
+
+A/B against 5ef55efa4 on kind-skypilot (6 nodes, 8 runs per arm, medians). The base uses the published image and the candidate a locally built bytecode image, both with IfNotPresent.
+
+┌───────────────────────────────┬───────────┬─────────────┬─────────┬────────┐  
+│            Measure            │ 5ef55efa4 │ ej-prj-i2-3 │ Change  │   p    │  
+├───────────────────────────────┼───────────┼─────────────┼─────────┼────────┤  
+│ sky launch wall time          │ 43.1 s    │ 26.9 s      │ −16.2 s │ 0.0002 │  
+├───────────────────────────────┼───────────┼─────────────┼─────────┼────────┤  
+│ sky launch provisioning total │ 25.5 s    │ 12.0 s      │ −13.4 s │ 0.0002 │  
+├───────────────────────────────┼───────────┼─────────────┼─────────┼────────┤  
+│ sky jobs launch client total  │ 71.8 s    │ 41.8 s      │ −30.1 s │ 0.0002 │  
+├───────────────────────────────┼───────────┼─────────────┼─────────┼────────┤  
+│ Provisioning → job submitted  │ 30.4 s    │ 14.6 s      │ −15.9 s │ 0.0002 │  
+├───────────────────────────────┼───────────┼─────────────┼─────────┼────────┤  
+│ Job ended → RUNNING           │ 3.3 s     │ 2.4 s       │ −0.9 s  │ 0.003  │  
+├───────────────────────────────┼───────────┼─────────────┼─────────┼────────┤  
+│ RUNNING → SUCCEEDED           │ 9.9 s     │ 3.3 s       │ −6.7 s  │ 0.07   │  
+└───────────────────────────────┴───────────┴─────────────┴─────────┴────────┘
+
+**Design Doc.**  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/precompile\_runtime\_bytecode\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/precompile_runtime_bytecode_design.html)   
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/pod\_watch\_between\_polls\_design.md](https://hifiweekly.github.io/skypilot_ej_prj/pod_watch_between_polls_design.md)
+
+**\* Branch ej-prj-i2-4: \[refactoring\] focusing on Phase G**  
+[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-4?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-4?expand=1)  
+**PR Description:** [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions\_i2.html\#ej-prj-i2-4](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions_i2.html#ej-prj-i2-4)
+
+**Summary**
+
+Over two A/Bs on 6 nodes on kind, sky jobs launch drops by about 30 s, and RUNNING → SUCCEEDED falls to about 0.1 s. sky launch drops from 43.1 s to 26.9 s, measured on ej-prj-i2-3; the new commit only changes managed jobs code.
+
+\- Pods and Ray startup:  
+  \- Start Ray before preparing SkyPilot in the pod, and skip ray stop when no Ray is running.  
+  \- Pre-install the runtime pins and precompile bytecode in the k8s images.  
+  \- Stop importing Ray Serve in ray start.  
+  \- Watch pods between polls, so the last running pod is noticed sooner.  
+\- Provisioner: wait for Ray in one blocking call on the head instead of polling, and start skylet during that wait.  
+\- Managed jobs:  
+  \- Fetch a job's status and submitted-at time in one head command.  
+  \- Skip the random first-check sleep when the launch already saw the job finish.  
+  \- Re-check the status as soon as the controller writes a log line.  
+  \- Look up the enabled storage clouds once per request.  
+  \- New on this branch (b848c9c1e): get a finished job's end time with its status.  
+    \- A launch that saw the job succeed hands its status and end time to the monitor loop, which then needs no head command.  
+    \- The monitor loop's own status check also returns the end time.  
+    \- The log follower trusts a tail exit code of SUCCEEDED, and reads the recorded status every 0.2 s until the controller writes it.  
+\- Bug fixes (no speedup):  
+  \- Keep job timestamps exact over gRPC, which adds optional proto fields and bumps SKYLET\_VERSION to 44\.  
+  \- Fail fast when a pod is lost during setup: about 5–11 s instead of about 106 s.  
+\- Benchmark: add bench\_launch\_latency.py, an A/B of sky launch between two builds.
+
+Compatibility: no API change. Generated head commands call only functions older cluster runtimes already have. The image changes take effect only once a new image is published.
+
+**Tested**
+
+All A/Bs ran on kind-skypilot (6 nodes, 8 runs per arm, medians). There's no direct A/B of this branch against 5ef55efa4, so these are the two closest.
+
+New commit, ej-prj-i2-3 vs ej-prj-i2-4 (bytecode image in both arms):
+
+┌──────────────────────────┬─────────────┬─────────────┬────────┬────────────────────────┐  
+│         Measure          │ ej-prj-i2-3 │ ej-prj-i2-4 │ Change │           p            │  
+├──────────────────────────┼─────────────┼─────────────┼────────┼────────────────────────┤  
+│ RUNNING → SUCCEEDED      │ 3.35 s      │ 0.12 s      │ −3.2 s │ 0.0001                 │  
+├──────────────────────────┼─────────────┼─────────────┼────────┼────────────────────────┤  
+│ SUCCEEDED → client exits │ 2.48 s      │ 3.84 s      │ \+1.4 s │ 0.0001                 │  
+├──────────────────────────┼─────────────┼─────────────┼────────┼────────────────────────┤  
+│ Client total             │ 36.07 s     │ 34.31 s     │ −1.8 s │ rank 0.038; means 0.38 │  
+└──────────────────────────┴─────────────┴─────────────┴────────┴────────────────────────┘
+
+The wait after SUCCEEDED grows because the controller saves the logs after SUCCEEDED, and the client now reaches that wait sooner. The p-value on means is weak because of one 41.6 s run.
+
+Everything before it, 5ef55efa4 vs ej-prj-i2-3 (published image vs bytecode image, both IfNotPresent):
+
+┌──────────────────────────────┬───────────┬─────────────┬─────────┬────────┐  
+│           Measure            │ 5ef55efa4 │ ej-prj-i2-3 │ Change  │   p    │  
+├──────────────────────────────┼───────────┼─────────────┼─────────┼────────┤  
+│ sky launch wall time         │ 43.1 s    │ 26.9 s      │ −16.2 s │ 0.0002 │  
+├──────────────────────────────┼───────────┼─────────────┼─────────┼────────┤  
+│ sky jobs launch client total │ 71.8 s    │ 41.8 s      │ −30.1 s │ 0.0002 │  
+└──────────────────────────────┴───────────┴─────────────┴─────────┴────────┘
+
+**Design Doc.**  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/job\_end\_time\_with\_status\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/pod_watch_between_polls_design.md)
+
+### ---
 
 ### **Bonus: 90s timeout handling** 
 
@@ -572,3 +714,97 @@ What to try next
 └───────────────────────────────────────────┴──────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
 
 I'd start with the rebuilt image, because it targets the variability as well as the average, and the code change is already on this branch. The test is the same A/B with the rebuilt image, ideally also saving worker logs so a remaining stall can be identified. Do you want me to set that up?
+
+## Appendix F: Nov 2 Benchmark Run
+
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ python ej/reproduce\_benchmarks.py jobs-ab \--nodes 6 \\  
+    \--base 5ef55efa4 \--candidate ej-prj-i2-5 \\  
+    \--base-task ej/task\_published\_ifnotpresent.yaml \\  
+    \--candidate-task ej/task\_bytecode.yaml \\  
+    \--blocks 4 \--runs 4 \--warmup 1  
+\[21:40:05\] jobs-ab: 5ef55efa4 (5ef55efa4) vs ej-prj-i2-5 (7e488f558), 6 nodes, 4 blocks x (1 warm-up \+ 4 measured). Out: /run/media/ejiang/2T2/Projects/skypilot/ej/bench\_results/20261102-214005-jobs-ab  
+\[21:40:17\] Block 1/4: base at 5ef55efa4  
+\[21:41:53\]   base\_b1\_w: job 454 rc=0 CLEAN total=88.6  
+\[21:43:21\]   base\_b1\_1: job 455 rc=0 CLEAN total=81.0  
+\[21:44:46\]   base\_b1\_2: job 456 rc=0 CLEAN total=78.1  
+\[21:46:00\]   base\_b1\_3: job 457 rc=0 CLEAN total=67.2  
+\[21:47:17\]   base\_b1\_4: job 458 rc=0 CLEAN total=70.1  
+\[21:47:30\] Block 2/4: candidate at 7e488f558  
+\[21:48:26\]   candidate\_b2\_w: job 459 rc=0 CLEAN total=51.6  
+\[21:49:11\]   candidate\_b2\_1: job 460 rc=0 CLEAN total=41.8  
+\[21:50:04\]   candidate\_b2\_2: job 461 rc=0 CLEAN total=48.7  
+\[21:50:48\]   candidate\_b2\_3: job 462 rc=0 CLEAN total=40.9  
+\[21:51:33\]   candidate\_b2\_4: job 463 rc=0 CLEAN total=40.5  
+\[21:51:47\] Block 3/4: base at 5ef55efa4  
+\[21:53:25\]   base\_b3\_w: job 464 rc=0 CLEAN total=93.9  
+\[21:54:53\]   base\_b3\_1: job 465 rc=0 CLEAN total=80.8  
+\[21:56:11\]   base\_b3\_2: job 466 rc=0 CLEAN total=72.9  
+\[21:57:32\]   base\_b3\_3: job 467 rc=0 CLEAN total=74.5  
+\[21:58:41\]   base\_b3\_4: job 468 rc=0 CLEAN total=61.6  
+\[21:58:53\] Block 4/4: candidate at 7e488f558  
+\[21:59:49\]   candidate\_b4\_w: job 469 rc=0 CLEAN total=50.6  
+\[22:00:33\]   candidate\_b4\_1: job 470 rc=0 CLEAN total=39.7  
+\[22:01:18\]   candidate\_b4\_2: job 471 rc=0 CLEAN total=40.6  
+\[22:02:01\]   candidate\_b4\_3: job 472 rc=0 CLEAN total=38.1  
+\[22:02:47\]   candidate\_b4\_4: job 473 rc=0 CLEAN total=42.9  
+\[22:02:47\] Restoring ej-prj-i2-6 and restarting the API server on it  
+\# sky jobs launch A/B: 5ef55efa4 (5ef55efa4) vs ej-prj-i2-5 (7e488f558)
+
+\- 6 nodes on \`kind-skypilot\`, consolidation mode.  
+\- 4 alternating blocks of 1 warm-up \+ 4 measured runs. Measured, clean and successful runs: base 8, candidate 8\.
+
+\#\# Phases (seconds, median and range)
+
+\| Phase \| base \| candidate \| Δ median \|  
+\|---\|---\|---\|---\|  
+\| A: client start \-\> job row created \| 7.1 (6.5–8.1) \| 6.7 (6.4–7.5) \| \-0.3 \|  
+\| B: row created \-\> STARTING \| 2.8 (2.6–5.2) \| 2.4 (2.1–4.8) \| \-0.4 \|  
+\| C: STARTING \-\> provisioning starts \| 3.4 (2.6–4.0) \| 3.1 (2.5–3.9) \| \-0.3 \|  
+\| D: provisioning \-\> job submitted \| 32.6 (28.6–38.1) \| 14.7 (14.1–21.2) \| \-18.0 \|  
+\| E: job runs on the cluster \| 8.6 (8.4–13.0) \| 6.7 (6.4–6.9) \| \-1.9 \|  
+\| F: job ended \-\> RUNNING \| 3.0 (-2.8–3.4) \| 2.6 (1.6–3.2) \| \-0.4 \|  
+\| G: RUNNING \-\> SUCCEEDED \| 13.8 (3.5–16.9) \| 0.1 (0.1–0.2) \| \-13.7 \|  
+\| H: SUCCEEDED \-\> client exits \| 2.8 (2.6–4.0) \| 4.2 (3.4–4.6) \| \+1.5 \|  
+\| to\_SUCCEEDED: client start \-\> SUCCEEDED \| 70.2 (58.5–78.4) \| 36.8 (34.7–44.6) \| \-33.5 \|  
+\| total: client total \| 73.7 (61.6–81.0) \| 40.8 (38.1–48.7) \| \-32.9 \|
+
+Permutation test on the client total (difference of means, two-sided): p \= 0.0000.
+
+\#\# Phase D stages (seconds, median and range)
+
+\| Stage \| base \| candidate \|  
+\|---\|---\|---\|  
+\| 'Provisioning on' event \-\> provision log starts \| 0.28 (0.0–0.9) \| 0.41 (0.2–1.0) \|  
+\| create pods, wait until Running \| 2.76 (2.6–3.1) \| 1.79 (1.6–2.2) \|  
+\| SSH readiness \| 0.25 (0.2–0.3) \| 0.32 (0.3–0.4) \|  
+\| internal\_file\_mounts \| 1.21 (1.0–2.2) \| 2.15 (1.5–2.8) \|  
+\| setup\_runtime\_on\_cluster \| 9.89 (3.3–19.4) \| 1.85 (1.5–11.6) \|  
+\| Ray wait \+ skylet start \| 14.69 (8.4–19.9) \| 4.50 (2.2–5.0) \|  
+\| cluster launched \-\> job submitted \| 3.63 (3.4–3.9) \| 3.32 (3.3–3.8) \|  
+\| phase D total \| 32.64 (28.6–38.1) \| 14.67 (14.1–21.2) \|  
+\| skylet start on its own \| 1.58 (1.6–1.8) \| 2.46 (2.2–2.8) \|
+
+\#\# Runs
+
+\| Run \| Job \| Clean \| rc \| Total \|  
+\|---\|---\|---\|---\|---\|  
+\| base\_b1\_w \| 454 \| True \| 0 \| 88.6 \|  
+\| base\_b1\_1 \| 455 \| True \| 0 \| 81.0 \|  
+\| base\_b1\_2 \| 456 \| True \| 0 \| 78.1 \|  
+\| base\_b1\_3 \| 457 \| True \| 0 \| 67.2 \|  
+\| base\_b1\_4 \| 458 \| True \| 0 \| 70.1 \|  
+\| candidate\_b2\_w \| 459 \| True \| 0 \| 51.6 \|  
+\| candidate\_b2\_1 \| 460 \| True \| 0 \| 41.8 \|  
+\| candidate\_b2\_2 \| 461 \| True \| 0 \| 48.7 \|  
+\| candidate\_b2\_3 \| 462 \| True \| 0 \| 40.9 \|  
+\| candidate\_b2\_4 \| 463 \| True \| 0 \| 40.5 \|  
+\| base\_b3\_w \| 464 \| True \| 0 \| 93.9 \|  
+\| base\_b3\_1 \| 465 \| True \| 0 \| 80.8 \|  
+\| base\_b3\_2 \| 466 \| True \| 0 \| 72.9 \|  
+\| base\_b3\_3 \| 467 \| True \| 0 \| 74.5 \|  
+\| base\_b3\_4 \| 468 \| True \| 0 \| 61.6 \|  
+\| candidate\_b4\_w \| 469 \| True \| 0 \| 50.6 \|  
+\| candidate\_b4\_1 \| 470 \| True \| 0 \| 39.7 \|  
+\| candidate\_b4\_2 \| 471 \| True \| 0 \| 40.6 \|  
+\| candidate\_b4\_3 \| 472 \| True \| 0 \| 38.1 \|  
+\| candidate\_b4\_4 \| 473 \| True \| 0 \| 42.9 \|  
