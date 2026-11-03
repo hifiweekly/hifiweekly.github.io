@@ -84,6 +84,8 @@ The [second iteration](#bookmark=id.ksoj6pws011n) focused on more aggressive cod
 
 During the refactoring, I found a gRPC data conversion bug, causing some of the timestamps to be malformed. As the current gRPC is not enabled by default, and there are other fixes pending according to the commit logs. I didn’t enable gRPC for the benchmark. According to the profiling, by enabling the gRPC, it can further cut down the latency in Phase D, E, and F. (see [https\://hifiweekly.github.io/skypilot\_ej\_prj/grpc\_latency\_analysis.html](https://hifiweekly.github.io/skypilot_ej_prj/grpc_latency_analysis.html).
 
+Updated workflow svg: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_workflow\_i2\_6.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_workflow_i2_6.svg)
+
 See more details in [https\://hifiweekly.github.io/skypilot\_ej\_prj/launch\_latency\_design\_after\_job2.html](https://hifiweekly.github.io/skypilot_ej_prj/launch_latency_design_after_job2.html).
 
 ### **Interation 1 \- First Set: ej-prj-0, ej-prj-1, and ej-prj-3**
@@ -320,60 +322,41 @@ A/B against 5ef55efa4 on kind-skypilot (6 nodes, 8 runs per arm, medians). The b
 
 **Summary**
 
-Over two A/Bs on 6 nodes on kind, sky jobs launch drops by about 30 s, and RUNNING → SUCCEEDED falls to about 0.1 s. sky launch drops from 43.1 s to 26.9 s, measured on ej-prj-i2-3; the new commit only changes managed jobs code.
+**\- Problem:** after a managed job ended, the controller ran separate head commands for its status and its end time, and the log follower ran its own status check. Without gRPC, each takes about 1.6 s.  
+**\- Fix:**  
+  \- One head command now returns the status, submitted time and end time together.  
+  \- If the launch already saw SUCCEEDED with an end time, the monitor loop marks the job done with no head command.  
+  \- The follower trusts a tail exit code of SUCCEEDED, and checks for the final status every 0.2 s instead of every 1 s.  
+\- Unchanged: other terminal statuses, such as FAILED, still get a fresh check. gRPC, runtimes and missing end times fall back to the old fetch, and there's no API change.
 
-\- Pods and Ray startup:  
-  \- Start Ray before preparing SkyPilot in the pod, and skip ray stop when no Ray is running.  
-  \- Pre-install the runtime pins and precompile bytecode in the k8s images.  
-  \- Stop importing Ray Serve in ray start.  
-  \- Watch pods between polls, so the last running pod is noticed sooner.  
-\- Provisioner: wait for Ray in one blocking call on the head instead of polling, and start skylet during that wait.  
-\- Managed jobs:  
-  \- Fetch a job's status and submitted-at time in one head command.  
-  \- Skip the random first-check sleep when the launch already saw the job finish.  
-  \- Re-check the status as soon as the controller writes a log line.  
-  \- Look up the enabled storage clouds once per request.  
-  \- New on this branch (b848c9c1e): get a finished job's end time with its status.  
-    \- A launch that saw the job succeed hands its status and end time to the monitor loop, which then needs no head command.  
-    \- The monitor loop's own status check also returns the end time.  
-    \- The log follower trusts a tail exit code of SUCCEEDED, and reads the recorded status every 0.2 s until the controller writes it.  
-\- Bug fixes (no speedup):  
-  \- Keep job timestamps exact over gRPC, which adds optional proto fields and bumps SKYLET\_VERSION to 44\.  
-  \- Fail fast when a pod is lost during setup: about 5–11 s instead of about 106 s.  
-\- Benchmark: add bench\_launch\_latency.py, an A/B of sky launch between two builds.
+**Result (6 nodes, 8 runs per arm, medians):**
 
-Compatibility: no API change. Generated head commands call only functions older cluster runtimes already have. The image changes take effect only once a new image is published.
+┌──────────────────────────┬─────────┬────────────────┬────────────────────────┐  
+│         Measure          │ Before  │     After      │           p            │  
+├──────────────────────────┼─────────┼────────────────┼────────────────────────┤  
+│ RUNNING → SUCCEEDED      │ 3.35 s  │ 0.12 s         │ 0.0001                 │  
+├──────────────────────────┼─────────┼────────────────┼────────────────────────┤  
+│ SUCCEEDED → client exits │ 2.48 s  │ 3.84 s (worse) │ 0.0001                 │  
+├──────────────────────────┼─────────┼────────────────┼────────────────────────┤  
+│ Client total             │ 36.07 s │ 34.31 s        │ rank 0.038; means 0.38 │  
+└──────────────────────────┴─────────┴────────────────┴────────────────────────┘
 
-**Tested**
+\- Why the client gains less: SUCCEEDED arrives sooner, but the controller saves the logs after it, so the client waits longer there. ej-prj-i2-6 then cuts that wait from 4.3 s to 2.6 s.
 
-All A/Bs ran on kind-skypilot (6 nodes, 8 runs per arm, medians). There's no direct A/B of this branch against 5ef55efa4, so these are the two closest.
+Risks:  
+\- Skipped checks: the new path skips the checks that normally run before marking success, in critical controller code, so it needs close review.  
+\- Log display: RUNNING now lasts about 0.1 s, so a short job's logs usually appear in one burst at the end.
 
-New commit, ej-prj-i2-3 vs ej-prj-i2-4 (bytecode image in both arms):
+Not tested:  
+\- smoke tests, including recovery  
+\- an older cluster runtime  
+\- the controller-cluster path  
+\- multi-task pipelines and pools
 
-┌──────────────────────────┬─────────────┬─────────────┬────────┬────────────────────────┐  
-│         Measure          │ ej-prj-i2-3 │ ej-prj-i2-4 │ Change │           p            │  
-├──────────────────────────┼─────────────┼─────────────┼────────┼────────────────────────┤  
-│ RUNNING → SUCCEEDED      │ 3.35 s      │ 0.12 s      │ −3.2 s │ 0.0001                 │  
-├──────────────────────────┼─────────────┼─────────────┼────────┼────────────────────────┤  
-│ SUCCEEDED → client exits │ 2.48 s      │ 3.84 s      │ \+1.4 s │ 0.0001                 │  
-├──────────────────────────┼─────────────┼─────────────┼────────┼────────────────────────┤  
-│ Client total             │ 36.07 s     │ 34.31 s     │ −1.8 s │ rank 0.038; means 0.38 │  
-└──────────────────────────┴─────────────┴─────────────┴────────┴────────────────────────┘
-
-The wait after SUCCEEDED grows because the controller saves the logs after SUCCEEDED, and the client now reaches that wait sooner. The p-value on means is weak because of one 41.6 s run.
-
-Everything before it, 5ef55efa4 vs ej-prj-i2-3 (published image vs bytecode image, both IfNotPresent):
-
-┌──────────────────────────────┬───────────┬─────────────┬─────────┬────────┐  
-│           Measure            │ 5ef55efa4 │ ej-prj-i2-3 │ Change  │   p    │  
-├──────────────────────────────┼───────────┼─────────────┼─────────┼────────┤  
-│ sky launch wall time         │ 43.1 s    │ 26.9 s      │ −16.2 s │ 0.0002 │  
-├──────────────────────────────┼───────────┼─────────────┼─────────┼────────┤  
-│ sky jobs launch client total │ 71.8 s    │ 41.8 s      │ −30.1 s │ 0.0002 │  
-└──────────────────────────────┴───────────┴─────────────┴─────────┴────────┘
+Before a PR: b848c9c1e's message has the wrong explanation for the longer wait, so use 7db718aa0's wording.
 
 **Design Doc.**  
-[https\://hifiweekly.github.io/skypilot\_ej\_prj/job\_end\_time\_with\_status\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/pod_watch_between_polls_design.md)
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/job\_end\_time\_with\_status\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/job_end_time_with_status_design.html)
 
 ### ---
 
