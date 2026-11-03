@@ -5,7 +5,8 @@
 ### **Requirement 1: Your prototype on a branch:**
 
 **List:** [https\://github.com/siliconej/skypilot/branches](https://github.com/siliconej/skypilot/branches)  
-**Consolidated single PR:** [https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-3-job1?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-3-job1?expand=1) 
+**Consolidated single PR:** [https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-6?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-6?expand=1)   
+([See Appendix H: commit list](#bookmark=id.cd6o0eo96un4))
 
 ### **Requirement 2: Your design doc (markdown, in-repo or linked):**
 
@@ -78,13 +79,13 @@ A more lengthy consolidated design doc of all the optimization included so far i
 
 **Nov 1 \~ Nov 2: Second Iteration**
 
-The [second iteration](#bookmark=id.ksoj6pws011n) focused on more aggressive code refactoring on Phase D and Phase G. I also profiled all the thread waiting time. And was able to expand the increase reduction to over 40% in total.
+The [second iteration](#bookmark=id.ksoj6pws011n) focused on more aggressive code refactoring on Phase D and Phase G. I also profiled all the thread waiting time. And was able to expand the latency reduction to over 40% in total.
 
-During the refactoring, I also found a gRPC data conversion bug, causing some of the timestamps to be malformed. As the current gRPC is not enabled by default, and there are other fixes pending according to the commit logs. I didn’t enable gRPC for the benchmark. According to the profiling, by enabling the gRPC, it can also cut down the latency in Phase D, E, and F. (see [https\://hifiweekly.github.io/skypilot\_ej\_prj/grpc\_latency\_analysis.html](https://hifiweekly.github.io/skypilot_ej_prj/grpc_latency_analysis.html).
+During the refactoring, I found a gRPC data conversion bug, causing some of the timestamps to be malformed. As the current gRPC is not enabled by default, and there are other fixes pending according to the commit logs. I didn’t enable gRPC for the benchmark. According to the profiling, by enabling the gRPC, it can further cut down the latency in Phase D, E, and F. (see [https\://hifiweekly.github.io/skypilot\_ej\_prj/grpc\_latency\_analysis.html](https://hifiweekly.github.io/skypilot_ej_prj/grpc_latency_analysis.html).
 
 See more details in [https\://hifiweekly.github.io/skypilot\_ej\_prj/launch\_latency\_design\_after\_job2.html](https://hifiweekly.github.io/skypilot_ej_prj/launch_latency_design_after_job2.html).
 
-### **Interaction 1 \- First Set: ej-prj-0, ej-prj-1, and ej-prj-3**
+### **Interation 1 \- First Set: ej-prj-0, ej-prj-1, and ej-prj-3**
 
 These three changes focus on the job preparation and per node job submission, and will have impact on unmanaged job scheduling by ‘sky launch’ as well.
 
@@ -234,7 +235,7 @@ PR description: [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_description
 
 ---
 
-### **Iteration 2**
+### **Iteration 2 \- Nov 1 \~ Nov 2**
 
 **\* Branch ej-prj-i2-2: \[Fix\] gRPC timestamps format bug**  
 [https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-2?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-2?expand=1)   
@@ -312,7 +313,7 @@ A/B against 5ef55efa4 on kind-skypilot (6 nodes, 8 runs per arm, medians). The b
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/precompile\_runtime\_bytecode\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/precompile_runtime_bytecode_design.html)   
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/pod\_watch\_between\_polls\_design.md](https://hifiweekly.github.io/skypilot_ej_prj/pod_watch_between_polls_design.md)
 
-**\* Branch ej-prj-i2-4: \[refactoring\] focusing on Phase G**  
+**\* Branch ej-prj-i2-6: \[refactoring\] focusing on Phase G**  
 [https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-4?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-4?expand=1)  
 **PR Description:** [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions\_i2.html\#ej-prj-i2-4](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions_i2.html#ej-prj-i2-4)
 
@@ -807,4 +808,159 @@ Permutation test on the client total (difference of means, two-sided): p \= 0.00
 \| candidate\_b4\_1 \| 470 \| True \| 0 \| 39.7 \|  
 \| candidate\_b4\_2 \| 471 \| True \| 0 \| 40.6 \|  
 \| candidate\_b4\_3 \| 472 \| True \| 0 \| 38.1 \|  
-\| candidate\_b4\_4 \| 473 \| True \| 0 \| 42.9 \|  
+\| candidate\_b4\_4 \| 473 \| True \| 0 \| 42.9 \|
+
+## Appendix G: Nov 2 User Perceived Time
+
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y \-c i2 ej/task\_bytecode.yaml   
+YAML to run: ej/task\_bytecode.yaml  
+Launching managed job 'i2'...  
+├── Waiting for task resources on 6 nodes.  
+└── Job started. Streaming logs... (Ctrl-C to exit log streaming; job will not be killed)  
+(head, rank=0, pid=1353) \[rank 0\] started at 1793688490.979418040 on i2-475-48017c75-head  
+(worker3, rank=3, pid=616, ip=10.244.0.12) \[rank 3\] started at 1793688491.373891838 on i2-475-48017c75-worker3  
+(worker2, rank=2, pid=621, ip=10.244.0.13) \[rank 2\] started at 1793688491.332624540 on i2-475-48017c75-worker2  
+(worker4, rank=4, pid=618, ip=10.244.0.11) \[rank 4\] started at 1793688491.531573109 on i2-475-48017c75-worker4  
+(worker5, rank=5, pid=611, ip=10.244.0.14) \[rank 5\] started at 1793688491.529177662 on i2-475-48017c75-worker5  
+(worker1, rank=1, pid=620, ip=10.244.0.10) \[rank 1\] started at 1793688491.856921367 on i2-475-48017c75-worker1  
+✓ Job finished (status: SUCCEEDED).  
+✓ Managed job finished: 475 (status: SUCCEEDED).
+
+📋 Useful Commands  
+Managed Job ID: 475  
+├── To cancel the job:		sky jobs cancel 475  
+├── To stream job logs:		sky jobs logs 475  
+├── To stream controller logs:	sky jobs logs \--controller 475  
+└── To view all managed jobs:	sky jobs queue
+
+real	0m46.066s  
+user	0m2.755s  
+sys	0m0.259s  
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y \-c i2 ej/task\_bytecode.yaml   
+YAML to run: ej/task\_bytecode.yaml  
+Launching managed job 'i2'...  
+├── Waiting for task resources on 6 nodes.  
+└── Job started. Streaming logs... (Ctrl-C to exit log streaming; job will not be killed)  
+(head, rank=0, pid=1318) \[rank 0\] started at 1793688650.792021163 on i2-476-48017c75-head  
+(worker2, rank=2, pid=609, ip=10.244.0.17) \[rank 2\] started at 1793688651.771657470 on i2-476-48017c75-worker2  
+(worker1, rank=1, pid=618, ip=10.244.0.19) \[rank 1\] started at 1793688651.739417433 on i2-476-48017c75-worker1  
+(worker3, rank=3, pid=613, ip=10.244.0.18) \[rank 3\] started at 1793688651.813173027 on i2-476-48017c75-worker3  
+(worker5, rank=5, pid=617, ip=10.244.0.20) \[rank 5\] started at 1793688651.865371093 on i2-476-48017c75-worker5  
+(worker4, rank=4, pid=609, ip=10.244.0.16) \[rank 4\] started at 1793688652.188471140 on i2-476-48017c75-worker4  
+✓ Job finished (status: SUCCEEDED).  
+✓ Managed job finished: 476 (status: SUCCEEDED).
+
+📋 Useful Commands  
+Managed Job ID: 476  
+├── To cancel the job:		sky jobs cancel 476  
+├── To stream job logs:		sky jobs logs 476  
+├── To stream controller logs:	sky jobs logs \--controller 476  
+└── To view all managed jobs:	sky jobs queue
+
+real	0m41.092s  
+user	0m2.638s  
+sys	0m0.290s  
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y \-c i2 ej/task\_bytecode.yaml   
+YAML to run: ej/task\_bytecode.yaml  
+Launching managed job 'i2'...  
+├── Waiting for task resources on 6 nodes.  
+└── Job started. Streaming logs... (Ctrl-C to exit log streaming; job will not be killed)  
+(raylet, ip=10.244.0.24) \[2026-11-03 06:52:43,394 W 604 604\] rpc\_client.h:638: Failed to connect to the observability pubsub at address i2-477-48017c75-head.default.svc.cluster.local:6380 within 5 seconds.  
+(raylet, ip=10.244.0.23) \[2026-11-03 06:52:43,395 W 612 612\] rpc\_client.h:638: Failed to connect to the observability pubsub at address i2-477-48017c75-head.default.svc.cluster.local:6380 within 5 seconds.  
+(worker2, rank=2, pid=612, ip=10.244.0.25) \[rank 2\] started at 1793688765.703214143 on i2-477-48017c75-worker2  
+(worker4, rank=4, pid=605, ip=10.244.0.22) \[rank 4\] started at 1793688765.703171127 on i2-477-48017c75-worker4  
+(worker1, rank=1, pid=604, ip=10.244.0.24) \[rank 1\] started at 1793688765.784297502 on i2-477-48017c75-worker1  
+(worker3, rank=3, pid=612, ip=10.244.0.23) \[rank 3\] started at 1793688765.847164266 on i2-477-48017c75-worker3  
+(head, rank=0, pid=1439) \[rank 0\] started at 1793688765.873922832 on i2-477-48017c75-head  
+(worker5, rank=5, pid=608, ip=10.244.0.26) \[rank 5\] started at 1793688766.281949504 on i2-477-48017c75-worker5  
+✓ Job finished (status: SUCCEEDED).  
+✓ Managed job finished: 477 (status: SUCCEEDED).
+
+📋 Useful Commands  
+Managed Job ID: 477  
+├── To cancel the job:		sky jobs cancel 477  
+├── To stream job logs:		sky jobs logs 477  
+├── To stream controller logs:	sky jobs logs \--controller 477  
+└── To view all managed jobs:	sky jobs queue
+
+real	0m50.865s  
+user	0m2.601s  
+sys	0m0.254s  
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y \-c i2 ej/task\_bytecode.yaml   
+YAML to run: ej/task\_bytecode.yaml  
+Launching managed job 'i2'...  
+├── Waiting for task resources on 6 nodes.  
+└── Job started. Streaming logs... (Ctrl-C to exit log streaming; job will not be killed)  
+(head, rank=0, pid=1329) \[rank 0\] started at 1793688846.109701606 on i2-478-48017c75-head  
+(worker5, rank=5, pid=657, ip=10.244.0.32) \[rank 5\] started at 1793688847.115384906 on i2-478-48017c75-worker5  
+(worker3, rank=3, pid=665, ip=10.244.0.29) \[rank 3\] started at 1793688847.231560147 on i2-478-48017c75-worker3  
+(worker1, rank=1, pid=655, ip=10.244.0.30) \[rank 1\] started at 1793688847.321857649 on i2-478-48017c75-worker1  
+(worker2, rank=2, pid=655, ip=10.244.0.28) \[rank 2\] started at 1793688847.399336759 on i2-478-48017c75-worker2  
+(worker4, rank=4, pid=652, ip=10.244.0.31) \[rank 4\] started at 1793688847.598413756 on i2-478-48017c75-worker4  
+✓ Job finished (status: SUCCEEDED).  
+✓ Managed job finished: 478 (status: SUCCEEDED).
+
+📋 Useful Commands  
+Managed Job ID: 478  
+├── To cancel the job:		sky jobs cancel 478  
+├── To stream job logs:		sky jobs logs 478  
+├── To stream controller logs:	sky jobs logs \--controller 478  
+└── To view all managed jobs:	sky jobs queue
+
+real	0m45.767s  
+user	0m2.671s  
+sys	0m0.257s
+
+## Appendix H: Interation 1 and Interation 2: Commit List baselined on master
+
+ej-prj-i2-6 has 23 commits on top of master at 796c5bcc8, all aimed at faster Kubernetes launches for sky launch and sky jobs launch. It's on fork at 407784c57 and isn't merged.
+
+┌──────────────────────┬───────────┬────────────────────────────────────────────────────────────────────────────┐  
+│         Area         │  Commit   │                                   Change                                   │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│ Pods and Ray startup │ 7251606a1 │ Start Ray before preparing SkyPilot in the pod                             │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ ab543979c │ Wait for Ray on the head in one call, and start skylet meanwhile           │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ 863c66883 │ Skip ray stop when no Ray is running                                       │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ c727790d3 │ Pre-install the runtime pins in the image                                  │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ 0c576e860 │ Precompile runtime bytecode in the k8s images                              │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ 1ddcc3240 │ Don't import Ray Serve in ray start                                        │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ 71b3c9213 │ Watch pods between polls while waiting for them to run                     │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│ Managed jobs         │ 04040ba00 │ Notice a short managed job's end sooner                                    │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ 96019e28a │ Check a followed job's status when its controller logs                     │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ 30890119e │ Keep job timestamps exact over gRPC                                        │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ 7db718aa0 │ Get a finished job's end time with its status                              │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ 680e03581 │ Check for a finished job's saved logs every 0.2 s                          │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ d080ff076 │ Get a finished job's log directory with its status                         │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│ Storage              │ dc6c01a92 │ Look up the enabled storage clouds once per request                        │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│ Lost pods            │ b7f871174 │ Don't retry an exec whose target pod is gone                               │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ ee4e69d1a │ Fail setup fast when an instance is lost                                   │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ fab8e57ed │ Smoke test a pod deleted while the cluster is set up                       │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ cd9a21dcc │ Add is\_exec\_target\_gone to the command\_runner stub                         │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│ Benchmark            │ e08dabd78 │ Add a Kubernetes launch latency A/B benchmark                              │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ 6de470672 │ Trim the benchmark's README                                                │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ 08a101ba1 │ Purge stale clusters in the benchmark, and count only good runs            │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ 7e488f558 │ Let the benchmark use a separate task for the candidate                    │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ 407784c57 │ Add ej/bench\_launch\_latency.py (an old copy) and four ej/\*.yaml task files │  
+└──────────────────────┴───────────┴────────────────────────────────────────────────────────────────────────────┘  
