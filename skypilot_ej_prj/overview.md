@@ -19,7 +19,8 @@ Markdown version: [https\://hifiweekly.github.io/skypilot\_ej\_prj/overview.md](
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/reproduce\_benchmarks.py](https://hifiweekly.github.io/skypilot_ej_prj/reproduce_benchmarks.py)
 
 **Read Me:**  
-[https\://hifiweekly.github.io/skypilot\_ej\_prj/README.html](https://hifiweekly.github.io/skypilot_ej_prj/README.html) 
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i2.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i2.html)   
+(iteration 1: [https\://hifiweekly.github.io/skypilot\_ej\_prj/README.html](https://hifiweekly.github.io/skypilot_ej_prj/README.html))
 
 **\- Sample benchmark run:**  
 python ej/reproduce\_benchmarks.py jobs-ab \--nodes 6      \# \~22 min, 8 measured runs per side  
@@ -28,7 +29,7 @@ python ej/reproduce\_benchmarks.py pull-policy \--nodes 6  \# \~5 min
 python ej/reproduce\_benchmarks.py storage-probe          \# \~6 min  
 python ej/reproduce\_benchmarks.py sky-launch-ab \-- run \--candidate-ref ej-prj-3-job1 \--task ej/job.yaml \--runs 5
 
-**Result Table:** [https\://hifiweekly.github.io/skypilot\_ej\_prj/report.html](https://hifiweekly.github.io/skypilot_ej_prj/report.html)
+**Result Table: (Iteration 2\)** [https\://hifiweekly.github.io/skypilot\_ej\_prj/report\_11021730.html](https://hifiweekly.github.io/skypilot_ej_prj/report_11021730.html)
 
 **TL;DR: 6 nodes, medians of 8 interleaved runs per side (range), seconds:**  
 Consult the UML Sequence diagram in SVG for Phase definition and transition: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_i2.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)    
