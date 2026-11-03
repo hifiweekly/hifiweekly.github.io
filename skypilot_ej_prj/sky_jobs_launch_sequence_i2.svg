@@ -1,0 +1,433 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="3526" viewBox="0 0 1800 3526">
+<title>sky jobs launch (6 nodes): ej-prj-i2-3 sequence diagram</title>
+<rect width="1800" height="3526" fill="#ffffff"/>
+<rect x="0" y="3113" width="1800" height="269" fill="#ffffff"/>
+<rect x="0" y="2718" width="1800" height="395" fill="#f8fafc"/>
+<rect x="0" y="2383" width="1800" height="335" fill="#ffffff"/>
+<rect x="0" y="1951" width="1800" height="432" fill="#f8fafc"/>
+<rect x="0" y="739" width="1800" height="1212" fill="#ffffff"/>
+<rect x="0" y="581" width="1800" height="158" fill="#f8fafc"/>
+<rect x="0" y="220" width="1800" height="361" fill="#ffffff"/>
+<line x1="0" y1="220" x2="1800" y2="220" stroke="#e5e7eb"/>
+<rect x="10" y="230" width="4" height="341" rx="2" fill="#6b7280"/>
+<text x="22.0" y="250.0" font-size="22" fill="#6b7280" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">A</text>
+<text x="22.0" y="272.0" font-size="12.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Submit request</text>
+<text x="22.0" y="296.0" font-size="12.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">7.0 s</text>
+<text x="22.0" y="314.0" font-size="13" fill="#6b7280" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">→ 7.2 s</text>
+<text x="22.0" y="332.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">p = 0.40</text>
+<line x1="0" y1="581" x2="1800" y2="581" stroke="#e5e7eb"/>
+<rect x="10" y="591" width="4" height="138" rx="2" fill="#15803d"/>
+<text x="22.0" y="611.0" font-size="22" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">B+C</text>
+<text x="22.0" y="633.0" font-size="12.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Hand-off to</text>
+<text x="22.0" y="649.0" font-size="12.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">controller</text>
+<text x="22.0" y="673.0" font-size="12.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">6.4 s</text>
+<text x="22.0" y="691.0" font-size="13" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">→ 5.2 s</text>
+<text x="22.0" y="709.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">p = 0.020</text>
+<line x1="0" y1="739" x2="1800" y2="739" stroke="#e5e7eb"/>
+<rect x="10" y="749" width="4" height="1192" rx="2" fill="#15803d"/>
+<text x="22.0" y="769.0" font-size="22" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">D</text>
+<text x="22.0" y="791.0" font-size="12.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Provision → job</text>
+<text x="22.0" y="807.0" font-size="12.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">submitted</text>
+<text x="22.0" y="831.0" font-size="12.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">30.4 s</text>
+<text x="22.0" y="849.0" font-size="13" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">→ 14.6 s</text>
+<text x="22.0" y="867.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">p = 0.0002</text>
+<line x1="0" y1="1951" x2="1800" y2="1951" stroke="#e5e7eb"/>
+<rect x="10" y="1961" width="4" height="412" rx="2" fill="#15803d"/>
+<text x="22.0" y="1981.0" font-size="22" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">E</text>
+<text x="22.0" y="2003.0" font-size="12.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Job runs</text>
+<text x="22.0" y="2027.0" font-size="12.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">8.9 s</text>
+<text x="22.0" y="2045.0" font-size="13" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">→ 6.6 s</text>
+<text x="22.0" y="2063.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">p = 0.039</text>
+<line x1="0" y1="2383" x2="1800" y2="2383" stroke="#e5e7eb"/>
+<rect x="10" y="2393" width="4" height="315" rx="2" fill="#15803d"/>
+<text x="22.0" y="2413.0" font-size="22" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">F</text>
+<text x="22.0" y="2435.0" font-size="12.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Job end → RUNNING</text>
+<text x="22.0" y="2459.0" font-size="12.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">3.3 s</text>
+<text x="22.0" y="2477.0" font-size="13" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">→ 2.4 s</text>
+<text x="22.0" y="2495.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">p = 0.003</text>
+<line x1="0" y1="2718" x2="1800" y2="2718" stroke="#e5e7eb"/>
+<rect x="10" y="2728" width="4" height="375" rx="2" fill="#6b7280"/>
+<text x="22.0" y="2748.0" font-size="22" fill="#6b7280" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">G</text>
+<text x="22.0" y="2770.0" font-size="12.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">RUNNING →</text>
+<text x="22.0" y="2786.0" font-size="12.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">SUCCEEDED</text>
+<text x="22.0" y="2810.0" font-size="12.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">9.9 s</text>
+<text x="22.0" y="2828.0" font-size="13" fill="#6b7280" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">→ 3.3 s</text>
+<text x="22.0" y="2846.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">p = 0.070</text>
+<line x1="0" y1="3113" x2="1800" y2="3113" stroke="#e5e7eb"/>
+<rect x="10" y="3123" width="4" height="249" rx="2" fill="#15803d"/>
+<text x="22.0" y="3143.0" font-size="22" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">H</text>
+<text x="22.0" y="3165.0" font-size="12.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">SUCCEEDED → client</text>
+<text x="22.0" y="3181.0" font-size="12.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">exits</text>
+<text x="22.0" y="3205.0" font-size="12.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">3.1 s</text>
+<text x="22.0" y="3223.0" font-size="13" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">→ 2.6 s</text>
+<text x="22.0" y="3241.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">p = 0.038</text>
+<line x1="250" y1="200" x2="250" y2="3382" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="6 5"/>
+<line x1="440" y1="200" x2="440" y2="3382" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="6 5"/>
+<line x1="630" y1="200" x2="630" y2="3382" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="6 5"/>
+<line x1="820" y1="200" x2="820" y2="3382" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="6 5"/>
+<line x1="1010" y1="200" x2="1010" y2="3382" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="6 5"/>
+<line x1="1190" y1="200" x2="1190" y2="3382" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="6 5"/>
+<rect x="435" y="523" width="10" height="2839" fill="#e5e7eb" stroke="#6b7280" stroke-width="1"/>
+<rect x="625" y="611" width="10" height="2486" fill="#e5e7eb" stroke="#6b7280" stroke-width="1"/>
+<rect x="815" y="708" width="10" height="1663" fill="#e5e7eb" stroke="#6b7280" stroke-width="1"/>
+<rect x="1005" y="1067" width="10" height="1583" fill="#e5e7eb" stroke="#6b7280" stroke-width="1"/>
+<rect x="734" y="1535" width="362" height="269" fill="none" stroke="#6b7280" stroke-width="1.1" rx="3"/>
+<path d="M734,1535 h39.5 v12 l-8,8 h-31.5 z" fill="#e5e7eb" stroke="#6b7280" stroke-width="1.1"/>
+<text x="740.0" y="1550.0" font-size="11.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">par</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="781.5" y="1550.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="italic" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">[Ray wait ‖ skylet]</text>
+<line x1="734" y1="1745" x2="1096" y2="1745" stroke="#6b7280" stroke-dasharray="5 4"/>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="742.0" y="1760.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="italic" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">[thread]</text>
+<rect x="534" y="2748" width="192" height="176" fill="none" stroke="#6b7280" stroke-width="1.1" rx="3"/>
+<path d="M534,2748 h39.5 v12 l-8,8 h-31.5 z" fill="#e5e7eb" stroke="#6b7280" stroke-width="1.1"/>
+<text x="540.0" y="2763.0" font-size="11.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">alt</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="581.5" y="2763.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="italic" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">[status seen at launch is terminal]</text>
+<line x1="534" y1="2862" x2="726" y2="2862" stroke="#6b7280" stroke-dasharray="5 4"/>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="542.0" y="2877.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="italic" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">[else]</text>
+<rect x="352" y="3143" width="366" height="176" fill="none" stroke="#6b7280" stroke-width="1.1" rx="3"/>
+<path d="M352,3143 h47.0 v12 l-8,8 h-39.0 z" fill="#e5e7eb" stroke="#6b7280" stroke-width="1.1"/>
+<text x="358.0" y="3158.0" font-size="11.5" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">loop</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="407.0" y="3158.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="italic" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">[every 1 s, since tail_logs]</text>
+<path d="M528.0,3239.0 C909.5,3239.0 909.5,3239.0 1295,3239.0" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M1014,2963 C1152.5,2963 1152.5,2963 1295,2963" fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M718.0,2789.0 C1004.5,2789.0 1004.5,2789.0 1295,2789.0" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M1014,2434 C1152.5,2434 1152.5,2571 1295,2571" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M1014,2434 C1152.5,2434 1152.5,2434 1295,2434" fill="none" stroke="#0891b2" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M1279.0,2138.0 C1285.0,2138.0 1285.0,2223 1295,2223" fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M1279.0,2138.0 C1285.0,2138.0 1285.0,2138.0 1295,2138.0" fill="none" stroke="#dc2626" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M1014,1897 C1152.5,1897 1152.5,1897 1295,1897" fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M1014,1599 C1152.5,1599 1152.5,1679 1295,1679" fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M1014,1599 C1152.5,1599 1152.5,1625 1295,1625" fill="none" stroke="#15803d" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M1014,1599 C1152.5,1599 1152.5,1597 1295,1597" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M1014,1479 C1152.5,1479 1152.5,1479 1295,1479" fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M1279,1144.0 C1285.0,1144.0 1285.0,1377 1295,1377" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M1279,1144.0 C1285.0,1144.0 1285.0,1227 1295,1227" fill="none" stroke="#7c3aed" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M1279,1144.0 C1285.0,1144.0 1285.0,1144.0 1295,1144.0" fill="none" stroke="#dc2626" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M910,868.0 C1100.5,868.0 1100.5,985 1295,985" fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M910,868.0 C1100.5,868.0 1100.5,868.0 1295,868.0" fill="none" stroke="#2563eb" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M718.0,632.0 C1004.5,632.0 1004.5,632.0 1295,632.0" fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<path d="M532.0,318.0 C911.5,318.0 911.5,318.0 1295,318.0" fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>
+<rect x="168" y="156" width="164" height="44" rx="6" fill="#f3f4f6" stroke="#374151" stroke-width="1.3"/>
+<text x="250.0" y="175.0" font-size="13" fill="#111827" text-anchor="middle" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">CLI client</text>
+<text x="250.0" y="191.0" font-size="10.5" fill="#4b5563" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">sky jobs launch</text>
+<rect x="358" y="156" width="164" height="44" rx="6" fill="#f3f4f6" stroke="#374151" stroke-width="1.3"/>
+<text x="440.0" y="175.0" font-size="13" fill="#111827" text-anchor="middle" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">API server</text>
+<text x="440.0" y="191.0" font-size="10.5" fill="#4b5563" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">jobs.launch / tail_logs</text>
+<rect x="548" y="156" width="164" height="44" rx="6" fill="#f3f4f6" stroke="#374151" stroke-width="1.3"/>
+<text x="630.0" y="175.0" font-size="13" fill="#111827" text-anchor="middle" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Jobs controller</text>
+<text x="630.0" y="191.0" font-size="10.5" fill="#4b5563" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">in-process (consolidation)</text>
+<rect x="738" y="156" width="164" height="44" rx="6" fill="#f3f4f6" stroke="#374151" stroke-width="1.3"/>
+<text x="820.0" y="175.0" font-size="13" fill="#111827" text-anchor="middle" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Provisioner</text>
+<text x="820.0" y="191.0" font-size="10.5" fill="#4b5563" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">sky.launch → provisioner.py</text>
+<rect x="928" y="156" width="164" height="44" rx="6" fill="#f3f4f6" stroke="#374151" stroke-width="1.3"/>
+<text x="1010.0" y="175.0" font-size="13" fill="#111827" text-anchor="middle" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Head pod</text>
+<text x="1010.0" y="191.0" font-size="10.5" fill="#4b5563" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">startup script · Ray · skylet</text>
+<rect x="1108" y="156" width="164" height="44" rx="6" fill="#f3f4f6" stroke="#374151" stroke-width="1.3"/>
+<text x="1190.0" y="175.0" font-size="13" fill="#111827" text-anchor="middle" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Worker pods ×5</text>
+<text x="1190.0" y="191.0" font-size="10.5" fill="#4b5563" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">startup script · Ray</text>
+<rect x="1295" y="156" width="485" height="44" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-dasharray="4 3"/>
+<text x="1537.5" y="175.0" font-size="13" fill="#111827" text-anchor="middle" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">What changed at this step</text>
+<text x="1537.5" y="191.0" font-size="10.5" fill="#4b5563" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">the 4 new commits, then what is left</text>
+<text x="81.0" y="175.0" font-size="13" fill="#111827" text-anchor="middle" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Phase</text>
+<text x="81.0" y="191.0" font-size="10.5" fill="#4b5563" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">base → i2-3 (median)</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="345.0" y="262.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">POST jobs.launch(dag)</text>
+<line x1="255" y1="271" x2="433" y2="271" stroke="#111827" stroke-width="1.6"/>
+<path d="M435,271 l-10,-5 l0,10 z" fill="#111827"/>
+<rect x="352.0" y="289" width="176" height="58" rx="5" fill="#ffffff" stroke="#111827" stroke-width="1.4"/>
+<text x="440.0" y="307.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">optimize · translate mounts</text>
+<text x="440.0" y="323.0" font-size="11.5" fill="#d97706" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">storage lookup ×2:</text>
+<text x="440.0" y="339.0" font-size="11.5" fill="#d97706" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">first: ≈4.7 s, later 1.1 s</text>
+<rect x="1295" y="283" width="485" height="94" rx="6" fill="#f9fafb" stroke="#d97706" stroke-width="1.2"/>
+<rect x="1295" y="283" width="5" height="94" rx="2" fill="#d97706"/>
+<text x="1311.0" y="302.0" font-size="11" fill="#d97706" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">not changed yet</text>
+<text x="1429.0" y="302.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">the first storage lookup</text>
+<text x="1311.0" y="321.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">An empty result means "not checked", so each jobs.launch re-runs the</text>
+<text x="1311.0" y="337.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">check. The phase numbers here date from when it took ≈4.7 s. A later</text>
+<text x="1311.0" y="353.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">profile found 1.1 s and phase A at 3.5 s, nearly all GCP with expired</text>
+<text x="1311.0" y="369.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">credentials. Why it changed is not confirmed.</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="535.0" y="403.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">_submit_locally: add job row,</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="535.0" y="418.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">scheduler → WAITING</text>
+<line x1="445" y1="427" x2="623" y2="427" stroke="#111827" stroke-width="1.6"/>
+<path d="M625,427 l-10,-5 l0,10 z" fill="#111827"/>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="345.0" y="457.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">job id</text>
+<line x1="435" y1="466" x2="257" y2="466" stroke="#111827" stroke-width="1.6" stroke-dasharray="6 4"/>
+<path d="M255,466 l10,-5 l0,10 z" fill="#111827"/>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="345.0" y="496.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">tail_logs(follow=True)</text>
+<line x1="255" y1="505" x2="433" y2="505" stroke="#111827" stroke-width="1.6"/>
+<path d="M435,505 l-10,-5 l0,10 z" fill="#111827"/>
+<rect x="356.0" y="523" width="168" height="42" rx="5" fill="#ffffff" stroke="#111827" stroke-width="1.4"/>
+<text x="440.0" y="541.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">follower starts:</text>
+<text x="440.0" y="557.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">_stream_logs_by_id</text>
+<rect x="546.0" y="611" width="168" height="42" rx="5" fill="#ffffff" stroke="#111827" stroke-width="1.4"/>
+<text x="630.0" y="629.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">scheduler starts job</text>
+<text x="630.0" y="645.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">status → STARTING</text>
+<rect x="1295" y="605" width="485" height="46" rx="6" fill="#f9fafb" stroke="#d97706" stroke-width="1.2"/>
+<rect x="1295" y="605" width="5" height="46" rx="2" fill="#d97706"/>
+<text x="1311.0" y="624.0" font-size="11" fill="#d97706" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">not changed yet</text>
+<text x="1429.0" y="624.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">no change aimed at this step</text>
+<text x="1311.0" y="643.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">It fell 1.2 s anyway. This run does not show why.</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="725.0" y="681.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">sky.launch(task, cluster)</text>
+<line x1="635" y1="690" x2="813" y2="690" stroke="#111827" stroke-width="1.6"/>
+<path d="M815,690 l-10,-5 l0,10 z" fill="#111827"/>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="915.0" y="781.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">create head pod</text>
+<line x1="825" y1="790" x2="1003" y2="790" stroke="#111827" stroke-width="1.6"/>
+<path d="M1005,790 l-10,-5 l0,10 z" fill="#111827"/>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="1005.0" y="820.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">create 5 worker pods</text>
+<line x1="825" y1="829" x2="1183" y2="829" stroke="#111827" stroke-width="1.6"/>
+<path d="M1185,829 l-10,-5 l0,10 z" fill="#111827"/>
+<rect x="734.0" y="847" width="172" height="42" rx="5" fill="#ffffff" stroke="#111827" stroke-width="1.4"/>
+<text x="820.0" y="865.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">poll pods every 1 s</text>
+<text x="820.0" y="881.0" font-size="11.5" fill="#2563eb" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">watch between polls</text>
+<rect x="1295" y="841" width="485" height="126" rx="6" fill="#ffffff" stroke="#2563eb" stroke-width="1.2"/>
+<rect x="1295" y="841" width="5" height="126" rx="2" fill="#2563eb"/>
+<text x="1311.0" y="860.0" font-size="11" fill="#2563eb" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">16738238e</text>
+<text x="1385.8" y="860.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">watch pods between polls</text>
+<text x="1311.0" y="879.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Before</text>
+<text x="1367.0" y="879.0" font-size="12" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">time.sleep(1) between polls: about 0.5 s lost on average after</text>
+<text x="1367.0" y="895.0" font-size="12" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">the last pod started.</text>
+<text x="1311.0" y="911.0" font-size="11.5" fill="#2563eb" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Now</text>
+<text x="1367.0" y="911.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">A Kubernetes watch ends the wait once every waiting pod runs</text>
+<text x="1367.0" y="927.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">or one is going away. The poll still decides; a watch failure</text>
+<text x="1367.0" y="943.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">falls back to sleeping.</text>
+<text x="1311.0" y="959.0" font-size="11.5" fill="#2563eb" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Gain</text>
+<text x="1367.0" y="959.0" font-size="12" fill="#2563eb" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Last container → noticed 0.70 → 0.16 s (p = 0.0061).</text>
+<rect x="1295" y="975" width="485" height="78" rx="6" fill="#f9fafb" stroke="#d97706" stroke-width="1.2"/>
+<rect x="1295" y="975" width="5" height="78" rx="2" fill="#d97706"/>
+<text x="1311.0" y="994.0" font-size="11" fill="#d97706" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">not changed yet</text>
+<text x="1429.0" y="994.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">serial pull checks with imagePullPolicy: Always</text>
+<text x="1311.0" y="1013.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">On one kind node, the kubelet ran 6 pull checks in turn: 3.41 s in an</text>
+<text x="1311.0" y="1029.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">earlier trace. Not in this run, since both arms used IfNotPresent.</text>
+<text x="1311.0" y="1045.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Pods: 2.75 → 1.95 s.</text>
+<rect x="1105.0" y="1107" width="170" height="58" rx="5" fill="#ffffff" stroke="#111827" stroke-width="1.4"/>
+<text x="1190.0" y="1125.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">wait for head GCS port</text>
+<text x="1190.0" y="1141.0" font-size="11.5" fill="#64748b" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">ray stop only if Ray runs</text>
+<text x="1190.0" y="1157.0" font-size="11.5" fill="#dc2626" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">ray start: .pyc, no Serve</text>
+<rect x="922.0" y="1067" width="176" height="154" rx="5" fill="#ffffff" stroke="#111827" stroke-width="1.4"/>
+<text x="1010.0" y="1085.0" font-size="11.5" fill="#64748b" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">ray install + pins (checked)</text>
+<text x="1010.0" y="1101.0" font-size="11.5" fill="#7c3aed" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">apply patches: find_spec</text>
+<text x="1010.0" y="1117.0" font-size="11.5" fill="#64748b" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">ray stop only if Ray runs</text>
+<text x="1010.0" y="1133.0" font-size="11.5" fill="#64748b" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">ray start --head  &amp;</text>
+<text x="1010.0" y="1149.0" font-size="11.5" fill="#dc2626" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">  imports from .pyc</text>
+<text x="1010.0" y="1165.0" font-size="11.5" fill="#7c3aed" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">  no Ray Serve import</text>
+<text x="1010.0" y="1181.0" font-size="11.5" fill="#64748b" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">uv pip install --dry-run</text>
+<text x="1010.0" y="1197.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">touch install-complete marker</text>
+<text x="1010.0" y="1213.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">wait for ray start</text>
+<rect x="1295" y="1067" width="485" height="142" rx="6" fill="#ffffff" stroke="#dc2626" stroke-width="1.2"/>
+<rect x="1295" y="1067" width="5" height="142" rx="2" fill="#dc2626"/>
+<text x="1311.0" y="1086.0" font-size="11" fill="#dc2626" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">cab8b302a</text>
+<text x="1385.8" y="1086.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">precompile bytecode in the image</text>
+<text x="1311.0" y="1105.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Before</text>
+<text x="1367.0" y="1105.0" font-size="12" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">uv skips bytecode by default, so every pod compiled Ray on</text>
+<text x="1367.0" y="1121.0" font-size="12" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">first import, on every node.</text>
+<text x="1311.0" y="1137.0" font-size="11.5" fill="#dc2626" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Now</text>
+<text x="1367.0" y="1137.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Dockerfile_k8s(_gpu) installs with --compile-bytecode. 9,995</text>
+<text x="1367.0" y="1153.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">.pyc files in the image, compiled at build time.</text>
+<text x="1311.0" y="1169.0" font-size="11.5" fill="#dc2626" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Gain</text>
+<text x="1367.0" y="1169.0" font-size="12" fill="#dc2626" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">sky launch 34.90 → 26.25 s, alone (p = 0.0002).</text>
+<text x="1311.0" y="1185.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Cost: 160 MB larger on disk, 34 MB larger compressed. Applies once a</text>
+<text x="1311.0" y="1201.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">rebuilt image is published.</text>
+<rect x="1295" y="1217" width="485" height="142" rx="6" fill="#ffffff" stroke="#7c3aed" stroke-width="1.2"/>
+<rect x="1295" y="1217" width="5" height="142" rx="2" fill="#7c3aed"/>
+<text x="1311.0" y="1236.0" font-size="11" fill="#7c3aed" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">0038650ac</text>
+<text x="1385.8" y="1236.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">do not import Ray Serve in ray start</text>
+<text x="1311.0" y="1255.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Before</text>
+<text x="1367.0" y="1255.0" font-size="12" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">ray start imported ray.serve.scripts just to register a</text>
+<text x="1367.0" y="1271.0" font-size="12" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">command, pulling in pandas and FastAPI on every pod.</text>
+<text x="1311.0" y="1287.0" font-size="11.5" fill="#7c3aed" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Now</text>
+<text x="1367.0" y="1287.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">A Ray patch registers `ray serve` lazily. apply_patches.py</text>
+<text x="1367.0" y="1303.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">finds files with find_spec, so it does not import Serve</text>
+<text x="1367.0" y="1319.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">either.</text>
+<text x="1311.0" y="1335.0" font-size="11.5" fill="#7c3aed" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Gain</text>
+<text x="1367.0" y="1335.0" font-size="12" fill="#7c3aed" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">With the watch: GCS first log 5.82 → 3.37 s, last raylet 14.22</text>
+<text x="1367.0" y="1351.0" font-size="12" fill="#7c3aed" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">→ 11.77 s (both p ≤ 0.0005).</text>
+<rect x="1295" y="1367" width="485" height="62" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.2"/>
+<rect x="1295" y="1367" width="5" height="62" rx="2" fill="#64748b"/>
+<text x="1311.0" y="1386.0" font-size="11" fill="#64748b" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">earlier</text>
+<text x="1371.4" y="1386.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">ej-prj-0, ej-prj-3</text>
+<text x="1311.0" y="1405.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Ray starts before SkyPilot is prepared; pins pre-installed in the</text>
+<text x="1311.0" y="1421.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">image; ray stop runs only if Ray is running.</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="915.0" y="1455.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">file mounts · runtime setup</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="915.0" y="1470.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">(cluster wheel install)</text>
+<line x1="825" y1="1479" x2="1003" y2="1479" stroke="#111827" stroke-width="1.6"/>
+<path d="M1005,1479 l-10,-5 l0,10 z" fill="#111827"/>
+<rect x="1295" y="1443" width="485" height="78" rx="6" fill="#f9fafb" stroke="#d97706" stroke-width="1.2"/>
+<rect x="1295" y="1443" width="5" height="78" rx="2" fill="#d97706"/>
+<text x="1311.0" y="1462.0" font-size="11" fill="#d97706" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">not changed yet</text>
+<text x="1429.0" y="1462.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">the setup stall</text>
+<text x="1311.0" y="1481.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Setup 3.60 (1.6–17.5) → 1.82 (1.4–2.3) s. uv --dry-run holds the venv</text>
+<text x="1311.0" y="1497.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">lock while it waits on PyPI, and the install queues behind it. Not</text>
+<text x="1311.0" y="1513.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">fixed: the calmer range may be PyPI that night.</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="915.0" y="1575.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">one blocking kubectl exec:</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="915.0" y="1590.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">GCS alive == 6? every 0.2 s</text>
+<line x1="825" y1="1599" x2="1003" y2="1599" stroke="#111827" stroke-width="1.6"/>
+<path d="M1005,1599 l-10,-5 l0,10 z" fill="#111827"/>
+<rect x="1295" y="1561" width="485" height="46" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.2"/>
+<rect x="1295" y="1561" width="5" height="46" rx="2" fill="#64748b"/>
+<text x="1311.0" y="1580.0" font-size="11" fill="#64748b" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">earlier</text>
+<text x="1371.4" y="1580.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">ej-prj-1</text>
+<text x="1311.0" y="1599.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">One blocking Ray wait, with skylet started alongside it.</text>
+<rect x="1295" y="1615" width="485" height="46" rx="6" fill="#ffffff" stroke="#15803d" stroke-width="1.2"/>
+<rect x="1295" y="1615" width="5" height="46" rx="2" fill="#15803d"/>
+<text x="1311.0" y="1634.0" font-size="11" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">all changes</text>
+<text x="1400.2" y="1634.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">where the big drop shows up</text>
+<text x="1311.0" y="1653.0" font-size="11.5" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Gain</text>
+<text x="1367.0" y="1653.0" font-size="12" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Ray wait + skylet 16.28 → 4.33 s, the largest stage gain.</text>
+<rect x="1295" y="1669" width="485" height="62" rx="6" fill="#f9fafb" stroke="#d97706" stroke-width="1.2"/>
+<rect x="1295" y="1669" width="5" height="62" rx="2" fill="#d97706"/>
+<text x="1311.0" y="1688.0" font-size="11" fill="#d97706" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">not changed yet</text>
+<text x="1429.0" y="1688.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">skylet start</text>
+<text x="1311.0" y="1707.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Skylet alone went 1.60 → 2.46 s. Fork commit b7eff791e targets it, and</text>
+<text x="1311.0" y="1723.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">is not included.</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="915.0" y="1781.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">start skylet</text>
+<line x1="825" y1="1790" x2="1003" y2="1790" stroke="#111827" stroke-width="1.6"/>
+<path d="M1005,1790 l-10,-5 l0,10 z" fill="#111827"/>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="915.0" y="1834.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">SKY_RAY_WAIT_DONE</text>
+<line x1="1005" y1="1843" x2="827" y2="1843" stroke="#111827" stroke-width="1.6" stroke-dasharray="6 4"/>
+<path d="M825,1843 l10,-5 l0,10 z" fill="#111827"/>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="915.0" y="1873.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">set_autostop · add_job</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="915.0" y="1888.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">(2 kubectl exec)</text>
+<line x1="825" y1="1897" x2="1003" y2="1897" stroke="#111827" stroke-width="1.6"/>
+<path d="M1005,1897 l-10,-5 l0,10 z" fill="#111827"/>
+<rect x="1295" y="1859" width="485" height="78" rx="6" fill="#f9fafb" stroke="#d97706" stroke-width="1.2"/>
+<rect x="1295" y="1859" width="5" height="78" rx="2" fill="#d97706"/>
+<text x="1311.0" y="1878.0" font-size="11" fill="#d97706" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">not changed yet</text>
+<text x="1429.0" y="1878.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">each head call is a new exec + Python</text>
+<text x="1311.0" y="1897.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Launched → submitted 3.85 → 3.34 s. An earlier trace: set_autostop</text>
+<text x="1311.0" y="1913.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">2.25 s, add_job 1.39 s.</text>
+<text x="1311.0" y="1929.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Next</text>
+<text x="1367.0" y="1929.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">gRPC (off by default): add_job 1.68 → 0.07 s.</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="915.0" y="1993.0" font-size="12" fill="#d97706" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">queue job (kubectl exec)</text>
+<line x1="825" y1="2002" x2="1003" y2="2002" stroke="#d97706" stroke-width="1.6"/>
+<path d="M1005,2002 l-10,-5 l0,10 z" fill="#d97706"/>
+<rect x="922.0" y="2020" width="176" height="42" rx="5" fill="#ffffff" stroke="#111827" stroke-width="1.4"/>
+<text x="1010.0" y="2038.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">driver: imports · ray.init</text>
+<text x="1010.0" y="2054.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">placement group · check IP</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="1100.0" y="2090.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">run task on each node</text>
+<line x1="1015" y1="2099" x2="1183" y2="2099" stroke="#111827" stroke-width="1.6"/>
+<path d="M1185,2099 l-10,-5 l0,10 z" fill="#111827"/>
+<rect x="1105.0" y="2117" width="170" height="42" rx="5" fill="#ffffff" stroke="#111827" stroke-width="1.4"/>
+<text x="1190.0" y="2135.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">load task function</text>
+<text x="1190.0" y="2151.0" font-size="11.5" fill="#dc2626" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">imports from .pyc</text>
+<rect x="1295" y="2111" width="485" height="94" rx="6" fill="#ffffff" stroke="#dc2626" stroke-width="1.2"/>
+<rect x="1295" y="2111" width="5" height="94" rx="2" fill="#dc2626"/>
+<text x="1311.0" y="2130.0" font-size="11" fill="#dc2626" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">cab8b302a</text>
+<text x="1385.8" y="2130.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">bytecode also helps the job itself</text>
+<text x="1311.0" y="2149.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Before</text>
+<text x="1367.0" y="2149.0" font-size="12" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Published image trace, first job: 8.32 s, of which the slowest</text>
+<text x="1367.0" y="2165.0" font-size="12" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">node loading the task function took 3.63 s.</text>
+<text x="1311.0" y="2181.0" font-size="11.5" fill="#dc2626" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Gain</text>
+<text x="1367.0" y="2181.0" font-size="12" fill="#dc2626" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">E fell 2.2 s with gRPC off. This run does not split it by</text>
+<text x="1367.0" y="2197.0" font-size="12" fill="#dc2626" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">commit, so bytecode is the likely cause, not a proven one.</text>
+<rect x="1295" y="2213" width="485" height="78" rx="6" fill="#f9fafb" stroke="#d97706" stroke-width="1.2"/>
+<rect x="1295" y="2213" width="5" height="78" rx="2" fill="#d97706"/>
+<text x="1311.0" y="2232.0" font-size="11" fill="#d97706" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">not changed yet</text>
+<text x="1429.0" y="2232.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">the queue call and worker imports</text>
+<text x="1311.0" y="2251.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Queue → driver took 1.82 s in that trace, nearly all of it the kubectl</text>
+<text x="1311.0" y="2267.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">exec. Workers also import sky modules for the task.</text>
+<text x="1311.0" y="2283.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Next</text>
+<text x="1367.0" y="2283.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">gRPC: queue 1.71 → 0.04 s. Drop sky imports on workers.</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="1100.0" y="2317.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">echo finishes</text>
+<line x1="1185" y1="2326" x2="1017" y2="2326" stroke="#111827" stroke-width="1.6" stroke-dasharray="6 4"/>
+<path d="M1015,2326 l10,-5 l0,10 z" fill="#111827"/>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="725.0" y="2356.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">returns (job_id, handle)</text>
+<line x1="815" y1="2365" x2="637" y2="2365" stroke="#111827" stroke-width="1.6" stroke-dasharray="6 4"/>
+<path d="M635,2365 l10,-5 l0,10 z" fill="#111827"/>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="820.0" y="2425.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">get_job_status_and_submitted_timestamp</text>
+<line x1="635" y1="2434" x2="1003" y2="2434" stroke="#111827" stroke-width="1.6"/>
+<path d="M1005,2434 l-10,-5 l0,10 z" fill="#111827"/>
+<rect x="1295" y="2411" width="485" height="142" rx="6" fill="#ffffff" stroke="#0891b2" stroke-width="1.2"/>
+<rect x="1295" y="2411" width="5" height="142" rx="2" fill="#0891b2"/>
+<text x="1311.0" y="2430.0" font-size="11" fill="#0891b2" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">a84ddc783</text>
+<text x="1385.8" y="2430.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">keep job timestamps exact over gRPC</text>
+<text x="1311.0" y="2449.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Before</text>
+<text x="1367.0" y="2449.0" font-size="12" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">A protobuf float holds a current Unix time only to the nearest</text>
+<text x="1367.0" y="2465.0" font-size="12" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">128 s. With gRPC on, a short job's duration was 0 s.</text>
+<text x="1311.0" y="2481.0" font-size="11.5" fill="#0891b2" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Now</text>
+<text x="1367.0" y="2481.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">New optional double field; a skylet without it falls back to</text>
+<text x="1367.0" y="2497.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">the head command. SKYLET_VERSION 43 → 44.</text>
+<text x="1311.0" y="2513.0" font-size="11.5" fill="#0891b2" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Gain</text>
+<text x="1367.0" y="2513.0" font-size="12" fill="#0891b2" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">None here, since gRPC is off. A correctness fix: durations</text>
+<text x="1367.0" y="2529.0" font-size="12" fill="#0891b2" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">0.00 → 6.32–6.82 s with gRPC on, which removes a blocker to</text>
+<text x="1367.0" y="2545.0" font-size="12" fill="#0891b2" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">enabling it. gRPC wall time 48.8 → 45.6 s (p = 0.052).</text>
+<rect x="1295" y="2561" width="485" height="46" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.2"/>
+<rect x="1295" y="2561" width="5" height="46" rx="2" fill="#64748b"/>
+<text x="1311.0" y="2580.0" font-size="11" fill="#64748b" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">earlier</text>
+<text x="1371.4" y="2580.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">ej-prj-job0</text>
+<text x="1311.0" y="2599.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Status and submitted-at come from one head command.</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="820.0" y="2633.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">status = SUCCEEDED, submitted_at</text>
+<line x1="1005" y1="2642" x2="637" y2="2642" stroke="#111827" stroke-width="1.6" stroke-dasharray="6 4"/>
+<path d="M635,2642 l10,-5 l0,10 z" fill="#111827"/>
+<rect x="546.0" y="2660" width="168" height="42" rx="5" fill="#ffffff" stroke="#111827" stroke-width="1.4"/>
+<text x="630.0" y="2678.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">status → RUNNING</text>
+<text x="630.0" y="2694.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">logs "Job started"</text>
+<rect x="546.0" y="2776" width="168" height="26" rx="5" fill="#ffffff" stroke="#111827" stroke-width="1.4"/>
+<text x="630.0" y="2794.0" font-size="11.5" fill="#64748b" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">first check now</text>
+<rect x="1295" y="2770" width="485" height="78" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.2"/>
+<rect x="1295" y="2770" width="5" height="78" rx="2" fill="#64748b"/>
+<text x="1311.0" y="2789.0" font-size="11" fill="#64748b" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">earlier</text>
+<text x="1371.4" y="2789.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">ej-prj-job0</text>
+<text x="1311.0" y="2808.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Skip the uniform(0, 15) s sleep for a job already seen finished. Base</text>
+<text x="1311.0" y="2824.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">3.7–16.1 s; i2-3 is 3.2–3.3 s in 7 of 8 runs, and candidate_b2_1 took</text>
+<text x="1311.0" y="2840.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">17.0 s (not investigated).</text>
+<rect x="546.0" y="2886" width="168" height="26" rx="5" fill="#ffffff" stroke="#111827" stroke-width="1.4"/>
+<text x="630.0" y="2904.0" font-size="11.5" fill="#4b5563" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">sleep uniform(0, 15) s</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="820.0" y="2954.0" font-size="12" fill="#d97706" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">get job status · end time</text>
+<line x1="635" y1="2963" x2="1003" y2="2963" stroke="#d97706" stroke-width="1.6"/>
+<path d="M1005,2963 l-10,-5 l0,10 z" fill="#d97706"/>
+<rect x="1295" y="2940" width="485" height="62" rx="6" fill="#f9fafb" stroke="#d97706" stroke-width="1.2"/>
+<rect x="1295" y="2940" width="5" height="62" rx="2" fill="#d97706"/>
+<text x="1311.0" y="2959.0" font-size="11" fill="#d97706" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">not changed yet</text>
+<text x="1429.0" y="2959.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">still two head commands</text>
+<text x="1311.0" y="2978.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Next</text>
+<text x="1367.0" y="2978.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Reuse the terminal status seen at launch and fetch the end</text>
+<text x="1367.0" y="2994.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">time with it.</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="820.0" y="3028.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">SUCCEEDED, end_at</text>
+<line x1="1005" y1="3037" x2="637" y2="3037" stroke="#111827" stroke-width="1.6" stroke-dasharray="6 4"/>
+<path d="M635,3037 l10,-5 l0,10 z" fill="#111827"/>
+<rect x="546.0" y="3055" width="168" height="42" rx="5" fill="#ffffff" stroke="#111827" stroke-width="1.4"/>
+<text x="630.0" y="3073.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">status → SUCCEEDED</text>
+<text x="630.0" y="3089.0" font-size="11.5" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">logs "succeeded"</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="535.0" y="3183.0" font-size="12" fill="#4b5563" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">read &lt;job_id&gt;.log</text>
+<line x1="445" y1="3192" x2="623" y2="3192" stroke="#4b5563" stroke-width="1.6" stroke-dasharray="6 4"/>
+<path d="M625,3192 l-10,-5 l0,10 z" fill="#4b5563"/>
+<rect x="356.0" y="3210" width="168" height="58" rx="5" fill="#ffffff" stroke="#111827" stroke-width="1.4"/>
+<text x="440.0" y="3228.0" font-size="11.5" fill="#64748b" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">controller logged a</text>
+<text x="440.0" y="3244.0" font-size="11.5" fill="#64748b" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">plain line? → check</text>
+<text x="440.0" y="3260.0" font-size="11.5" fill="#4b5563" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">else every 15 s</text>
+<rect x="1295" y="3204" width="485" height="62" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.2"/>
+<rect x="1295" y="3204" width="5" height="62" rx="2" fill="#64748b"/>
+<text x="1311.0" y="3223.0" font-size="11" fill="#64748b" text-anchor="start" font-weight="bold" font-style="normal" font-family="'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace">earlier</text>
+<text x="1371.4" y="3223.0" font-size="12" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">ej-prj-job0</text>
+<text x="1311.0" y="3242.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">The follower re-checks status when the controller logs, rather than</text>
+<text x="1311.0" y="3258.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">only every 15 s.</text>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="535.0" y="3296.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">get status → SUCCEEDED</text>
+<line x1="445" y1="3305" x2="623" y2="3305" stroke="#111827" stroke-width="1.6"/>
+<path d="M625,3305 l-10,-5 l0,10 z" fill="#111827"/>
+<text stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" x="345.0" y="3349.0" font-size="12" fill="#111827" text-anchor="middle" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">job logs · SUCCEEDED · exit 0</text>
+<line x1="435" y1="3358" x2="257" y2="3358" stroke="#111827" stroke-width="1.6" stroke-dasharray="6 4"/>
+<path d="M255,3358 l10,-5 l0,10 z" fill="#111827"/>
+<rect x="20" y="3400" width="1760" height="104" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.3"/>
+<text x="40.0" y="3428.0" font-size="14" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Client total (sky jobs launch, 6 nodes, 8 interleaved runs per arm)</text>
+<text x="40.0" y="3454.0" font-size="14" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">5ef55efa4: 71.8 s (61.1–76.7 s)</text>
+<text x="310.0" y="3454.0" font-size="16" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">→</text>
+<text x="340.0" y="3454.0" font-size="14" fill="#15803d" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">ej-prj-i2-3: 41.8 s (40.6–56.6 s) · −30.1 s (−42%) · p = 0.0002</text>
+<text x="40.0" y="3482.0" font-size="13" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">sky launch: 43.1 s → 26.9 s · −16.2 s (−38%) · p = 0.0002</text>
+<text x="1020.0" y="3428.0" font-size="13" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Client start → SUCCEEDED: 65.6 s → 39.5 s</text>
+<text x="1020.0" y="3454.0" font-size="12.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Remaining: submit 7.2 s · hand-off 5.2 s · provision 14.6 s · job 6.6 s · checks 2.4 + 3.3 s</text>
+<text x="1020.0" y="3482.0" font-size="12.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Medians do not add up across phases. kind on one machine; no cold-node image pull.</text>
+<text x="20.0" y="38.0" font-size="22" fill="#111827" text-anchor="start" font-weight="bold" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">sky jobs launch on Kubernetes (6 nodes): where the new optimizations apply</text>
+<text x="20.0" y="62.0" font-size="13" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">UML sequence (consolidation mode, kind, 6 nodes) · medians of 8 interleaved runs per arm · 5ef55efa4 + published image → ej-prj-i2-3 16738238e + bytecode image · both IfNotPresent, gRPC off</text>
+<rect x="20" y="86" width="14" height="14" rx="3" fill="#dc2626"/>
+<text x="40.0" y="98.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">cab8b302a  bytecode in the image</text>
+<rect x="274.0" y="86" width="14" height="14" rx="3" fill="#7c3aed"/>
+<text x="294.0" y="98.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">0038650ac  no Ray Serve import</text>
+<rect x="514.0" y="86" width="14" height="14" rx="3" fill="#2563eb"/>
+<text x="534.0" y="98.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">16738238e  pod watch</text>
+<rect x="684.0" y="86" width="14" height="14" rx="3" fill="#0891b2"/>
+<text x="704.0" y="98.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">a84ddc783  exact gRPC timestamps</text>
+<rect x="938.0" y="86" width="14" height="14" rx="3" fill="#64748b"/>
+<text x="958.0" y="98.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">earlier branches (0, 1, 3, job0, job1)</text>
+<rect x="1234.0" y="86" width="14" height="14" rx="3" fill="#d97706"/>
+<text x="1254.0" y="98.0" font-size="12" fill="#111827" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">not changed yet</text>
+<text x="20.0" y="118.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Phase numbers compare the base with all changes, including earlier branches. Most "Gain" lines come from a commit's own A/B. Green phase = p &lt; 0.05; grey = not significant.</text>
+<text x="20.0" y="138.0" font-size="11.5" fill="#4b5563" text-anchor="start" font-weight="normal" font-style="normal" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">Solid arrow = call · dashed arrow = return/read · grey bars = activation · par/alt/loop = UML combined fragments</text>
+</svg>
