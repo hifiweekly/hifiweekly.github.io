@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Which launch phases gRPC could shorten</title>
+<meta name="description" content="Which sky jobs launch phases SKYPILOT_ENABLE_GRPC could shorten: mostly D, E and F, with up to about 8.4 s of head commands and an estimated 5–7 s gain, not yet measured.">
+<meta name="author" content="Edward Jiang">
+<link rel="icon" href="../favicon.ico">
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2e0;
+  --accent: #2f5bd3; --code-bg: #f0f0ed; --th-bg: #f3f3f1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+    --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+  --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+nav { max-width: 920px; margin: 0 auto; padding: 16px 16px 0; font-size: 14px; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--accent); }
+main {
+  max-width: 920px; margin: 12px auto 64px; padding: 28px 32px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+@media (max-width: 640px) { main { margin: 8px 16px 48px; padding: 20px 16px; } }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 16px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 17px; margin: 28px 0 10px; }
+h4 { font-size: 15px; margin: 22px 0 8px; }
+.header-anchor { color: var(--muted); text-decoration: none; opacity: 0; margin-left: -0.9em; padding-right: 0.25em; font-weight: 400; }
+h1:hover .header-anchor, h2:hover .header-anchor, h3:hover .header-anchor, h4:hover .header-anchor { opacity: 1; }
+a { color: var(--accent); }
+p, ul, ol { margin: 0 0 14px; }
+li { margin: 3px 0; }
+li > ul, li > ol { margin: 4px 0; }
+code {
+  font: 0.88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto; margin: 0 0 16px;
+}
+pre code { background: none; padding: 0; font-size: 13px; overflow-wrap: normal; }
+pre.mermaid { background: var(--panel); text-align: center; }
+.table-wrap { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; font-size: 14px; min-width: 50%; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--th-bg); font-weight: 600; }
+blockquote { margin: 0 0 14px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+img { max-width: 100%; }
+</style>
+</head>
+<body>
+<nav><a href="../">&larr; hifiweekly</a></nav>
+<main>
+<h1 id="which-launch-phases-grpc-could-shorten">Which launch phases gRPC could shorten <a class="header-anchor" href="#which-launch-phases-grpc-could-shorten">#</a></h1>
+<p><strong>Short answer:</strong> mostly phases D, E and F. For a 6-node <code>sky jobs launch</code> on kind, those phases spend up to about 8.4 s on head commands that <code>SKYPILOT_ENABLE_GRPC=1</code> would replace, out of a 35–41 s launch. A realistic gain is about 5–7 s, but that is an estimate: no <code>sky jobs launch</code> latency has been measured with gRPC on.</p>
+<p><strong>Sources:</strong></p>
+<ul>
+<li><strong>Timings:</strong> the <code>ej-prj-i2-5</code> wait trace, <code>bench_results/20261102-wait-trace/full/analysis.txt</code> (11 traced launches, commit <code>1ffd36f8f</code>). The phase letters are the ones in <a href="launch_latency_consolidated_design.html"><code>launch_latency_consolidated_design.md</code></a>.</li>
+<li><strong>gRPC paths:</strong> the <code>is_grpc_enabled_with_flag</code> checks in the code on <code>ej-prj-i2-6</code>.</li>
+<li><strong>Earlier measurement:</strong> <a href="launch_latency_analysis_4_nodes.html"><code>launch_latency_analysis_4_nodes.md</code></a> §6.</li>
+</ul>
+<h2 id="phases-grpc-would-shorten">Phases gRPC would shorten <a class="header-anchor" href="#phases-grpc-would-shorten">#</a></h2>
+<p>Without gRPC, each head command is a <code>kubectl exec</code> plus a Python start, about 1.6 s. Times are the average per launch across the traced launches. A command can span two phases, so it can appear in more than one row.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Head commands gRPC would replace</th>
+<th>Time spent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>D:</strong> provisioning → submitted</td>
+<td><code>set_autostop</code> 1.58 s, <code>_add_job</code> 1.32 s</td>
+<td><strong>~2.9 s</strong></td>
+</tr>
+<tr>
+<td><strong>E:</strong> job runs</td>
+<td>queue job (<code>_exec_code_on_head</code>) 1.59 s, <code>is_definitely_autostopping</code> 1.19 s, the rest of <code>_add_job</code> 0.26 s</td>
+<td><strong>~3.0 s</strong></td>
+</tr>
+<tr>
+<td><strong>F:</strong> job ended → RUNNING</td>
+<td>status and times check (<code>_job_status_and_times_on_head</code>) 1.62 s, <code>is_definitely_autostopping</code> 0.81 s</td>
+<td><strong>~2.4 s</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="phases-grpc-wouldnt-help">Phases gRPC wouldn't help <a class="header-anchor" href="#phases-grpc-wouldnt-help">#</a></h2>
+<ul>
+<li><strong>A, B and C:</strong> the job's cluster doesn't exist yet. The <code>run_on_head</code> call in B is the scheduler starting locally (<code>_consolidated_launch</code>), not a call to the cluster.</li>
+<li><strong>G:</strong> already about 0.1 s.</li>
+<li><strong>H:</strong> its one regular head command, the log directory lookup in <code>sync_down_logs</code> (1.55 s in the trace), was removed by change 7 on <code>ej-prj-i2-6</code>. What remains is the wait for saved logs and the log copy, which still uses <code>kubectl exec</code>.</li>
+<li><strong>The rest of D:</strong> pod start, Ray and runtime setup don't go through these calls. They make up most of D's roughly 15 s.</li>
+</ul>
+<h2 id="why-the-real-gain-will-be-under-84-s">Why the real gain will be under 8.4 s <a class="header-anchor" href="#why-the-real-gain-will-be-under-84-s">#</a></h2>
+<ul>
+<li><strong>Opening the connection has a cost.</strong> In the earlier test, job submission took 1.4 s on the first launch and 0.4–0.5 s on the next two. That analysis attributed the difference to opening the skylet tunnel, without confirming it. Every managed job launches a new cluster, so some launches may pay this.</li>
+<li><strong>E may not shrink by the full 3 s.</strong> I didn't check whether the 1.19 s <code>is_definitely_autostopping</code> call blocks the job or runs alongside it. Only the 1.59 s queue step clearly delays the job's start.</li>
+<li><strong>gRPC calls aren't free.</strong> Status and times stay two separate, cheap calls in F.</li>
+<li><strong>The trace is of <code>ej-prj-i2-5</code>, not <code>ej-prj-i2-6</code>.</strong> Changes 6 and 7 are described as affecting phase H, so D, E and F should be about the same, but this wasn't traced on <code>ej-prj-i2-6</code>.</li>
+</ul>
+<h2 id="what-has-been-measured">What has been measured <a class="header-anchor" href="#what-has-been-measured">#</a></h2>
+<p>Only plain <code>sky launch</code>, on an older branch with 4 nodes (<a href="launch_latency_analysis_4_nodes.html"><code>launch_latency_analysis_4_nodes.md</code></a> §6, 3 runs):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Baseline</th>
+<th>gRPC</th>
+<th>Δ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Job submission (<code>Backend.execute</code>)</td>
+<td>3.68 s</td>
+<td>0.48 s</td>
+<td>−3.2 s</td>
+</tr>
+<tr>
+<td>&quot;Cluster launched&quot; → client returns</td>
+<td>11.7 s</td>
+<td>8.2 s</td>
+<td>−3.5 s</td>
+</tr>
+</tbody>
+</table></div>
+<p>No fallback to SSH was seen in those runs. The 4 launches with gRPC on in <a href="launch_latency_design_after_job2.html"><code>launch_latency_design_after_job2.md</code></a> §8.2 checked recorded job durations, not latency.</p>
+<h2 id="related-notes">Related notes <a class="header-anchor" href="#related-notes">#</a></h2>
+<ul>
+<li><strong><a href="launch_latency_design_after_job2.html"><code>launch_latency_design_after_job2.md</code></a> §9 item 5 undercounts gRPC.</strong> It lists gRPC only against the head commands around submission. The trace shows it would also cover the <code>is_definitely_autostopping</code> calls and F's status check. Item 4 there, skipping <code>is_definitely_autostopping</code> after the controller's own launch, overlaps with this, so the two gains shouldn't be added.</li>
+<li><strong>Before making gRPC the default:</strong> find out why <code>SKYPILOT_ENABLE_GRPC</code> is off by default, and test clusters whose skylet tunnel can't be reached, to check the fallback to SSH (from <a href="launch_latency_analysis_4_nodes.html"><code>launch_latency_analysis_4_nodes.md</code></a> §6).</li>
+</ul>
+<h2 id="next-step">Next step <a class="header-anchor" href="#next-step">#</a></h2>
+<p>Run a <code>sky jobs launch</code> A/B of <code>ej-prj-i2-6</code> with and without <code>SKYPILOT_ENABLE_GRPC=1</code>, to replace the estimate above with a measurement.</p>
+
+</main>
+
+</body>
+</html>
