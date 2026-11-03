@@ -1,0 +1,14 @@
+resources:
+  infra: k8s/kind-skypilot
+  cpus: 1+
+  memory: 1+
+  image_id: docker:us-docker.pkg.dev/sky-dev-465/skypilotk8s/skypilot:202609010416-ray2.56.1
+num_nodes: 6
+run: |
+  echo "[rank ${SKYPILOT_NODE_RANK}] started at $(date +%s.%N) on $(hostname)"
+config:
+  kubernetes:
+    pod_config:
+      spec:
+        containers:
+          - imagePullPolicy: IfNotPresent

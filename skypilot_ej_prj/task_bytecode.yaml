@@ -1,0 +1,14 @@
+resources:
+  infra: k8s/kind-skypilot
+  cpus: 1+
+  memory: 1+
+  image_id: docker:skypilot-k8s-ej-prj-3:bytecode
+num_nodes: 6
+run: |
+  echo "[rank ${SKYPILOT_NODE_RANK}] started at $(date +%s.%N) on $(hostname)"
+config:
+  kubernetes:
+    pod_config:
+      spec:
+        containers:
+          - imagePullPolicy: IfNotPresent

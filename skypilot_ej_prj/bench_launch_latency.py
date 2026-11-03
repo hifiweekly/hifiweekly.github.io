@@ -22,14 +22,12 @@ The optimization is reported VALID when all of these hold:
 
 Usage:
   # Full A/B run (needs an idle K8s context; ~3-4 min per launch pair):
-  python tests/kubernetes/launching_benchmarks/bench_launch_latency.py run \\
-      --task job.yaml --runs 5
+  python ej/bench_launch_latency.py run --runs 5
 
   # Re-analyze provision logs you already have:
-  python tests/kubernetes/launching_benchmarks/bench_launch_latency.py \\
-      analyze --baseline before_*.log --candidate after_*.log
-
-See README.md next to this file for the full procedure.
+  python ej/bench_launch_latency.py analyze \\
+      --baseline ej/oct27_10*.log ej/oct30_1022.log \\
+      --candidate ej/after_ray_wait_run*.log
 """
 import argparse
 import csv
@@ -46,8 +44,7 @@ import sys
 import time
 from typing import Dict, List, Tuple
 
-# tests/kubernetes/launching_benchmarks/<this file> -> repository root.
-REPO = pathlib.Path(__file__).resolve().parents[3]
+REPO = pathlib.Path(__file__).resolve().parent.parent
 ANSI = re.compile(r'\x1b\[[0-9;]*m')
 LOG_LINE = re.compile(r'^[DIWE] (\d\d-\d\d \d\d:\d\d:\d\d\.\d+) PID=\d+ ')
 
@@ -71,6 +68,7 @@ PRIMARY = 'post_runtime_s'
 RAY_RESTART = 'Starting Ray on the entire cluster'
 OLD_POLL = 'Ray cluster is not ready yet'
 WAIT_RETRY = 'Ray wait on the head ended early'
+
 
 # ---------------------------------------------------------------- parsing
 
@@ -141,16 +139,14 @@ def permutation_p_value(baseline: List[float],
     return (hits + 1) / (rounds + 1)
 
 
-def compare(rows: List[Dict[str, object]], alpha: float) -> Tuple[str, bool]:
+def compare(rows: List[Dict[str, object]],
+            alpha: float) -> Tuple[str, bool]:
     """Returns the markdown report and the verdict from per-launch rows."""
     by_variant: Dict[str, List[Dict[str, object]]] = {}
     for row in rows:
         by_variant.setdefault(str(row['variant']), []).append(row)
-    # Metrics come from successful launches only. A failed launch's numbers
-    # may not even be its own: `sky logs --provision` can return the log of
-    # an earlier launch under the same name.
-    base = [r for r in by_variant.get('baseline', []) if r.get('ok', True)]
-    cand = [r for r in by_variant.get('candidate', []) if r.get('ok', True)]
+    base = by_variant.get('baseline', [])
+    cand = by_variant.get('candidate', [])
     out = ['# Launch latency A/B: baseline vs. ej-prj-1', '']
     out.append('| Metric | Baseline median (mean ± sd, n) | '
                'Candidate median (mean ± sd, n) | Δ median | p (one-sided) |')
@@ -179,20 +175,19 @@ def compare(rows: List[Dict[str, object]], alpha: float) -> Tuple[str, bool]:
     cand_restarts = [r for r in cand if r['ray_restarted']]
     cand_old_poll = [r for r in cand if int(r['old_poll_rounds']) > 0]
     commits = {
-        v: sorted({str(r.get('commit', '')) for r in rs
-                  }) for v, rs in by_variant.items()
+        v: sorted({str(r.get('commit', '')) for r in rs})
+        for v, rs in by_variant.items()
     }
     distinct_builds = (len(commits.get('baseline', [])) == 1 and
                        len(commits.get('candidate', [])) == 1 and
                        commits['baseline'] != commits['candidate'])
-    out += [
-        '', 'Commits seen in provision logs: ' + ', '.join(
-            f'{v}={"/".join(c) or "?"}' for v, c in sorted(commits.items()))
-    ]
+    out += ['', 'Commits seen in provision logs: ' + ', '.join(
+        f'{v}={"/".join(c) or "?"}' for v, c in sorted(commits.items()))]
     checks = [
         ('Each build ran its own, distinct commit', distinct_builds),
         ('All launches succeeded and ran on every rank', not failures),
-        ('No candidate launch fell back to restarting Ray', not cand_restarts),
+        ('No candidate launch fell back to restarting Ray',
+         not cand_restarts),
         ('Candidate never ran the old polling loop', not cand_old_poll),
         (f'Primary metric lower with p < {alpha}', primary_ok),
     ]
@@ -208,10 +203,8 @@ def compare(rows: List[Dict[str, object]], alpha: float) -> Tuple[str, bool]:
     ]
     if failures:
         out += ['', '## Failed launches', '']
-        out += [
-            f"- {r['variant']} run {r['run']}: {r.get('error', '')}"
-            for r in failures
-        ]
+        out += [f"- {r['variant']} run {r['run']}: {r.get('error', '')}"
+                for r in failures]
     return '\n'.join(out) + '\n', verdict
 
 
@@ -258,17 +251,16 @@ class Variant:
         env = dict(os.environ)
         for key in list(env):
             # Never inherit another server's endpoint or a test's config.
-            if key.startswith(
-                ('SKYPILOT_', 'PYTEST')) or key in ('SKY_RUNTIME_DIR',
-                                                    'VIRTUAL_ENV'):
+            if key.startswith(('SKYPILOT_', 'PYTEST')) or key in (
+                    'SKY_RUNTIME_DIR', 'VIRTUAL_ENV'):
                 env.pop(key)
         env.update({
             'SKY_RUNTIME_DIR': str(self.runtime),
             'HOME': str(self.runtime),
             'SKYPILOT_API_SERVER_LOCAL_PORT': str(self.port),
             'SKYPILOT_GLOBAL_CONFIG': str(self.runtime / 'config.yaml'),
-            'KUBECONFIG': os.environ.get('KUBECONFIG',
-                                         os.path.expanduser('~/.kube/config')),
+            'KUBECONFIG': os.environ.get(
+                'KUBECONFIG', os.path.expanduser('~/.kube/config')),
             'SKYPILOT_DISABLE_USAGE_COLLECTION': '1',
             'SKYPILOT_DEBUG': '1',
             'PATH': f"{self.venv / 'bin'}:{os.environ['PATH']}",
@@ -278,22 +270,17 @@ class Variant:
     def setup(self) -> None:
         self.dir.mkdir(parents=True, exist_ok=True)
         if not self.worktree.exists():
-            sh([
-                'git', '-C',
-                str(REPO), 'worktree', 'add', '--detach',
-                str(self.worktree), self.ref
-            ])
+            sh(['git', '-C', str(REPO), 'worktree', 'add', '--detach',
+                str(self.worktree), self.ref])
         self.commit = sh(
             ['git', '-C', str(self.worktree), 'rev-parse', 'HEAD'],
             capture_output=True).stdout.strip()
         print(f'[{self.name}] {self.ref} = {self.commit[:12]}', flush=True)
         if not self.venv.exists():
             sh(['uv', 'venv', '--seed', '--python', '3.11', str(self.venv)])
-        sh([
-            'uv', 'pip', 'install', '--python',
+        sh(['uv', 'pip', 'install', '--python',
             str(self.venv / 'bin' / 'python'), '-q', '-e',
-            f'{self.worktree}[kubernetes,server]'
-        ])
+            f'{self.worktree}[kubernetes,server]'])
         self.runtime.mkdir(parents=True, exist_ok=True)
         (self.runtime / 'config.yaml').write_text(
             'allowed_clouds:\n  - kubernetes\n'
@@ -302,8 +289,7 @@ class Variant:
         found = run_in(self, [
             str(self.venv / 'bin' / 'python'), '-c',
             'import sky; print(sky.__file__)'
-        ],
-                       capture_output=True).stdout.strip()
+        ], capture_output=True).stdout.strip()
         # Last line: under SKYPILOT_DEBUG, importing sky logs config first.
         found = found.splitlines()[-1] if found else ''
         if not found.startswith(str(self.worktree)):
@@ -314,18 +300,8 @@ class Variant:
         run_in(self, [self.sky, 'api', 'start'],
                capture_output=True,
                check=True)
-        print(f'[{self.name}] API server on 127.0.0.1:{self.port}', flush=True)
-        # The state under --workdir outlives a run, so an interrupted run, or
-        # one whose teardown failed, leaves cluster records behind. A launch
-        # that reuses such a name hits the old record: if the K8s cluster was
-        # recreated since, it fails with ClusterOwnerIdentityMismatchError,
-        # and `sky logs --provision` returns the old record's log. This state
-        # belongs to the benchmark, so purge every cluster in it.
-        purge = run_in(self, [self.sky, 'down', '-a', '-y', '--purge'],
-                       capture_output=True)
-        if 'Terminat' in purge.stdout + purge.stderr:
-            print(f'[{self.name}] purged leftover clusters from an earlier run',
-                  flush=True)
+        print(f'[{self.name}] API server on 127.0.0.1:{self.port}',
+              flush=True)
 
     def stop_server(self) -> None:
         run_in(self, [self.sky, 'api', 'stop'], capture_output=True)
@@ -358,33 +334,16 @@ class Variant:
                             f'{len(ranks)}/{num_nodes}, launched='
                             f"{row['launched']}, commit={row['commit']} "
                             f'(expected {self.commit[:12]})')
-        self.down(cluster)
+        run_in(self, [self.sky, 'down', '-y', cluster], capture_output=True)
         return row
-
-    def down(self, cluster: str) -> None:
-        """Tears a cluster down; drops its record if that fails.
-
-        A record left behind breaks the next run that reuses the name.
-        """
-        if run_in(self, [self.sky, 'down', '-y', cluster],
-                  capture_output=True).returncode:
-            print(
-                f'[{self.name}] `sky down {cluster}` failed; purging its '
-                'record',
-                flush=True)
-            run_in(self, [self.sky, 'down', '-y', '--purge', cluster],
-                   capture_output=True)
 
 
 def busy_pods(context: str) -> List[str]:
     """SkyPilot pods already on the context: they would skew the timings."""
-    proc = subprocess.run([
-        'kubectl', '--context', context, 'get', 'pods', '-A', '-l',
-        'parent=skypilot', '-o', 'name'
-    ],
-                          capture_output=True,
-                          text=True,
-                          check=False)
+    proc = subprocess.run(
+        ['kubectl', '--context', context, 'get', 'pods', '-A', '-l',
+         'parent=skypilot', '-o', 'name'],
+        capture_output=True, text=True, check=False)
     return [p for p in proc.stdout.split() if p]
 
 
@@ -394,19 +353,15 @@ def run(args: argparse.Namespace) -> int:
     num_nodes = int(yaml.safe_load(open(task_path)).get('num_nodes', 1))
     busy = busy_pods(args.context)
     if busy and not args.force:
-        print(
-            f'{len(busy)} SkyPilot pod(s) already on {args.context!r} '
-            f'(e.g. {busy[0]}). They would skew the timings; wait for '
-            'them to finish or pass --force.',
-            file=sys.stderr)
+        print(f'{len(busy)} SkyPilot pod(s) already on {args.context!r} '
+              f'(e.g. {busy[0]}). They would skew the timings; wait for '
+              'them to finish or pass --force.', file=sys.stderr)
         return 2
-    baseline_ref = args.baseline_ref or sh([
-        'git', '-C',
-        str(REPO), 'merge-base', args.candidate_ref, 'origin/master'
-    ],
-                                           capture_output=True).stdout.strip()
+    baseline_ref = args.baseline_ref or sh(
+        ['git', '-C', str(REPO), 'merge-base', args.candidate_ref,
+         'origin/master'], capture_output=True).stdout.strip()
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-    out_dir = pathlib.Path(args.out or f'bench-{stamp}')
+    out_dir = pathlib.Path(args.out or REPO / 'ej' / f'bench-{stamp}')
     logs_dir = out_dir / 'logs'
     logs_dir.mkdir(parents=True, exist_ok=True)
     work = pathlib.Path(args.workdir).resolve()
@@ -421,18 +376,15 @@ def run(args: argparse.Namespace) -> int:
 
     def cleanup(*_):
         for variant, cluster in live:
-            variant.down(cluster)
+            run_in(variant, [variant.sky, 'down', '-y', cluster],
+                   capture_output=True)
         for v in variants.values():
             v.stop_server()
         if not args.keep_worktrees:
             for v in variants.values():
-                subprocess.run([
-                    'git', '-C',
-                    str(REPO), 'worktree', 'remove', '--force',
-                    str(v.worktree)
-                ],
-                               capture_output=True,
-                               check=False)
+                subprocess.run(['git', '-C', str(REPO), 'worktree', 'remove',
+                                '--force', str(v.worktree)],
+                               capture_output=True, check=False)
 
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(130))
     try:
@@ -441,8 +393,8 @@ def run(args: argparse.Namespace) -> int:
             v.start_server()
         for i in range(args.warmup + args.runs):
             # A B B A ...: alternate who goes first to cancel drift.
-            order = (['baseline', 'candidate'] if i %
-                     2 == 0 else ['candidate', 'baseline'])
+            order = (['baseline', 'candidate'] if i % 2 == 0 else
+                     ['candidate', 'baseline'])
             for name in order:
                 v = variants[name]
                 cluster = f'bench-{name[:4]}-{i}'
@@ -452,11 +404,9 @@ def run(args: argparse.Namespace) -> int:
                 row = v.launch_once(cluster, task_path, num_nodes, logs_dir)
                 live.remove((v, cluster))
                 row['run'] = i - args.warmup
-                print(
-                    f"[{name}] {tag}: ok={row['ok']} "
-                    f"{PRIMARY}={row.get(PRIMARY)} "
-                    f"total={row.get('provision_total_s')}",
-                    flush=True)
+                print(f"[{name}] {tag}: ok={row['ok']} "
+                      f"{PRIMARY}={row.get(PRIMARY)} "
+                      f"total={row.get('provision_total_s')}", flush=True)
                 if i >= args.warmup:
                     rows.append(row)
     except KeyboardInterrupt:
@@ -464,27 +414,17 @@ def run(args: argparse.Namespace) -> int:
     finally:
         cleanup()
 
-    fields = [
-        'variant', 'run', 'cluster', 'ok', 'launch_wall_s', *METRICS,
-        'ranks_seen', 'ray_restarted', 'old_poll_rounds', 'wait_retries',
-        'launched', 'commit', 'error'
-    ]
+    fields = ['variant', 'run', 'cluster', 'ok', 'launch_wall_s',
+              *METRICS, 'ranks_seen', 'ray_restarted', 'old_poll_rounds',
+              'wait_retries', 'launched', 'commit', 'error']
     with open(out_dir / 'results.csv', 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=fields, extrasaction='ignore')
         writer.writeheader()
         writer.writerows(rows)
-    (out_dir / 'meta.json').write_text(
-        json.dumps(
-            {
-                'baseline_ref': baseline_ref,
-                'candidate_ref': args.candidate_ref,
-                'context': args.context,
-                'task': task_path,
-                'runs': args.runs,
-                'warmup': args.warmup,
-                'num_nodes': num_nodes
-            },
-            indent=2))
+    (out_dir / 'meta.json').write_text(json.dumps({
+        'baseline_ref': baseline_ref, 'candidate_ref': args.candidate_ref,
+        'context': args.context, 'task': task_path, 'runs': args.runs,
+        'warmup': args.warmup, 'num_nodes': num_nodes}, indent=2))
     report, verdict = (compare(rows, args.alpha) if rows else
                        ('No completed runs.\n', False))
     (out_dir / 'summary.md').write_text(report)
@@ -495,15 +435,12 @@ def run(args: argparse.Namespace) -> int:
 
 def analyze(args: argparse.Namespace) -> int:
     rows = []
-    for variant, paths in (('baseline', args.baseline), ('candidate',
-                                                         args.candidate)):
+    for variant, paths in (('baseline', args.baseline),
+                           ('candidate', args.candidate)):
         for i, path in enumerate(paths):
-            row = parse_provision_log(
-                pathlib.Path(path).read_text(encoding='utf-8',
-                                             errors='replace'))
-            row.update(variant=variant,
-                       run=i,
-                       cluster=path,
+            row = parse_provision_log(pathlib.Path(path).read_text(
+                errors='replace'))
+            row.update(variant=variant, run=i, cluster=path,
                        ok=bool(row['launched']))
             if not row['ok']:
                 row['error'] = 'no "Cluster launched" in log'
@@ -523,28 +460,20 @@ def main() -> int:
     sub = parser.add_subparsers(dest='cmd', required=True)
     r = sub.add_parser('run', help='Launch both builds and compare.')
     r.add_argument('--candidate-ref', default='ej-prj-1')
-    r.add_argument('--baseline-ref',
-                   default=None,
+    r.add_argument('--baseline-ref', default=None,
                    help='Default: merge-base of candidate and origin/master.')
     r.add_argument('--context', default='kind-skypilot')
-    r.add_argument('--task',
-                   required=True,
-                   help='Task YAML to launch, e.g. a multi-node task.')
+    r.add_argument('--task', default=str(REPO / 'ej' / 'job.yaml'))
     r.add_argument('--runs', type=int, default=5)
-    r.add_argument('--warmup',
-                   type=int,
-                   default=1,
+    r.add_argument('--warmup', type=int, default=1,
                    help='Untimed launches per build first (image pulls).')
-    r.add_argument('--port',
-                   type=int,
-                   default=46601,
+    r.add_argument('--port', type=int, default=46601,
                    help='Baseline server port; candidate uses port + 1.')
     r.add_argument('--workdir', default='/tmp/sky-bench-ab')
     r.add_argument('--out', default=None)
     r.add_argument('--alpha', type=float, default=0.05)
     r.add_argument('--keep-worktrees', action='store_true')
-    r.add_argument('--force',
-                   action='store_true',
+    r.add_argument('--force', action='store_true',
                    help='Run even if SkyPilot pods are already present.')
     a = sub.add_parser('analyze', help='Compare existing provision logs.')
     a.add_argument('--baseline', nargs='+', required=True)
