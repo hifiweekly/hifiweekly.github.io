@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: Watch pods between polls while waiting for them to run</title>
+<meta name="description" content="Replaces the 1 s sleep in _wait_for_pods_to_run with a Kubernetes watch that ends the wait early, so a launch notices its last pod sooner. Failure handling and timeouts stay the same, and any watch failure falls back to sleeping.">
+<meta name="author" content="Edward Jiang">
+<link rel="icon" href="../favicon.ico">
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2e0;
+  --accent: #2f5bd3; --code-bg: #f0f0ed; --th-bg: #f3f3f1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+    --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+  --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+nav { max-width: 920px; margin: 0 auto; padding: 16px 16px 0; font-size: 14px; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--accent); }
+main {
+  max-width: 920px; margin: 12px auto 64px; padding: 28px 32px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+@media (max-width: 640px) { main { margin: 8px 16px 48px; padding: 20px 16px; } }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 16px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 17px; margin: 28px 0 10px; }
+h4 { font-size: 15px; margin: 22px 0 8px; }
+.header-anchor { color: var(--muted); text-decoration: none; opacity: 0; margin-left: -0.9em; padding-right: 0.25em; font-weight: 400; }
+h1:hover .header-anchor, h2:hover .header-anchor, h3:hover .header-anchor, h4:hover .header-anchor { opacity: 1; }
+a { color: var(--accent); }
+p, ul, ol { margin: 0 0 14px; }
+li { margin: 3px 0; }
+li > ul, li > ol { margin: 4px 0; }
+code {
+  font: 0.88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto; margin: 0 0 16px;
+}
+pre code { background: none; padding: 0; font-size: 13px; overflow-wrap: normal; }
+pre.mermaid { background: var(--panel); text-align: center; }
+.table-wrap { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; font-size: 14px; min-width: 50%; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--th-bg); font-weight: 600; }
+blockquote { margin: 0 0 14px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+img { max-width: 100%; }
+</style>
+</head>
+<body>
+<nav><a href="../">&larr; hifiweekly</a></nav>
+<main>
+<h1 id="design-watch-pods-between-polls-while-waiting-for-them-to-run">Design: Watch pods between polls while waiting for them to run <a class="header-anchor" href="#design-watch-pods-between-polls-while-waiting-for-them-to-run">#</a></h1>
+<ul>
+<li><strong>Commit:</strong> <code>71b3c9213</code> on <code>ej-prj-i2-5</code> and <code>ej-prj-i2-6</code>; <code>16738238e</code> on <code>ej-prj-i2-3</code> and <code>ej-prj-i2-4</code>.</li>
+<li><strong>Status:</strong> pushed to the fork, not merged. It merges onto <code>origin/master</code> (<code>8ec83b9d8</code>) without conflicts, so it can be its own PR.</li>
+<li><strong>Code:</strong> <code>sky/provision/kubernetes/instance.py</code>.</li>
+<li><strong>Tests:</strong> <code>tests/unit_tests/kubernetes/test_pod_run_wait.py</code>.</li>
+<li><strong>Results:</strong> <code>bench_results/20261101-234729-lazy-watch-ab/</code>.</li>
+<li><strong>Related:</strong> <a href="launch_latency_design_after_job2.html"><code>launch_latency_design_after_job2.md</code></a> §3.3.</li>
+</ul>
+<h2 id="tldr-pr-description">TL;DR (PR description) <a class="header-anchor" href="#tldr-pr-description">#</a></h2>
+<h3 id="kubernetes-watch-pods-between-polls-while-waiting-for-them-to-run"><code>[Kubernetes] Watch pods between polls while waiting for them to run</code> <a class="header-anchor" href="#kubernetes-watch-pods-between-polls-while-waiting-for-them-to-run">#</a></h3>
+<h4 id="summary">Summary <a class="header-anchor" href="#summary">#</a></h4>
+<ul>
+<li><strong>Problem:</strong> <code>_wait_for_pods_to_run</code> slept 1 s between polls, so a launch noticed its last pod about 0.5 s late on average, and up to a full second.</li>
+<li><strong>Fix:</strong> replace the sleep with a Kubernetes watch that ends the wait early when every waiting pod is running or a pod is going away.</li>
+<li><strong>Unchanged:</strong>
+<ul>
+<li>The poll that follows still makes every decision, so failure handling and timeouts are the same.</li>
+<li>Polling stays about once a second when nothing is ready.</li>
+<li>Any watch failure, including missing <code>watch</code> permission, falls back to sleeping out the rest of the interval.</li>
+</ul>
+</li>
+<li><strong>Cost:</strong> one extra watch request per poll interval, per launching cluster, while pods start.</li>
+</ul>
+<p>Files: <code>sky/provision/kubernetes/instance.py</code> and a new unit test file.</p>
+<h4 id="tested">Tested <a class="header-anchor" href="#tested">#</a></h4>
+<ul>
+<li>[x] Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on the changed <code>sky/</code> files rates 10.00/10. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+<li>[x] Any manual or new tests for this PR (please specify below)
+<ul>
+<li><strong>New unit tests:</strong> <code>tests/unit_tests/kubernetes/test_pod_run_wait.py</code>, 12 passed.</li>
+<li><strong>A/B on kind</strong> (<code>sky launch</code>, 6 nodes, 8 runs per arm, medians, together with a lazy Ray Serve import that runs after this wait):
+<ul>
+<li>last container started → SkyPilot notices: 0.70 → <strong>0.16 s</strong> (p = 0.0061);</li>
+<li>create pods, wait until Running: 6.04 → <strong>5.15 s</strong> (p = 0.026).</li>
+</ul>
+</li>
+<li><strong>Manual, on kind:</strong> an image that can't be pulled still fails in 8 s with <code>ErrImagePull</code>.</li>
+</ul>
+</li>
+<li>[ ] All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li>[ ] Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>Not run. Suggested: <code>test_cluster_job.py::test_multi_hostname</code>, <code>test_kubernetes_pod_failure_detection</code>, and <code>test_kubernetes_pod_loss.py::test_launch_fails_fast_when_pod_deleted</code>.</li>
+</ul>
+</li>
+<li>[ ] Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run. This is server-side only, with no API change.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="1-problem">1. Problem <a class="header-anchor" href="#1-problem">#</a></h2>
+<p>After creating pods, the provisioner waits in <code>_wait_for_pods_to_run</code> until every pod is Running with all its containers running. Each round lists the cluster's pods, checks them, then sleeps 1 s.</p>
+<p>So the launch learns that its last pod is up only at the next poll. On a 6-node launch on kind, that gap had a median of <strong>0.70 s</strong> (0.25–1.2 s). Every step after this, including file mounts and runtime setup, starts that much later.</p>
+<p>This is a small part of a launch. It's worth fixing because the fix is small and removes the delay on every launch, whatever the cluster size.</p>
+<h2 id="2-goals">2. Goals <a class="header-anchor" href="#2-goals">#</a></h2>
+<ul>
+<li><strong>Notice the last running pod within a fraction of a second.</strong></li>
+<li><strong>Change no decision.</strong> Timeouts, stall detection, error messages and status messages must behave as they do today.</li>
+<li><strong>Never make a launch worse.</strong> If the watch can't work on some cluster, the launch should behave as if it weren't there.</li>
+</ul>
+<p><strong>Not a goal:</strong> rewriting the wait around watch events. The poll logic handles many failure cases (see §6), and duplicating it isn't worth about 0.5 s.</p>
+<h2 id="3-design">3. Design <a class="header-anchor" href="#3-design">#</a></h2>
+<h3 id="31-the-change">3.1 The change <a class="header-anchor" href="#31-the-change">#</a></h3>
+<p>The <code>time.sleep(1)</code> at the end of each round becomes <code>_wait_for_next_pod_run_poll</code>:</p>
+<pre><code>round:
+  list pods                     (keeps the list's resource_version)
+  check each pod, make decisions, update status
+  all running? → return
+  wait for next poll:
+    watch this cluster's pods, starting at that resource_version, for up to 1 s
+      DELETED, deletion_timestamp set, or phase Failed → end the wait
+      pod running with all containers running          → cross it off
+      nothing left to wait for                         → end the wait
+    watch ended or failed → sleep the rest of the 1 s
+</code></pre>
+<p>The list call keeps its label selector, which now goes in a variable that the watch shares. The poll's &quot;pod is running&quot; check moves into <code>_pod_containers_running</code>, so the poll and the watch can't disagree on what running means.</p>
+<h3 id="32-key-decisions">3.2 Key decisions <a class="header-anchor" href="#32-key-decisions">#</a></h3>
+<p><strong>The watch only ends the wait; the poll decides.</strong> The watch never returns a result. When it ends early, the next round lists the pods again and applies all its usual logic. That's what keeps §6's behaviour unchanged, and it leaves only a little new code to get right.</p>
+<p><strong>End early only when the next poll would matter.</strong> A poll costs several API calls per pending pod, so waking on every event would add load for no gain. The wait ends only if:</p>
+<ul>
+<li>every pod that was waiting is now running, so the wait can finish; or</li>
+<li>a pod is going away, so the poll should report it sooner.</li>
+</ul>
+<p>A pod that merely changes state, such as one becoming Running while others wait, doesn't end the wait.</p>
+<p><strong>Start from the list's <code>resource_version</code>.</strong> The watch then sees every change after the poll's list, so a pod that starts between the list and the watch can't be missed.</p>
+<p><strong>Best effort.</strong> Everything is inside <code>try/except Exception</code>, and any failure logs at debug level and sleeps the remaining time. A broad except is deliberate here: the worst outcome of a failed watch is today's behaviour.</p>
+<h3 id="33-timeouts">3.3 Timeouts <a class="header-anchor" href="#33-timeouts">#</a></h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Value</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>timeout_seconds</code> (server-side)</td>
+<td>1 s</td>
+<td>The poll interval, so the poll keeps its rhythm.</td>
+</tr>
+<tr>
+<td><code>_request_timeout</code> (connect, read)</td>
+<td>(5, 2) s</td>
+<td>The read timeout only catches a server that ignores <code>timeout_seconds</code>.</td>
+</tr>
+</tbody>
+</table></div>
+<p>A watch that hangs therefore delays the next poll to at most about 2 s after connecting. The rest of the interval is computed from elapsed time, so a watch that ends early with nothing to report doesn't shorten the interval or add a full extra second.</p>
+<h2 id="4-alternatives-considered">4. Alternatives considered <a class="header-anchor" href="#4-alternatives-considered">#</a></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Alternative</th>
+<th>Why not</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Poll faster (for example, every 0.2 s)</td>
+<td>Each poll makes several API calls per pending pod, so it adds load on every launch to gain about 0.4 s.</td>
+</tr>
+<tr>
+<td>Replace polling with a watch</td>
+<td>It has to reproduce the poll's failure handling (§6), and needs a fallback for clusters where watching fails anyway.</td>
+</tr>
+<tr>
+<td>Wake the poll on every event</td>
+<td>A multi-node launch produces many pod updates, and each would trigger a full poll.</td>
+</tr>
+<tr>
+<td>Keep the 1 s sleep</td>
+<td>Costs about 0.5 s on every launch, and the fix is about 50 lines.</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="5-failure-handling">5. Failure handling <a class="header-anchor" href="#5-failure-handling">#</a></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The watch can't start (network, no permission)</td>
+<td>Sleeps the rest of the interval.</td>
+</tr>
+<tr>
+<td>The watch fails midway</td>
+<td>Same.</td>
+</tr>
+<tr>
+<td><code>resource_version</code> is too old (HTTP 410)</td>
+<td>The client raises <code>ApiException</code>, since it doesn't retry when <code>timeout_seconds</code> is set. Sleeps the rest of the interval, and the next round has a fresh version.</td>
+</tr>
+<tr>
+<td>The server ignores <code>timeout_seconds</code></td>
+<td>The 2 s read timeout ends it, and the next poll runs at once.</td>
+</tr>
+<tr>
+<td>The list has no <code>resource_version</code></td>
+<td>Caught the same way, then a plain sleep.</td>
+</tr>
+<tr>
+<td>A pod is deleted or fails</td>
+<td>The wait ends early, and the poll reports it as before.</td>
+</tr>
+<tr>
+<td>A container waits on an image pull error</td>
+<td>No early end. The next poll sees it within about 1 s, as before.</td>
+</tr>
+<tr>
+<td>Nothing changes</td>
+<td>A full 1 s wait, as before.</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="6-what-stays-the-same">6. What stays the same <a class="header-anchor" href="#6-what-stays-the-same">#</a></h2>
+<p>All of this lives in the poll, which isn't changed apart from sharing <code>_pod_containers_running</code> and the label selector:</p>
+<ul>
+<li>the transport-error grace period (<code>_POD_POLL_TRANSPORT_ERROR_GRACE_SECONDS</code>);</li>
+<li>stall timeouts and missing-pod handling;</li>
+<li>init container checks;</li>
+<li>image pull and container failure errors;</li>
+<li>status messages.</li>
+</ul>
+<p><code>_wait_for_pods_to_schedule</code> still polls and isn't touched.</p>
+<h2 id="7-compatibility">7. Compatibility <a class="header-anchor" href="#7-compatibility">#</a></h2>
+<ul>
+<li><strong>API, client and server:</strong> no change. It runs in the provisioner, on the API server or jobs controller.</li>
+<li><strong>Permissions:</strong> the watch needs the <code>watch</code> verb on pods.
+<ul>
+<li>The role in the docs (<code>sky-sa-role</code>) grants <code>*</code> on pods, so the default setup has it.</li>
+<li>A stricter custom role gets a 403, which falls back to sleeping, so launches still work without the gain.</li>
+</ul>
+</li>
+<li><strong>Kubernetes client:</strong> tested with <code>kubernetes</code> 35.0.0.</li>
+</ul>
+<h2 id="8-results">8. Results <a class="header-anchor" href="#8-results">#</a></h2>
+<p>Run on <code>kind-skypilot</code>, one kind node with 12 cores: <code>sky launch</code>, 6 nodes, the template's default image and pull policy, 8 measured runs per arm, medians.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Before</th>
+<th>After</th>
+<th>p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Last container started → SkyPilot notices</strong></td>
+<td>0.70 s (0.25–1.2)</td>
+<td><strong>0.16 s</strong> (0.13–0.94)</td>
+<td>0.0061</td>
+</tr>
+<tr>
+<td><strong>Create pods, wait until Running</strong></td>
+<td>6.04 s (4.9–6.6)</td>
+<td><strong>5.15 s</strong> (4.6–6.3)</td>
+<td>0.026</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>This A/B also included the lazy Ray Serve import</strong> (<code>1ddcc3240</code>), and the two weren't measured apart. That import runs after containers start, so it shouldn't affect these two measures, but that's reasoning rather than a separate test.</li>
+<li><strong>The stage improved by more than the detection did</strong> (0.89 s against 0.54 s). The other 0.35 s isn't explained, and may be noise.</li>
+<li><strong>The worst case is still 0.94 s.</strong> In at least one run the watch didn't catch the last pod promptly. I didn't investigate which path that run took.</li>
+<li><strong>Consistent later result:</strong> in the <code>ej-prj-i2-5</code> A/B against master with <code>IfNotPresent</code>, pods ready went from 2.77 s to 1.92 s (p = 0.0002). That A/B has many other changes and different images, so it isn't a measure of this change alone.</li>
+</ul>
+<p><strong>Negative test:</strong> a launch with an image that can't be pulled still failed in 8 s with <code>ErrImagePull</code>.</p>
+<h2 id="9-tests">9. Tests <a class="header-anchor" href="#9-tests">#</a></h2>
+<p><code>tests/unit_tests/kubernetes/test_pod_run_wait.py</code>, 12 passed. It covers:</p>
+<ul>
+<li>the wait ends when the last waiting pod is running;</li>
+<li>the watch starts from the poll's own list;</li>
+<li>some pods still waiting, or a pod that isn't ready, doesn't end it;</li>
+<li>a pod going away ends it, for the poll to report;</li>
+<li>a watch error, a failure to start the watch, and a list without a version all fall back to sleeping;</li>
+<li>only the rest of the interval is slept.</li>
+</ul>
+<p><strong>Not tested:</strong></p>
+<ul>
+<li>Deleting a pod during the wait, on a real cluster. Only unit tests cover it.</li>
+<li>A role without the <code>watch</code> verb, on a real cluster. The fallback is covered only by the generic watch failure tests.</li>
+<li>Any cluster other than kind, including ones with a proxy in front of the API server.</li>
+<li>Load from many launches at once.</li>
+<li>Smoke tests. None are recorded for this commit.</li>
+</ul>
+<h2 id="10-risks">10. Risks <a class="header-anchor" href="#10-risks">#</a></h2>
+<ul>
+<li><strong>More API requests.</strong> Each launching cluster makes one more request per second while its pods start. That's small next to the poll's own calls and lasts seconds, but on a slow start or a long autoscale it could last much longer. It wasn't load tested.</li>
+<li><strong>Long-held waits.</strong> During a long wait for pods, this repeats the watch once a second rather than holding one open. That's simple, but more requests than a long-lived watch would make.</li>
+<li><strong>Repeated early wake-ups.</strong> A terminating pod that keeps receiving updates ends the wait on each update, so polls follow the rate of those updates until the pod is gone. It should be brief, and I didn't measure it.</li>
+<li><strong>Proxies.</strong> A proxy that buffers streams could delay events, or end the watch. Either way it falls back to today's timing.</li>
+</ul>
+<h2 id="11-open-questions">11. Open questions <a class="header-anchor" href="#11-open-questions">#</a></h2>
+<ol>
+<li>Should a smoke test assert the launch still fails fast when a pod is deleted during this wait? <code>test_kubernetes_pod_loss.py</code> deletes pods during setup, which is later.</li>
+<li>Should a repeated watch failure stop trying for that launch? Today, a role without <code>watch</code> makes one failed request per second for the whole wait.</li>
+</ol>
+<h2 id="12-reproducing">12. Reproducing <a class="header-anchor" href="#12-reproducing">#</a></h2>
+<pre><code class="language-bash"># Unit tests
+pytest tests/unit_tests/kubernetes/test_pod_run_wait.py
+
+# The A/B's harness, its analysis and the negative test's output
+ls ej/bench_results/20261101-234729-lazy-watch-ab/harness/
+cat ej/bench_results/20261101-234729-lazy-watch-ab/negative.log
+</code></pre>
+<p>To isolate this change from the Serve patch, run <code>sky-launch-ab</code> (see <a href="README_i2.html"><code>README_i2.md</code></a>) with <code>--baseline-ref 71b3c9213~1 --candidate-ref 71b3c9213</code> and the same task for both arms. <code>71b3c9213~1</code> is the commit that adds the lazy Serve import, so that's the only difference. That A/B hasn't been run.</p>
+
+</main>
+
+</body>
+</html>
