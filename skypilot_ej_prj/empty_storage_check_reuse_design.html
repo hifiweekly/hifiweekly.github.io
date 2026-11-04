@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: Reuse an empty storage check result for an unchanged config</title>
+<meta name="description" content="Records when a storage check found nothing and skips rerunning it while the config is unchanged and the record is under 10 minutes old. On a 6-node sky jobs launch about 40 s apart, phase A drops from 6.85 s to 2.20 s and client total from 41.31 s to 37.06 s.">
+<meta name="author" content="Edward Jiang">
+<link rel="icon" href="../favicon.ico">
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2e0;
+  --accent: #2f5bd3; --code-bg: #f0f0ed; --th-bg: #f3f3f1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+    --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+  --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+nav { max-width: 920px; margin: 0 auto; padding: 16px 16px 0; font-size: 14px; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--accent); }
+main {
+  max-width: 920px; margin: 12px auto 64px; padding: 28px 32px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+@media (max-width: 640px) { main { margin: 8px 16px 48px; padding: 20px 16px; } }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 16px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 17px; margin: 28px 0 10px; }
+h4 { font-size: 15px; margin: 22px 0 8px; }
+.header-anchor { color: var(--muted); text-decoration: none; opacity: 0; margin-left: -0.9em; padding-right: 0.25em; font-weight: 400; }
+h1:hover .header-anchor, h2:hover .header-anchor, h3:hover .header-anchor, h4:hover .header-anchor { opacity: 1; }
+a { color: var(--accent); }
+p, ul, ol { margin: 0 0 14px; }
+li { margin: 3px 0; }
+li > ul, li > ol { margin: 4px 0; }
+code {
+  font: 0.88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto; margin: 0 0 16px;
+}
+pre code { background: none; padding: 0; font-size: 13px; overflow-wrap: normal; }
+pre.mermaid { background: var(--panel); text-align: center; }
+.table-wrap { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; font-size: 14px; min-width: 50%; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--th-bg); font-weight: 600; }
+blockquote { margin: 0 0 14px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+img { max-width: 100%; }
+</style>
+</head>
+<body>
+<nav><a href="../">&larr; hifiweekly</a></nav>
+<main>
+<h1 id="design-reuse-an-empty-storage-check-result-for-an-unchanged-config">Design: Reuse an empty storage check result for an unchanged config <a class="header-anchor" href="#design-reuse-an-empty-storage-check-result-for-an-unchanged-config">#</a></h1>
+<ul>
+<li><strong>Commit:</strong> <code>d771518f1</code> on <code>ej-prj-i3-2</code>, the only commit that branch adds to <code>ej-prj-i2-6</code>.</li>
+<li><strong>Status:</strong> pushed to the fork, not merged.</li>
+<li><strong>Code:</strong> <code>sky/check.py</code>, <code>sky/global_user_state.py</code>.</li>
+<li><strong>Tests:</strong> <code>tests/unit_tests/test_sky/test_check_empty_storage_result.py</code>.</li>
+<li><strong>Results:</strong> <code>bench_results/20261103-empty-storage-check-ab/</code>.</li>
+<li><strong>Related:</strong> <a href="local_run_speedup_tips.html"><code>local_run_speedup_tips.md</code></a>, which gets a similar saving from config.</li>
+</ul>
+<h2 id="1-summary">1. Summary <a class="header-anchor" href="#1-summary">#</a></h2>
+<p>With no storage cloud enabled, every launch reran the storage check, including its <code>aws</code> and <code>gcloud</code> commands, even for a task that only uses Kubernetes.</p>
+<p>This change records when a check found nothing and which config it ran on. Later launches skip the check while the config is unchanged and the record is under 10 minutes old.</p>
+<p>On a 6-node <code>sky jobs launch</code>, with launches about 40 s apart, <strong>phase A drops from 6.85 s to 2.20 s</strong> (p = 0.0047) and <strong>client total from 41.31 s to 37.06 s</strong> (p = 0.013). Launches more than 10 minutes apart get no saving (§7).</p>
+<h2 id="2-problem">2. Problem <a class="header-anchor" href="#2-problem">#</a></h2>
+<p>Phase A of <code>sky jobs launch</code> reaches the check through this path:</p>
+<pre><code>launch()                                          sky/jobs/server/core.py:1274
+  _upload_files_to_controller()                   sky/jobs/server/core.py:191
+    get_cached_enabled_storage_cloud_names_or_refresh()     sky/data/storage.py
+      get_cached_enabled_clouds_or_refresh(STORAGE)         sky/check.py
+        check_capability()  → parallel checks of every allowed cloud
+          AWS: aws --version, aws configure list
+          GCP: gcloud auth list, gcloud config get project
+</code></pre>
+<p>The stored list of enabled clouds is used if it has anything in it. An empty list means either &quot;checked and found nothing&quot; or &quot;never checked&quot;, and the code treats both as &quot;never checked&quot;. So a user with no storage credentials reruns the check on every launch.</p>
+<p>Earlier traces put this at 4.75 s of phase A's 7.14 s, with <code>aws configure list</code> the largest part at 2.38 s. It costs less if <code>aws</code> isn't on the server's <code>PATH</code>, because the AWS check then stops at <code>aws --version</code>.</p>
+<p>An existing cache doesn't help here. <code>_enabled_storage_cloud_names</code> in <code>sky/data/storage.py</code> reuses the answer only within a request.</p>
+<h2 id="3-change">3. Change <a class="header-anchor" href="#3-change">#</a></h2>
+<p><strong>Recording an empty result.</strong> After a storage check that leaves the list empty, store this in the existing <code>config</code> table, under the key <code>empty_storage_check_&lt;workspace&gt;</code>:</p>
+<pre><code class="language-json">{&quot;config_fingerprint&quot;: &quot;&lt;sha256 of the merged config&gt;&quot;, &quot;checked_at&quot;: 1793761861.6}
+</code></pre>
+<p><strong>Skipping the check.</strong> <code>get_cached_enabled_clouds_or_refresh</code> already refreshes when the list is empty or the allowed clouds changed. It now skips that refresh when all of these hold:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The capability is storage</td>
+<td>Compute behaves as before (§5)</td>
+</tr>
+<tr>
+<td>The caller can write to the workspace</td>
+<td>Others use the existing unstored path, unchanged</td>
+</tr>
+<tr>
+<td>The allowed clouds list didn't change</td>
+<td>A changed list must always recheck</td>
+</tr>
+<tr>
+<td>The stored fingerprint matches the current config</td>
+<td>A config edit must recheck</td>
+</tr>
+<tr>
+<td>The record's age is at least 0 and under 600 s</td>
+<td>Credentials aren't in the config (§4). A negative age means the clock moved back</td>
+</tr>
+</tbody>
+</table></div>
+<p>The fingerprint is the existing <code>current_config_fingerprint()</code>, a SHA-256 of the request's merged config.</p>
+<p><strong>The limit is fixed from the time of the check.</strong> Reusing the record doesn't extend it, so the check reruns at least every 10 minutes for launches that keep coming.</p>
+<p><strong>What isn't skipped.</strong> Storage-only providers (Cloudflare, CoreWeave, VastData, HuggingFace) are checked separately in <code>_enabled_storage_cloud_names</code>, and still run on every lookup.</p>
+<h2 id="4-why-fingerprint-and-expiry-are-both-needed">4. Why fingerprint and expiry are both needed <a class="header-anchor" href="#4-why-fingerprint-and-expiry-are-both-needed">#</a></h2>
+<p>The two conditions catch different changes:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Change</th>
+<th>Fingerprint</th>
+<th>Expiry</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Config edit, such as <code>aws.remote_identity</code></td>
+<td>Caught at once</td>
+<td>Would catch it late</td>
+</tr>
+<tr>
+<td>Credentials added, such as <code>~/.aws/credentials</code></td>
+<td><strong>Not seen</strong>, since it isn't config</td>
+<td>Caught within 10 minutes</td>
+</tr>
+<tr>
+<td>Temporary check failure</td>
+<td><strong>Not seen</strong></td>
+<td>Caught within 10 minutes</td>
+</tr>
+</tbody>
+</table></div>
+<p>Checking credential files directly instead of using an expiry would mean listing every cloud's credential locations. Those include files, directories and environment variables that vary by cloud, and such a list would go out of date.</p>
+<h2 id="5-behavior-changes">5. Behavior changes <a class="header-anchor" href="#5-behavior-changes">#</a></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Before</th>
+<th>After</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Credentials added, then <code>sky check</code></td>
+<td>Enabled at once</td>
+<td>Same: a non-empty list ignores the record</td>
+</tr>
+<tr>
+<td>Credentials added, no <code>sky check</code></td>
+<td>Noticed on the next launch</td>
+<td><strong>Noticed within 10 minutes</strong></td>
+</tr>
+<tr>
+<td>Check fails temporarily, finding nothing</td>
+<td>Retried on the next launch</td>
+<td><strong>Reused for up to 10 minutes</strong>, or until <code>sky check</code></td>
+</tr>
+<tr>
+<td>Task names a storage cloud that isn't enabled</td>
+<td><code>_is_storage_cloud_enabled</code> calls <code>check_capability</code> directly</td>
+<td>Code path unchanged, not tested</td>
+</tr>
+<tr>
+<td>Storage cloud already enabled</td>
+<td>No check</td>
+<td>Same</td>
+</tr>
+</tbody>
+</table></div>
+<p>Compute is excluded because an empty compute list is the error case for a launch, and a user who has just fixed their credentials should see that at once.</p>
+<p><strong>Compatibility.</strong> There's no API change or table migration. The record is one more row in <code>config</code>. An older server ignores it, and a newer server treats a missing row as &quot;not checked&quot;. With a shared database, servers share the record too.</p>
+<p>The key is scoped per user when Slurm <code>submit_as_user</code> is on, the same as the enabled clouds row.</p>
+<h2 id="6-alternatives">6. Alternatives <a class="header-anchor" href="#6-alternatives">#</a></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Alternative</th>
+<th>Why not</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Store a &quot;checked&quot; flag with no fingerprint or expiry</td>
+<td>Config edits and new credentials would go unnoticed until <code>sky check</code></td>
+</tr>
+<tr>
+<td>Fingerprint only, as first suggested</td>
+<td>Same problem for new credentials (§4)</td>
+</tr>
+<tr>
+<td>Longer in-memory cache</td>
+<td>Each server process would run its own check, and a restart would lose it</td>
+</tr>
+<tr>
+<td>Have users set <code>allowed_clouds</code></td>
+<td>It works, and saves more (5.79 s), but only for those who know to set it</td>
+</tr>
+<tr>
+<td>Apply to compute checks too</td>
+<td>Larger behavior change, for no saving on the path measured here</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="7-results">7. Results <a class="header-anchor" href="#7-results">#</a></h2>
+<p><strong>Setup:</strong> the same commit (<code>407784c57</code>, equal to <code>ej-prj-i2-6</code>) with and without the patch, one kind node with 12 cores, a one-line <code>echo</code> on 6 nodes, the bytecode image in both arms, consolidation mode, the user's normal config, and <code>aws</code> on the server's <code>PATH</code>. There were 4 alternating blocks of 1 warm-up and 4 measured runs, so 8 measured runs per arm, and all succeeded. p-values are exact two-sided permutation tests on means.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Phase (median, with range)</th>
+<th>Without patch</th>
+<th>With patch</th>
+<th>Change</th>
+<th>p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A: client start → job row</strong></td>
+<td>6.85 s (6.5–7.1)</td>
+<td><strong>2.20 s</strong> (1.6–7.1)</td>
+<td><strong>−4.65 s</strong></td>
+<td>0.0047</td>
+</tr>
+<tr>
+<td>B: row → STARTING</td>
+<td>2.41 s (2.1–4.8)</td>
+<td>2.47 s (1.8–4.5)</td>
+<td>+0.06 s</td>
+<td>0.97</td>
+</tr>
+<tr>
+<td>C: STARTING → provisioning</td>
+<td>3.16 s (2.5–5.4)</td>
+<td>3.07 s (2.8–3.3)</td>
+<td>−0.09 s</td>
+<td>0.43</td>
+</tr>
+<tr>
+<td>D: provisioning → job submitted</td>
+<td>16.16 s (14.6–26.8)</td>
+<td>15.08 s (14.3–21.2)</td>
+<td>−1.08 s</td>
+<td>0.62</td>
+</tr>
+<tr>
+<td>E: job runs</td>
+<td>6.94 s (6.5–7.9)</td>
+<td>7.10 s (6.6–7.5)</td>
+<td>+0.16 s</td>
+<td>0.69</td>
+</tr>
+<tr>
+<td>F: job ended → RUNNING</td>
+<td>2.37 s (2.0–4.7)</td>
+<td>2.35 s (2.0–2.7)</td>
+<td>−0.02 s</td>
+<td>0.41</td>
+</tr>
+<tr>
+<td>G: RUNNING → SUCCEEDED</td>
+<td>0.11 s (0.1–0.2)</td>
+<td>0.14 s (0.1–0.2)</td>
+<td>+0.03 s</td>
+<td>0.22</td>
+</tr>
+<tr>
+<td>H: SUCCEEDED → client exits</td>
+<td>2.71 s (2.2–4.3)</td>
+<td>2.56 s (2.0–4.2)</td>
+<td>−0.15 s</td>
+<td>0.83</td>
+</tr>
+<tr>
+<td><strong>Client total</strong></td>
+<td>41.31 s (38.3–52.0)</td>
+<td><strong>37.06 s</strong> (34.6–43.2)</td>
+<td><strong>−4.25 s</strong></td>
+<td>0.013</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Reading these numbers:</strong></p>
+<ul>
+<li><strong>Only phase A changes significantly.</strong> That's where the skipped check runs.</li>
+<li><strong>Two patched runs were expiries.</strong> <code>patched_b1_1</code> (7.14 s) and <code>patched_b3_4</code> (6.72 s) started about 610 s and 607 s after the record was written. The other 6 measured patched runs were 1.6–2.6 s.</li>
+<li><strong>This is the best case for frequency.</strong> Launches were about 40 s apart. Launches more than 10 minutes apart would always find the record expired, and get no saving.</li>
+<li><strong>Phase C keeps its <code>aws configure list</code>.</strong> It's a separate path, <code>get_cloud_credential_file_mounts</code>. Only <code>aws.remote_identity: NO_UPLOAD</code> removes it.</li>
+<li><strong>A separate run confirmed the record is stable.</strong> Four launches in <code>bench_results/20261103-empty-storage-check-verify/</code> kept the same fingerprint and <code>checked_at</code>, with phase A at 9.34 s on the first and 1.97–2.36 s after that.</li>
+</ul>
+<h3 id="against-master">Against master <a class="header-anchor" href="#against-master">#</a></h3>
+<p>A second run compared the whole branch with master (<code>796c5bcc8</code>), with no <code>allowed_clouds</code> or <code>NO_UPLOAD</code> on either side. Results are in <code>bench_results/20261103-i3-2-vs-master-no-tips/</code>. Each benchmark had 8 measured runs per side, and all succeeded.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Benchmark (median, with range)</th>
+<th>Master</th>
+<th><code>ej-prj-i3-2</code></th>
+<th>Change</th>
+<th>p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sky jobs launch</code> client total</td>
+<td>74.3 s (72.3–81.7)</td>
+<td>34.2 s (31.8–36.0)</td>
+<td>−40.2 s</td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td><code>sky jobs launch</code> phase A</td>
+<td>7.0 s (6.6–7.2)</td>
+<td>2.1 s (1.8–2.3)</td>
+<td>−4.8 s</td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td><code>sky launch</code> wall time</td>
+<td>46.70 s (41.5–56.1)</td>
+<td>27.57 s (24.8–33.2)</td>
+<td>−19.13 s</td>
+<td>0.0002</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>This measures more than this change.</strong> The gap also includes the earlier <code>ej-prj-i2-*</code> branches, and the bytecode image on the branch's side only. §7's table above is the measure of this change alone.</li>
+<li><strong><code>sky launch</code> doesn't appear to benefit from this change.</strong> It reaches the storage check only for tasks with storage mounts (<code>sky/task.py:1690</code>), and this task has none. That's from the code; no A/B has isolated it for <code>sky launch</code>.</li>
+<li><strong>No measured branch run hit an expired record,</strong> with launches about 40 s apart.</li>
+</ul>
+<h2 id="8-open-decision-the-10-minute-limit">8. Open decision: the 10-minute limit <a class="header-anchor" href="#8-open-decision-the-10-minute-limit">#</a></h2>
+<p>The limit is <code>_EMPTY_STORAGE_CHECK_TTL_SECONDS</code> in <code>sky/check.py</code>. It sets the saving against how long a missed change can last:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Limit</th>
+<th>Who saves</th>
+<th>How long new credentials or a failed check can last without <code>sky check</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10 minutes (current)</td>
+<td>Launches under 10 minutes apart</td>
+<td>10 minutes</td>
+</tr>
+<tr>
+<td>1 hour (suggested)</td>
+<td>Launches under 1 hour apart</td>
+<td>1 hour</td>
+</tr>
+</tbody>
+</table></div>
+<p>Only the 10-minute limit has been tested. The saving per skipped check shouldn't depend on the limit, but that hasn't been measured.</p>
+<h2 id="9-testing">9. Testing <a class="header-anchor" href="#9-testing">#</a></h2>
+<p><strong>Unit tests</strong> (<code>test_check_empty_storage_result.py</code>, 9 tests):</p>
+<ul>
+<li>An empty result is reused on the same config.</li>
+<li>A config change reruns the check, and the new result is the one reused.</li>
+<li>A record expires at exactly the limit, and a backward clock reruns the check.</li>
+<li>A changed allowed clouds list reruns the check.</li>
+<li>Credentials found after expiry are used, and a list stored by <code>sky check</code> takes effect at once.</li>
+<li>A non-empty result isn't recorded as empty.</li>
+<li>Compute checks are never skipped or recorded.</li>
+</ul>
+<p>These ran with <code>test_check_persistence.py</code> and <code>data/test_enabled_storage_clouds_cache.py</code>, and all 46 passed. mypy is clean on both source files. The full unit suite hasn't been run.</p>
+<p><strong>Not tested:</strong> a real user adding credentials, a job using cloud storage, a remote or Postgres-backed server, or a non-writer of the workspace.</p>
+<p><strong>Manual check:</strong></p>
+<pre><code class="language-bash">sky api stop; sky api start --deploy
+sky jobs launch -y ej/task_bytecode.yaml     # runs the check and writes the record
+sky jobs launch -y ej/task_bytecode.yaml     # phase A about 4.7 s shorter
+
+sqlite3 ~/.sky/state.db \
+  &quot;select value from config where key like 'empty_storage_check_%'&quot;
+</code></pre>
+<p>The stored <code>checked_at</code> should stay the same between the two launches. To see a recheck, change any value in <code>~/.sky/config.yaml</code> and launch again: <code>config_fingerprint</code> and <code>checked_at</code> should both change.</p>
+<h2 id="10-before-opening-a-pr">10. Before opening a PR <a class="header-anchor" href="#10-before-opening-a-pr">#</a></h2>
+<ul>
+<li><strong>Base:</strong> the branch sits on the <code>ej-prj-i2-*</code> line, so a PR needs this commit moved onto master or stacked on <code>dc6c01a92</code>.</li>
+<li><strong>One dependency:</strong> <code>dc6c01a92</code> renames <code>_config_fingerprint</code> to <code>current_config_fingerprint</code>. Picked onto master alone, this commit must use the old name. That commit also adds the per-request cache in §2, so master's numbers may differ.</li>
+<li><strong>Test files:</strong> the branch also carries <code>ej/</code> files added by <code>407784c57</code>, which don't belong in a PR.</li>
+<li><strong>Decide the limit</strong> (§8).</li>
+<li><strong>Update <a href="local_run_speedup_tips.html"><code>local_run_speedup_tips.md</code></a> once merged.</strong> It says the check runs on every launch, and the <code>allowed_clouds</code> saving would shrink.</li>
+</ul>
+
+</main>
+
+</body>
+</html>
