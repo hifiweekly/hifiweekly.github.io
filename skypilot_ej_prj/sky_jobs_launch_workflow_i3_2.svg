@@ -1,0 +1,915 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2260" height="5419" viewBox="0 0 2260 5419" font-family="Helvetica, Arial, sans-serif">
+<title>sky jobs launch workflow on ej-prj-i3-2</title>
+<style>.m{font-family:"DejaVu Sans Mono",Menlo,Consolas,monospace}</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#4a5563"/></marker></defs>
+<rect width="2260" height="5419" fill="#ffffff"/>
+<rect x="0" y="244" width="2260" height="1049" fill="#f4f6f8"/>
+<line x1="0" y1="244" x2="2260" y2="244" stroke="#c8d0d9"/>
+<text x="24" y="282" font-size="24" fill="#1f2933" font-weight="700">A</text>
+<text x="24" y="304" font-size="13" fill="#5b6776">client start → job row</text>
+<text x="24" y="322" font-size="14" fill="#0f766e" font-weight="700">6.85 → 2.20</text>
+<text x="24" y="340" font-size="12" fill="#5b6776">p = 0.0047</text>
+<rect x="0" y="1303" width="2260" height="582" fill="#ffffff"/>
+<line x1="0" y1="1303" x2="2260" y2="1303" stroke="#c8d0d9"/>
+<text x="24" y="1341" font-size="24" fill="#1f2933" font-weight="700">B</text>
+<text x="24" y="1363" font-size="13" fill="#5b6776">row → STARTING</text>
+<text x="24" y="1381" font-size="14" fill="#1f2933" font-weight="700">2.41 → 2.47</text>
+<text x="24" y="1399" font-size="12" fill="#5b6776">p = 0.97</text>
+<rect x="0" y="1895" width="2260" height="418" fill="#f4f6f8"/>
+<line x1="0" y1="1895" x2="2260" y2="1895" stroke="#c8d0d9"/>
+<text x="24" y="1933" font-size="24" fill="#1f2933" font-weight="700">C</text>
+<text x="24" y="1955" font-size="13" fill="#5b6776">STARTING →</text>
+<text x="24" y="1971" font-size="13" fill="#5b6776">provisioning</text>
+<text x="24" y="1989" font-size="14" fill="#1f2933" font-weight="700">3.16 → 3.07</text>
+<text x="24" y="2007" font-size="12" fill="#5b6776">p = 0.43</text>
+<rect x="0" y="2323" width="2260" height="929" fill="#ffffff"/>
+<line x1="0" y1="2323" x2="2260" y2="2323" stroke="#c8d0d9"/>
+<text x="24" y="2361" font-size="24" fill="#1f2933" font-weight="700">D</text>
+<text x="24" y="2383" font-size="13" fill="#5b6776">provisioning → job</text>
+<text x="24" y="2399" font-size="13" fill="#5b6776">submitted</text>
+<text x="24" y="2417" font-size="14" fill="#1f2933" font-weight="700">16.16 → 15.08</text>
+<text x="24" y="2435" font-size="12" fill="#5b6776">p = 0.62</text>
+<rect x="0" y="3262" width="2260" height="325" fill="#f4f6f8"/>
+<line x1="0" y1="3262" x2="2260" y2="3262" stroke="#c8d0d9"/>
+<text x="24" y="3300" font-size="24" fill="#1f2933" font-weight="700">E</text>
+<text x="24" y="3322" font-size="13" fill="#5b6776">job runs on the</text>
+<text x="24" y="3338" font-size="13" fill="#5b6776">cluster</text>
+<text x="24" y="3356" font-size="14" fill="#1f2933" font-weight="700">6.94 → 7.10</text>
+<text x="24" y="3374" font-size="12" fill="#5b6776">p = 0.69</text>
+<rect x="0" y="3597" width="2260" height="300" fill="#ffffff"/>
+<line x1="0" y1="3597" x2="2260" y2="3597" stroke="#c8d0d9"/>
+<text x="24" y="3635" font-size="24" fill="#1f2933" font-weight="700">F</text>
+<text x="24" y="3657" font-size="13" fill="#5b6776">job ended → RUNNING</text>
+<text x="24" y="3675" font-size="14" fill="#1f2933" font-weight="700">2.37 → 2.35</text>
+<text x="24" y="3693" font-size="12" fill="#5b6776">p = 0.41</text>
+<rect x="0" y="3907" width="2260" height="236" fill="#f4f6f8"/>
+<line x1="0" y1="3907" x2="2260" y2="3907" stroke="#c8d0d9"/>
+<text x="24" y="3945" font-size="24" fill="#1f2933" font-weight="700">G</text>
+<text x="24" y="3967" font-size="13" fill="#5b6776">RUNNING → SUCCEEDED</text>
+<text x="24" y="3985" font-size="14" fill="#1f2933" font-weight="700">0.11 → 0.14</text>
+<text x="24" y="4003" font-size="12" fill="#5b6776">p = 0.22</text>
+<rect x="0" y="4153" width="2260" height="312" fill="#ffffff"/>
+<line x1="0" y1="4153" x2="2260" y2="4153" stroke="#c8d0d9"/>
+<text x="24" y="4191" font-size="24" fill="#1f2933" font-weight="700">H</text>
+<text x="24" y="4213" font-size="13" fill="#5b6776">SUCCEEDED → client</text>
+<text x="24" y="4229" font-size="13" fill="#5b6776">exits</text>
+<text x="24" y="4247" font-size="14" fill="#1f2933" font-weight="700">2.71 → 2.56</text>
+<text x="24" y="4265" font-size="12" fill="#5b6776">p = 0.83</text>
+<line x1="395.0" y1="218" x2="395.0" y2="4465" stroke="#e3e7ec" stroke-dasharray="3 5"/>
+<line x1="805.0" y1="218" x2="805.0" y2="4465" stroke="#e3e7ec" stroke-dasharray="3 5"/>
+<line x1="1215.0" y1="218" x2="1215.0" y2="4465" stroke="#e3e7ec" stroke-dasharray="3 5"/>
+<line x1="1625.0" y1="218" x2="1625.0" y2="4465" stroke="#e3e7ec" stroke-dasharray="3 5"/>
+<line x1="2035.0" y1="218" x2="2035.0" y2="4465" stroke="#e3e7ec" stroke-dasharray="3 5"/>
+<path d="M395.0 366L395.0 396" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M395.0 501L395.0 531" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M594 557L805.0 557L805.0 591" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="699.5" y="551" font-size="12" fill="#5b6776" text-anchor="middle" font-style="italic">HTTP</text>
+<path d="M805.0 712L805.0 742" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M805.0 1089L805.0 1119" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M805.0 1255L805.0 1321" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M805.0 1502L805.0 1532" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M606 1145L395.0 1145L395.0 1321" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="500.5" y="1139" font-size="12" fill="#5b6776" text-anchor="middle" font-style="italic">returns job ID</text>
+<path d="M1004 1558L1215.0 1558L1215.0 1592" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="1109.5" y="1552" font-size="12" fill="#5b6776" text-anchor="middle" font-style="italic">starts if needed</text>
+<path d="M1215.0 1712L1215.0 1742" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1215.0 1847L1215.0 1913" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1414 1939L1625.0 1939L1625.0 1973" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="1519.5" y="1933" font-size="12" fill="#5b6776" text-anchor="middle" font-style="italic">HTTP</text>
+<path d="M1625.0 2155L1625.0 2185" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1625.0 2275L1625.0 2341" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1824 2367L2035.0 2367L2035.0 2401" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="1929.5" y="2361" font-size="12" fill="#5b6776" text-anchor="middle" font-style="italic">create</text>
+<path d="M1625.0 2507L1625.0 2537" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1625.0 2642L1625.0 2672" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M2035.0 2521L2035.0 2552" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1625.0 2823L1625.0 2853" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1625.0 3034L1625.0 3064" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1625.0 3214L1625.0 3280" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1824 3306L2035.0 3306L2035.0 3340" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="1929.5" y="3300" font-size="12" fill="#5b6776" text-anchor="middle" font-style="italic">queued</text>
+<path d="M1426 3306L1215.0 3306L1215.0 3340" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="1320.5" y="3300" font-size="12" fill="#5b6776" text-anchor="middle" font-style="italic">request done</text>
+<path d="M1215.0 3505L1215.0 3615" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1215.0 3859L1215.0 3925" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M395.0 1457L395.0 4171" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<path d="M1215.0 4105L1215.0 4171" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="24" y="42" font-size="26" fill="#1f2933" font-weight="700">sky jobs launch: workflow, functions, line numbers and measured times</text>
+<text x="24" y="68" font-size="14" fill="#5b6776">Code: ej-prj-i3-2 d771518f1 (on master 796c5bcc8). Consolidation mode (sky api start --deploy). Task: ej/task_bytecode.yaml, 6 nodes on k8s/kind-skypilot, one echo.</text>
+<text x="24" y="90" font-size="14" fill="#5b6776">Times are medians in seconds. The letter beside a time says where it comes from. O1–O15 mark the rows each optimization changed; the list is at the bottom.</text>
+<text x="24" y="112" font-size="12" fill="#5b6776" font-weight="700">W</text>
+<text x="44" y="112" font-size="13" fill="#1f2933">wait trace on ej-prj-i2-6, not rerun on this branch: 11 runs (20261102-wait-trace2)</text>
+<text x="744" y="112" font-size="12" fill="#5b6776" font-weight="700">L</text>
+<text x="764" y="112" font-size="13" fill="#1f2933">latest A/B: ej-prj-i2-6 vs ej-prj-i3-2, 8 runs per arm (20261103-empty-storage-check-ab)</text>
+<text x="24" y="132" font-size="12" fill="#5b6776" font-weight="700">P</text>
+<text x="44" y="132" font-size="13" fill="#1f2933">phase A profile: 24 hooked runs, client-side times (20261102-phase-a-profile)</text>
+<text x="744" y="132" font-size="12" fill="#5b6776" font-weight="700">T</text>
+<text x="764" y="132" font-size="13" fill="#1f2933">older trace, before later commits; relative size only (see the notes)</text>
+<text x="24" y="152" font-size="12" fill="#5b6776" font-weight="700">I</text>
+<text x="44" y="152" font-size="13" fill="#1f2933">inferred from the timestamps around it, not timed directly</text>
+<rect x="1470" y="100" width="26" height="16" rx="3" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="1504" y="113" font-size="13" fill="#1f2933">Largest remaining time</text>
+<rect x="1720" y="100" width="26" height="16" rx="3" fill="#ecfdf5" stroke="#0f766e" stroke-width="2"/>
+<text x="1754" y="113" font-size="13" fill="#1f2933">Improved by the latest changes</text>
+<line x1="1470" y1="130" x2="1504" y2="130" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="1512" y="135" font-size="13" fill="#1f2933">Next step</text>
+<line x1="1600" y1="130" x2="1634" y2="130" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="1642" y="135" font-size="13" fill="#1f2933">HTTP or signal across processes  ·  :N = line</text>
+<rect x="196" y="166" width="398" height="50" rx="6" fill="#223548"/>
+<text x="395.0" y="187" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="700">Client</text>
+<text x="395.0" y="206" font-size="12" fill="#c8d3df" text-anchor="middle">sky CLI + SDK</text>
+<rect x="606" y="166" width="398" height="50" rx="6" fill="#223548"/>
+<text x="805.0" y="187" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="700">API server: jobs.launch</text>
+<text x="805.0" y="206" font-size="12" fill="#c8d3df" text-anchor="middle">SHORT request worker</text>
+<rect x="1016" y="166" width="398" height="50" rx="6" fill="#223548"/>
+<text x="1215.0" y="187" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="700">Jobs controller</text>
+<text x="1215.0" y="206" font-size="12" fill="#c8d3df" text-anchor="middle">separate process, on the API server host</text>
+<rect x="1426" y="166" width="398" height="50" rx="6" fill="#223548"/>
+<text x="1625.0" y="187" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="700">API server: sky.launch</text>
+<text x="1625.0" y="206" font-size="12" fill="#c8d3df" text-anchor="middle">inner LONG request</text>
+<rect x="1836" y="166" width="398" height="50" rx="6" fill="#223548"/>
+<text x="2035.0" y="187" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="700">Kubernetes pods</text>
+<text x="2035.0" y="206" font-size="12" fill="#c8d3df" text-anchor="middle">kind-skypilot, 6 pods</text>
+<text x="24" y="187" font-size="15" fill="#1f2933" font-weight="700">Phase</text>
+<text x="24" y="206" font-size="12" fill="#5b6776">i2-6 → i3-2 (s)</text>
+<rect x="196" y="262" width="398" height="104" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="208" y="284" font-size="14" fill="#1f2933" font-weight="700">Start Python, import the CLI</text>
+<text x="582" y="284" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">1.30 s</text>
+<text x="208" y="302" font-size="12" fill="#b4530a" font-style="italic">Samples: sky 0.27, pydantic 0.18, sqlalchemy 0.17,</text>
+<text x="208" y="317" font-size="12" fill="#b4530a" font-style="italic">networkx 0.09, numpy 0.06.</text>
+<text x="216" y="332" font-size="11" fill="#1f2933" class="m">process start → Python</text>
+<text x="532" y="332" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.03</text>
+<text x="535" y="332" font-size="8" fill="#5b6776" font-weight="700">P</text>
+<text x="216" y="347" font-size="11" fill="#1f2933" class="m">imports, up to the CLI</text>
+<text x="532" y="347" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.27</text>
+<text x="535" y="347" font-size="8" fill="#5b6776" font-weight="700">P</text>
+<rect x="196" y="396" width="398" height="105" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="208" y="418" font-size="14" fill="#1f2933" font-weight="700">CLI entry: parse the task</text>
+<text x="582" y="418" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">0.15 s</text>
+<text x="208" y="436" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/client/cli/command.py</text>
+<text x="216" y="452" font-size="11" fill="#1f2933" class="m">jobs_launch()</text>
+<text x="582" y="452" font-size="11" fill="#5b6776" text-anchor="end" class="m">:5962</text>
+<text x="216" y="467" font-size="11" fill="#1f2933" class="m">_make_task_or_dag_from_entrypoint...()</text>
+<text x="532" y="467" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.15</text>
+<text x="535" y="467" font-size="8" fill="#5b6776" font-weight="700">P</text>
+<text x="582" y="467" font-size="11" fill="#5b6776" text-anchor="end" class="m">:6040</text>
+<text x="216" y="482" font-size="11" fill="#1f2933" class="m">managed_jobs.launch()</text>
+<text x="582" y="482" font-size="11" fill="#5b6776" text-anchor="end" class="m">:6126</text>
+<rect x="196" y="531" width="398" height="120" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="208" y="553" font-size="14" fill="#1f2933" font-weight="700">SDK: health, validate, upload, POST</text>
+<text x="208" y="571" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/client/sdk.py</text>
+<text x="216" y="587" font-size="11" fill="#1f2933" class="m">launch()</text>
+<text x="582" y="587" font-size="11" fill="#5b6776" text-anchor="end" class="m">:168</text>
+<text x="216" y="602" font-size="11" fill="#1f2933" class="m">sdk.validate() → POST /validate</text>
+<text x="532" y="602" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.28</text>
+<text x="535" y="602" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="582" y="602" font-size="11" fill="#5b6776" text-anchor="end" class="m">:264</text>
+<text x="216" y="617" font-size="11" fill="#1f2933" class="m">upload_mounts_to_api_server()</text>
+<text x="532" y="617" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.00</text>
+<text x="535" y="617" font-size="8" fill="#5b6776" font-weight="700">P</text>
+<text x="582" y="617" font-size="11" fill="#5b6776" text-anchor="end" class="m">:318</text>
+<text x="216" y="632" font-size="11" fill="#1f2933" class="m">POST /jobs/launch</text>
+<text x="532" y="632" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.26</text>
+<text x="535" y="632" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="582" y="632" font-size="11" fill="#5b6776" text-anchor="end" class="m">:333</text>
+<rect x="606" y="591" width="398" height="121" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="618" y="613" font-size="14" fill="#1f2933" font-weight="700">Route, queue, start the worker</text>
+<text x="992" y="613" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">≈0.2 s</text>
+<text x="618" y="631" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/server/server.py</text>
+<text x="626" y="647" font-size="11" fill="#1f2933" class="m">launch()</text>
+<text x="992" y="647" font-size="11" fill="#5b6776" text-anchor="end" class="m">:34</text>
+<text x="626" y="662" font-size="11" fill="#1f2933" class="m">schedule_request_async()</text>
+<text x="992" y="662" font-size="11" fill="#5b6776" text-anchor="end" class="m">:54</text>
+<text x="618" y="677" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/server/requests/executor.py</text>
+<text x="626" y="693" font-size="11" fill="#1f2933" class="m">_request_execution_wrapper()</text>
+<text x="992" y="693" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1022</text>
+<rect x="606" y="742" width="398" height="347" rx="6" fill="#ecfdf5" stroke="#0f766e" stroke-width="2"/>
+<text x="618" y="764" font-size="14" fill="#1f2933" font-weight="700">core.launch: storage check reused</text>
+<text x="992" y="764" font-size="13" fill="#0f766e" text-anchor="end" font-weight="700">skipped</text>
+<text x="618" y="782" font-size="12" fill="#5b6776" font-style="italic">Skipped while an earlier empty result has the same config</text>
+<text x="618" y="797" font-size="12" fill="#5b6776" font-style="italic">fingerprint and is under 10 minutes old. Otherwise it</text>
+<text x="618" y="812" font-size="12" fill="#5b6776" font-style="italic">reruns, and phase A goes back to about 7 s.</text>
+<text x="618" y="827" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/server/core.py</text>
+<text x="626" y="843" font-size="11" fill="#1f2933" class="m">launch()</text>
+<text x="992" y="843" font-size="11" fill="#5b6776" text-anchor="end" class="m">:983</text>
+<text x="626" y="858" font-size="11" fill="#1f2933" class="m">dag.validate() + k8s checks</text>
+<text x="942" y="858" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.05</text>
+<text x="945" y="858" font-size="8" fill="#5b6776" font-weight="700">P</text>
+<text x="992" y="858" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1097</text>
+<text x="626" y="873" font-size="11" fill="#1f2933" class="m">storage lookup</text>
+<rect x="846" y="863" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="861" y="873" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O7</text>
+<text x="992" y="873" font-size="11" fill="#5b6776" text-anchor="end" class="m">:191</text>
+<text x="618" y="888" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/check.py</text>
+<text x="626" y="904" font-size="11" fill="#1f2933" class="m">get_cached_enabled_clouds_or_refresh()</text>
+<text x="992" y="904" font-size="11" fill="#5b6776" text-anchor="end" class="m">:697</text>
+<text x="626" y="919" font-size="11" fill="#1f2933" class="m">_has_current_empty_storage...()</text>
+<rect x="846" y="909" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="861" y="919" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O15</text>
+<text x="992" y="919" font-size="11" fill="#5b6776" text-anchor="end" class="m">:680</text>
+<text x="626" y="934" font-size="11" fill="#1f2933" class="m">current_config_fingerprint()</text>
+<text x="992" y="934" font-size="11" fill="#5b6776" text-anchor="end" class="m">:621</text>
+<text x="626" y="949" font-size="11" fill="#1f2933" class="m">TTL: 600 s</text>
+<text x="992" y="949" font-size="11" fill="#5b6776" text-anchor="end" class="m">:48</text>
+<text x="618" y="964" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/global_user_state.py</text>
+<text x="626" y="980" font-size="11" fill="#1f2933" class="m">get_empty_storage_check()</text>
+<rect x="846" y="970" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="861" y="980" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O15</text>
+<text x="992" y="980" font-size="11" fill="#5b6776" text-anchor="end" class="m">:3484</text>
+<text x="626" y="995" font-size="11" fill="#1f2933" class="m">set_empty_storage_check()</text>
+<rect x="846" y="985" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="861" y="995" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O15</text>
+<text x="992" y="995" font-size="11" fill="#5b6776" text-anchor="end" class="m">:3500</text>
+<text x="626" y="1010" font-size="11" fill="#1f2933" class="m">If it reruns: parallel checks</text>
+<text x="942" y="1010" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">4.75</text>
+<text x="945" y="1010" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="626" y="1025" font-size="11" fill="#1f2933" class="m">└ aws configure list</text>
+<text x="942" y="1025" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">2.38</text>
+<text x="945" y="1025" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="626" y="1040" font-size="11" fill="#1f2933" class="m">└ gcloud auth list</text>
+<text x="942" y="1040" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.48</text>
+<text x="945" y="1040" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="626" y="1055" font-size="11" fill="#1f2933" class="m">└ gcloud config get project</text>
+<text x="942" y="1055" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.46</text>
+<text x="945" y="1055" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="626" y="1070" font-size="11" fill="#1f2933" class="m">└ aws --version</text>
+<text x="942" y="1070" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.35</text>
+<text x="945" y="1070" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<rect x="606" y="1119" width="398" height="136" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="618" y="1141" font-size="14" fill="#1f2933" font-weight="700">Create the job row</text>
+<text x="992" y="1141" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">end of A</text>
+<text x="618" y="1159" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/server/core.py</text>
+<text x="626" y="1175" font-size="11" fill="#1f2933" class="m">get_controller_resources()</text>
+<text x="942" y="1175" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.03</text>
+<text x="945" y="1175" font-size="8" fill="#5b6776" font-weight="700">P</text>
+<text x="992" y="1175" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1278</text>
+<text x="626" y="1190" font-size="11" fill="#1f2933" class="m">_maybe_submit_job_locally()</text>
+<text x="942" y="1190" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">&lt;0.01</text>
+<text x="945" y="1190" font-size="8" fill="#5b6776" font-weight="700">P</text>
+<text x="992" y="1190" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1287</text>
+<text x="626" y="1205" font-size="11" fill="#1f2933" class="m">set_pending()</text>
+<text x="992" y="1205" font-size="11" fill="#5b6776" text-anchor="end" class="m">:635</text>
+<text x="618" y="1220" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/state.py</text>
+<text x="626" y="1236" font-size="11" fill="#1f2933" class="m">created_at=time.time()</text>
+<text x="992" y="1236" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1437</text>
+<rect x="606" y="1321" width="398" height="181" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="618" y="1343" font-size="14" fill="#1f2933" font-weight="700">Render and run the controller script</text>
+<text x="992" y="1343" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">2.16 s</text>
+<text x="618" y="1361" font-size="12" fill="#b4530a" font-style="italic">Mostly one wait: a new Python process runs the scheduler.</text>
+<text x="618" y="1376" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/utils/controller_utils.py</text>
+<text x="626" y="1392" font-size="11" fill="#1f2933" class="m">_get_cloud_dependencies_...()</text>
+<text x="942" y="1392" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.23</text>
+<text x="945" y="1392" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="992" y="1392" font-size="11" fill="#5b6776" text-anchor="end" class="m">:310</text>
+<text x="618" y="1407" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/server/core.py</text>
+<text x="626" y="1423" font-size="11" fill="#1f2933" class="m">fill_template(JOBS_CONTROLLER_TEMPLATE)</text>
+<text x="992" y="1423" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1441</text>
+<text x="626" y="1438" font-size="11" fill="#1f2933" class="m">rsync size check</text>
+<text x="942" y="1438" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.16</text>
+<text x="945" y="1438" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="626" y="1453" font-size="11" fill="#1f2933" class="m">commands + rsync, controller files</text>
+<text x="942" y="1453" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.22</text>
+<text x="945" y="1453" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="626" y="1468" font-size="11" fill="#1f2933" class="m">_consolidated_launch()</text>
+<text x="992" y="1468" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1457</text>
+<text x="626" y="1483" font-size="11" fill="#1f2933" class="m">backend.run_on_head()</text>
+<text x="942" y="1483" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.55</text>
+<text x="945" y="1483" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="992" y="1483" font-size="11" fill="#5b6776" text-anchor="end" class="m">:479</text>
+<rect x="606" y="1532" width="398" height="136" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="618" y="1554" font-size="14" fill="#1f2933" font-weight="700">Hand off to the scheduler</text>
+<text x="618" y="1572" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/templates/jobs-controller.yaml.j2</text>
+<text x="626" y="1588" font-size="11" fill="#1f2933" class="m">python -m sky.jobs.scheduler</text>
+<text x="992" y="1588" font-size="11" fill="#5b6776" text-anchor="end" class="m">:74</text>
+<text x="618" y="1603" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/scheduler.py</text>
+<text x="626" y="1619" font-size="11" fill="#1f2933" class="m">submit_jobs()</text>
+<text x="992" y="1619" font-size="11" fill="#5b6776" text-anchor="end" class="m">:354</text>
+<text x="626" y="1634" font-size="11" fill="#1f2933" class="m">maybe_start_controllers()</text>
+<text x="992" y="1634" font-size="11" fill="#5b6776" text-anchor="end" class="m">:235</text>
+<text x="626" y="1649" font-size="11" fill="#1f2933" class="m">start_controller(), if needed</text>
+<text x="992" y="1649" font-size="11" fill="#5b6776" text-anchor="end" class="m">:160</text>
+<rect x="196" y="1321" width="398" height="136" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="208" y="1343" font-size="14" fill="#1f2933" font-weight="700">Client follows the job</text>
+<text x="208" y="1361" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/client/cli/command.py</text>
+<text x="216" y="1377" font-size="11" fill="#1f2933" class="m">_async_call_or_wait()</text>
+<text x="582" y="1377" font-size="11" fill="#5b6776" text-anchor="end" class="m">:6133</text>
+<text x="216" y="1392" font-size="11" fill="#1f2933" class="m">managed_jobs.tail_logs()</text>
+<text x="582" y="1392" font-size="11" fill="#5b6776" text-anchor="end" class="m">:6153</text>
+<text x="208" y="1407" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/utils.py</text>
+<text x="216" y="1423" font-size="11" fill="#1f2933" class="m">stream_logs()</text>
+<text x="582" y="1423" font-size="11" fill="#5b6776" text-anchor="end" class="m">:3386</text>
+<text x="216" y="1438" font-size="11" fill="#1f2933" class="m">_stream_logs_by_id()</text>
+<text x="582" y="1438" font-size="11" fill="#5b6776" text-anchor="end" class="m">:2728</text>
+<rect x="1016" y="1592" width="398" height="120" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1028" y="1614" font-size="14" fill="#1f2933" font-weight="700">Controller process claims the job</text>
+<text x="1028" y="1632" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/controller.py</text>
+<text x="1036" y="1648" font-size="11" fill="#1f2933" class="m">main()</text>
+<text x="1402" y="1648" font-size="11" fill="#5b6776" text-anchor="end" class="m">:4803</text>
+<text x="1036" y="1663" font-size="11" fill="#1f2933" class="m">monitor_loop()</text>
+<text x="1402" y="1663" font-size="11" fill="#5b6776" text-anchor="end" class="m">:4708</text>
+<text x="1036" y="1678" font-size="11" fill="#1f2933" class="m">start_job()</text>
+<text x="1402" y="1678" font-size="11" fill="#5b6776" text-anchor="end" class="m">:4445</text>
+<text x="1036" y="1693" font-size="11" fill="#1f2933" class="m">run_job_loop()</text>
+<text x="1402" y="1693" font-size="11" fill="#5b6776" text-anchor="end" class="m">:4205</text>
+<rect x="1016" y="1742" width="398" height="105" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1028" y="1764" font-size="14" fill="#1f2933" font-weight="700">Mark the task STARTING</text>
+<text x="1402" y="1764" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">end of B</text>
+<text x="1028" y="1782" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/controller.py</text>
+<text x="1036" y="1798" font-size="11" fill="#1f2933" class="m">JobController.run()</text>
+<text x="1402" y="1798" font-size="11" fill="#5b6776" text-anchor="end" class="m">:3172</text>
+<text x="1036" y="1813" font-size="11" fill="#1f2933" class="m">_run_one_task()</text>
+<text x="1402" y="1813" font-size="11" fill="#5b6776" text-anchor="end" class="m">:978</text>
+<text x="1036" y="1828" font-size="11" fill="#1f2933" class="m">set_starting_async()</text>
+<text x="1402" y="1828" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1116</text>
+<rect x="1016" y="1913" width="398" height="135" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1028" y="1935" font-size="14" fill="#1f2933" font-weight="700">Ask the API server for a cluster</text>
+<text x="1402" y="1935" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">0.24 s</text>
+<text x="1028" y="1953" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/recovery_strategy.py</text>
+<text x="1036" y="1969" font-size="11" fill="#1f2933" class="m">launch()</text>
+<text x="1402" y="1969" font-size="11" fill="#5b6776" text-anchor="end" class="m">:514</text>
+<text x="1036" y="1984" font-size="11" fill="#1f2933" class="m">_launch()</text>
+<text x="1402" y="1984" font-size="11" fill="#5b6776" text-anchor="end" class="m">:980</text>
+<text x="1036" y="1999" font-size="11" fill="#1f2933" class="m">sdk.validate → POST /validate</text>
+<text x="1352" y="1999" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.13</text>
+<text x="1355" y="1999" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1036" y="2014" font-size="11" fill="#1f2933" class="m">sdk.launch → POST /launch</text>
+<text x="1352" y="2014" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.11</text>
+<text x="1355" y="2014" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1402" y="2014" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1187</text>
+<text x="1036" y="2029" font-size="11" fill="#1f2933" class="m">_await_launch_request()</text>
+<text x="1402" y="2029" font-size="11" fill="#5b6776" text-anchor="end" class="m">:860</text>
+<rect x="1426" y="1973" width="398" height="182" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="1438" y="1995" font-size="14" fill="#1f2933" font-weight="700">Inner sky.launch request</text>
+<text x="1812" y="1995" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">2.15 s</text>
+<text x="1438" y="2013" font-size="12" fill="#b4530a" font-style="italic">Nearly all of C is one AWS credential check. C is 0.98 s</text>
+<text x="1438" y="2028" font-size="12" fill="#b4530a" font-style="italic">without aws on the server PATH.</text>
+<text x="1438" y="2043" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/server/server.py</text>
+<text x="1446" y="2059" font-size="11" fill="#1f2933" class="m">launch()</text>
+<text x="1812" y="2059" font-size="11" fill="#5b6776" text-anchor="end" class="m">:2505</text>
+<text x="1438" y="2074" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/clouds/aws.py</text>
+<text x="1446" y="2090" font-size="11" fill="#1f2933" class="m">aws configure list</text>
+<text x="1762" y="2090" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">2.15</text>
+<text x="1765" y="2090" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1812" y="2090" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1235</text>
+<text x="1438" y="2105" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/execution.py</text>
+<text x="1446" y="2121" font-size="11" fill="#1f2933" class="m">_execute_dag()</text>
+<text x="1812" y="2121" font-size="11" fill="#5b6776" text-anchor="end" class="m">:407</text>
+<text x="1446" y="2136" font-size="11" fill="#1f2933" class="m">backend.provision()</text>
+<text x="1812" y="2136" font-size="11" fill="#5b6776" text-anchor="end" class="m">:627</text>
+<rect x="1426" y="2185" width="398" height="90" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1438" y="2207" font-size="14" fill="#1f2933" font-weight="700">'Provisioning on' event</text>
+<text x="1812" y="2207" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">end of C</text>
+<text x="1438" y="2225" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/backends/cloud_vm_ray_backend.py</text>
+<text x="1446" y="2241" font-size="11" fill="#1f2933" class="m">_retry_zones()</text>
+<text x="1812" y="2241" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1011</text>
+<text x="1446" y="2256" font-size="11" fill="#1f2933" class="m">add_cluster_event('Provisioning on')</text>
+<text x="1812" y="2256" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1271</text>
+<rect x="1426" y="2341" width="398" height="166" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1438" y="2363" font-size="14" fill="#1f2933" font-weight="700">Create 6 pods, wait until Running</text>
+<text x="1812" y="2363" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">1.58 s</text>
+<text x="1438" y="2381" font-size="12" fill="#5b6776" font-style="italic">Starts 0.83 s into D. Range in the i2-6 A/B: 1.5–2.3 s.</text>
+<text x="1438" y="2396" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/provision/provisioner.py</text>
+<text x="1446" y="2412" font-size="11" fill="#1f2933" class="m">bulk_provision()</text>
+<text x="1812" y="2412" font-size="11" fill="#5b6776" text-anchor="end" class="m">:346</text>
+<text x="1438" y="2427" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/provision/kubernetes/instance.py</text>
+<text x="1446" y="2443" font-size="11" fill="#1f2933" class="m">_create_pods()</text>
+<text x="1762" y="2443" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.58</text>
+<text x="1765" y="2443" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1812" y="2443" font-size="11" fill="#5b6776" text-anchor="end" class="m">:2366</text>
+<text x="1446" y="2458" font-size="11" fill="#1f2933" class="m">_wait_for_pods_to_schedule()</text>
+<text x="1762" y="2458" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.06</text>
+<text x="1765" y="2458" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1812" y="2458" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1092</text>
+<text x="1446" y="2473" font-size="11" fill="#1f2933" class="m">_wait_for_pods_to_run()</text>
+<text x="1762" y="2473" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.40</text>
+<text x="1765" y="2473" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1812" y="2473" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1562</text>
+<text x="1446" y="2488" font-size="11" fill="#1f2933" class="m">└ wait between polls (watch)</text>
+<rect x="1666" y="2478" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="1681" y="2488" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O11</text>
+<text x="1762" y="2488" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.06</text>
+<text x="1765" y="2488" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1812" y="2488" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1520</text>
+<rect x="1836" y="2401" width="398" height="120" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1848" y="2423" font-size="14" fill="#1f2933" font-weight="700">Pod start (each of 6 pods)</text>
+<text x="1848" y="2441" font-size="12" fill="#5b6776" font-style="italic">These runs set IfNotPresent. The template still sets</text>
+<text x="1848" y="2456" font-size="12" fill="#5b6776" font-style="italic">Always, which added 6 serial pull checks on one kind node:</text>
+<text x="1848" y="2471" font-size="12" fill="#5b6776" font-style="italic">3.41 s in an older trace.</text>
+<text x="1848" y="2486" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/templates/kubernetes-ray.yml.j2</text>
+<text x="1856" y="2502" font-size="11" fill="#1f2933" class="m">imagePullPolicy: Always</text>
+<text x="2222" y="2502" font-size="11" fill="#5b6776" text-anchor="end" class="m">:612</text>
+<rect x="1426" y="2537" width="398" height="105" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1438" y="2559" font-size="14" fill="#1f2933" font-weight="700">Cluster info, then file mounts</text>
+<text x="1812" y="2559" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">2.24 s</text>
+<text x="1438" y="2577" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/provision/provisioner.py</text>
+<text x="1446" y="2593" font-size="11" fill="#1f2933" class="m">_post_provision_setup()</text>
+<text x="1812" y="2593" font-size="11" fill="#5b6776" text-anchor="end" class="m">:729</text>
+<text x="1446" y="2608" font-size="11" fill="#1f2933" class="m">get_cluster_info and SSH check</text>
+<text x="1762" y="2608" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.28</text>
+<text x="1765" y="2608" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1446" y="2623" font-size="11" fill="#1f2933" class="m">internal_file_mounts()</text>
+<text x="1762" y="2623" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.96</text>
+<text x="1765" y="2623" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1812" y="2623" font-size="11" fill="#5b6776" text-anchor="end" class="m">:880</text>
+<rect x="1426" y="2672" width="398" height="151" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1438" y="2694" font-size="14" fill="#1f2933" font-weight="700">Runtime setup on every pod</text>
+<text x="1812" y="2694" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">2.38 s</text>
+<text x="1438" y="2712" font-size="12" fill="#5b6776" font-style="italic">Range in the i2-6 A/B: 1.5–11.6 s. These stalls are not</text>
+<text x="1438" y="2727" font-size="12" fill="#5b6776" font-style="italic">fixed. A uv lock held by the PyPI dry run is the likely</text>
+<text x="1438" y="2742" font-size="12" fill="#5b6776" font-style="italic">cause.</text>
+<text x="1438" y="2757" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/provision/provisioner.py</text>
+<text x="1446" y="2773" font-size="11" fill="#1f2933" class="m">setup_runtime_on_cluster()</text>
+<text x="1762" y="2773" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">2.38</text>
+<text x="1765" y="2773" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1812" y="2773" font-size="11" fill="#5b6776" text-anchor="end" class="m">:886</text>
+<text x="1438" y="2788" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/templates/kubernetes-ray.yml.j2</text>
+<text x="1446" y="2804" font-size="11" fill="#1f2933" class="m">until [ -f ...installation_complete ]</text>
+<text x="1812" y="2804" font-size="11" fill="#5b6776" text-anchor="end" class="m">:2119</text>
+<rect x="1836" y="2552" width="398" height="256" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1848" y="2574" font-size="14" fill="#1f2933" font-weight="700">Pod bootstrap (each of 6 pods)</text>
+<text x="1848" y="2592" font-size="12" fill="#5b6776" font-style="italic">Runs on its own from container start, not traced here. T</text>
+<text x="1848" y="2607" font-size="12" fill="#5b6776" font-style="italic">times: A/B of O10 + O11, before the final image.</text>
+<text x="1848" y="2622" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/skylet/constants.py</text>
+<text x="1856" y="2638" font-size="11" fill="#1f2933" class="m">RAY_INSTALLATION_COMMANDS</text>
+<text x="2222" y="2638" font-size="11" fill="#5b6776" text-anchor="end" class="m">:396</text>
+<text x="1856" y="2653" font-size="11" fill="#1f2933" class="m">pins: checked, not installed</text>
+<rect x="2076" y="2643" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="2091" y="2653" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O4</text>
+<text x="2172" y="2653" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">≈0.00</text>
+<text x="2175" y="2653" font-size="8" fill="#5b6776" font-weight="700">T</text>
+<text x="1848" y="2668" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/templates/kubernetes-ray.yml.j2</text>
+<text x="1856" y="2684" font-size="11" fill="#1f2933" class="m">{{ ray_patches_cmd }}</text>
+<rect x="2076" y="2674" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="2091" y="2684" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O10</text>
+<text x="2222" y="2684" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1510</text>
+<text x="1856" y="2699" font-size="11" fill="#1f2933" class="m">ray stop only if Ray runs</text>
+<rect x="2076" y="2689" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="2091" y="2699" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O3</text>
+<text x="1856" y="2714" font-size="11" fill="#1f2933" class="m">ray start --head &amp;</text>
+<rect x="2076" y="2704" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="2091" y="2714" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O1</text>
+<text x="2222" y="2714" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1522</text>
+<text x="1856" y="2729" font-size="11" fill="#1f2933" class="m">└ imports from .pyc</text>
+<rect x="2076" y="2719" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="2091" y="2729" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O9</text>
+<text x="1856" y="2744" font-size="11" fill="#1f2933" class="m">└ no Ray Serve import</text>
+<rect x="2076" y="2734" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="2091" y="2744" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O10</text>
+<text x="1856" y="2759" font-size="11" fill="#1f2933" class="m">→ GCS first log</text>
+<text x="2172" y="2759" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">3.37</text>
+<text x="2175" y="2759" font-size="8" fill="#5b6776" font-weight="700">T</text>
+<text x="1856" y="2774" font-size="11" fill="#1f2933" class="m">→ last raylet</text>
+<text x="2172" y="2774" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">11.77</text>
+<text x="2175" y="2774" font-size="8" fill="#5b6776" font-weight="700">T</text>
+<text x="1856" y="2789" font-size="11" fill="#1f2933" class="m">uv pip install --dry-run</text>
+<rect x="2076" y="2779" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="2091" y="2789" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O1</text>
+<text x="2222" y="2789" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1567</text>
+<rect x="1426" y="2853" width="398" height="181" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="1438" y="2875" font-size="14" fill="#1f2933" font-weight="700">Wait for Ray; start skylet alongside</text>
+<text x="1812" y="2875" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">4.54 s</text>
+<text x="1438" y="2893" font-size="12" fill="#b4530a" font-style="italic">Largest stage left in D, down from 16.28 s on the base</text>
+<text x="1438" y="2908" font-size="12" fill="#b4530a" font-style="italic">before all changes. Skylet finishes first, so the wait for</text>
+<text x="1438" y="2923" font-size="12" fill="#b4530a" font-style="italic">workers to join sets the time.</text>
+<text x="1438" y="2938" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/provision/provisioner.py</text>
+<text x="1446" y="2954" font-size="11" fill="#1f2933" class="m">_run_alongside()</text>
+<text x="1762" y="2954" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">4.54</text>
+<text x="1765" y="2954" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1812" y="2954" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1006</text>
+<text x="1446" y="2969" font-size="11" fill="#1f2933" class="m">wait_for_ray_cluster_healthy()</text>
+<rect x="1666" y="2959" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="1681" y="2969" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O2</text>
+<text x="1812" y="2969" font-size="11" fill="#5b6776" text-anchor="end" class="m">:940</text>
+<text x="1446" y="2984" font-size="11" fill="#1f2933" class="m">start_skylet_on_head_node()</text>
+<text x="1762" y="2984" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">2.44</text>
+<text x="1765" y="2984" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1812" y="2984" font-size="11" fill="#5b6776" text-anchor="end" class="m">:981</text>
+<text x="1438" y="2999" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/provision/instance_setup.py</text>
+<text x="1446" y="3015" font-size="11" fill="#1f2933" class="m">ray_wait_for_alive_nodes_command()</text>
+<text x="1812" y="3015" font-size="11" fill="#5b6776" text-anchor="end" class="m">:454</text>
+<rect x="1426" y="3064" width="398" height="150" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="1438" y="3086" font-size="14" fill="#1f2933" font-weight="700">Autostop, then add the job</text>
+<text x="1812" y="3086" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">3.31 s</text>
+<text x="1438" y="3104" font-size="12" fill="#b4530a" font-style="italic">Without gRPC, each starts Python on the head over kubectl</text>
+<text x="1438" y="3119" font-size="12" fill="#b4530a" font-style="italic">exec. gRPC is off by default. _add_job runs on into E.</text>
+<text x="1438" y="3134" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/backends/cloud_vm_ray_backend.py</text>
+<text x="1446" y="3150" font-size="11" fill="#1f2933" class="m">_execute()</text>
+<text x="1812" y="3150" font-size="11" fill="#5b6776" text-anchor="end" class="m">:4677</text>
+<text x="1446" y="3165" font-size="11" fill="#1f2933" class="m">set_autostop()</text>
+<text x="1762" y="3165" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">2.00</text>
+<text x="1765" y="3165" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1812" y="3165" font-size="11" fill="#5b6776" text-anchor="end" class="m">:6053</text>
+<text x="1446" y="3180" font-size="11" fill="#1f2933" class="m">└ head command</text>
+<text x="1762" y="3180" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.59</text>
+<text x="1765" y="3180" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1446" y="3195" font-size="11" fill="#1f2933" class="m">_add_job(), the part inside D</text>
+<text x="1762" y="3195" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.31</text>
+<text x="1765" y="3195" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1812" y="3195" font-size="11" fill="#5b6776" text-anchor="end" class="m">:4518</text>
+<rect x="1426" y="3280" width="398" height="120" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1438" y="3302" font-size="14" fill="#1f2933" font-weight="700">Finish submitting the job</text>
+<text x="1812" y="3302" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">2.16 s</text>
+<text x="1438" y="3320" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/backends/cloud_vm_ray_backend.py</text>
+<text x="1446" y="3336" font-size="11" fill="#1f2933" class="m">_add_job(), the rest</text>
+<text x="1762" y="3336" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.26</text>
+<text x="1765" y="3336" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1446" y="3351" font-size="11" fill="#1f2933" class="m">home directory echo</text>
+<text x="1762" y="3351" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.12</text>
+<text x="1765" y="3351" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1446" y="3366" font-size="11" fill="#1f2933" class="m">rsync the job script</text>
+<text x="1762" y="3366" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.19</text>
+<text x="1765" y="3366" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1446" y="3381" font-size="11" fill="#1f2933" class="m">_exec_code_on_head(): queue job</text>
+<text x="1762" y="3381" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.57</text>
+<text x="1765" y="3381" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1812" y="3381" font-size="11" fill="#5b6776" text-anchor="end" class="m">:4306</text>
+<rect x="1836" y="3340" width="398" height="209" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="1848" y="3362" font-size="14" fill="#1f2933" font-weight="700">Job runs on all 6 ranks</text>
+<text x="2222" y="3362" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">4.65 s</text>
+<text x="1848" y="3380" font-size="12" fill="#b4530a" font-style="italic">From queue → last rank. Not visible from the server. T</text>
+<text x="1848" y="3395" font-size="12" fill="#b4530a" font-style="italic">rows are an older trace on the published image, 8.32 s in</text>
+<text x="1848" y="3410" font-size="12" fill="#b4530a" font-style="italic">all, so bytecode has likely cut the import rows.</text>
+<text x="1856" y="3425" font-size="11" fill="#1f2933" class="m">queued → first rank prints</text>
+<text x="2172" y="3425" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">3.65</text>
+<text x="2175" y="3425" font-size="8" fill="#5b6776" font-weight="700">I</text>
+<text x="1856" y="3440" font-size="11" fill="#1f2933" class="m">first rank → last rank</text>
+<text x="2172" y="3440" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.00</text>
+<text x="2175" y="3440" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1856" y="3455" font-size="11" fill="#1f2933" class="m">driver imports</text>
+<rect x="2076" y="3445" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="2091" y="3455" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O9</text>
+<text x="2172" y="3455" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.39</text>
+<text x="2175" y="3455" font-size="8" fill="#5b6776" font-weight="700">T</text>
+<text x="1856" y="3470" font-size="11" fill="#1f2933" class="m">ray.init</text>
+<text x="2172" y="3470" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.37</text>
+<text x="2175" y="3470" font-size="8" fill="#5b6776" font-weight="700">T</text>
+<text x="1856" y="3485" font-size="11" fill="#1f2933" class="m">placement group etc.</text>
+<text x="2172" y="3485" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.15</text>
+<text x="2175" y="3485" font-size="8" fill="#5b6776" font-weight="700">T</text>
+<text x="1856" y="3500" font-size="11" fill="#1f2933" class="m">check_ip</text>
+<text x="2172" y="3500" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.65</text>
+<text x="2175" y="3500" font-size="8" fill="#5b6776" font-weight="700">T</text>
+<text x="1856" y="3515" font-size="11" fill="#1f2933" class="m">slowest node loads task fn</text>
+<rect x="2076" y="3505" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="2091" y="3515" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O9</text>
+<text x="2172" y="3515" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">3.63</text>
+<text x="2175" y="3515" font-size="8" fill="#5b6776" font-weight="700">T</text>
+<text x="1856" y="3530" font-size="11" fill="#1f2933" class="m">echo + finish</text>
+<text x="2172" y="3530" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.02</text>
+<text x="2175" y="3530" font-size="8" fill="#5b6776" font-weight="700">T</text>
+<rect x="1016" y="3340" width="398" height="165" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1028" y="3362" font-size="14" fill="#1f2933" font-weight="700">Wait until the job started</text>
+<text x="1028" y="3380" font-size="12" fill="#5b6776" font-style="italic">Overlaps E, so it does not set E's length. It does decide</text>
+<text x="1028" y="3395" font-size="12" fill="#5b6776" font-style="italic">when the status check runs, and so sets F. Caller of the</text>
+<text x="1028" y="3410" font-size="12" fill="#5b6776" font-style="italic">probe is inferred.</text>
+<text x="1028" y="3425" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/recovery_strategy.py</text>
+<text x="1036" y="3441" font-size="11" fill="#1f2933" class="m">_wait_until_job_starts_on_cluster()</text>
+<text x="1402" y="3441" font-size="11" fill="#5b6776" text-anchor="end" class="m">:597</text>
+<text x="1036" y="3456" font-size="11" fill="#1f2933" class="m">refresh_cluster_status_handle()</text>
+<text x="1402" y="3456" font-size="11" fill="#5b6776" text-anchor="end" class="m">:638</text>
+<text x="1036" y="3471" font-size="11" fill="#1f2933" class="m">└ Ray alive-nodes probe</text>
+<text x="1352" y="3471" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">2.45</text>
+<text x="1355" y="3471" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1036" y="3486" font-size="11" fill="#1f2933" class="m">└ is_definitely_autostopping()</text>
+<text x="1352" y="3486" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.84</text>
+<text x="1355" y="3486" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<rect x="1016" y="3615" width="398" height="244" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="1028" y="3637" font-size="14" fill="#1f2933" font-weight="700">Check status, mark the job RUNNING</text>
+<text x="1402" y="3637" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">2.54 s</text>
+<text x="1028" y="3655" font-size="12" fill="#b4530a" font-style="italic">Both are head commands. The first began before the job</text>
+<text x="1028" y="3670" font-size="12" fill="#b4530a" font-style="italic">ended; 0.97 s of it falls in F.</text>
+<text x="1028" y="3685" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/backends/cloud_vm_ray_backend.py</text>
+<text x="1036" y="3701" font-size="11" fill="#1f2933" class="m">is_definitely_autostopping()</text>
+<text x="1352" y="3701" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.97</text>
+<text x="1355" y="3701" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1402" y="3701" font-size="11" fill="#5b6776" text-anchor="end" class="m">:6162</text>
+<text x="1028" y="3716" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/recovery_strategy.py</text>
+<text x="1036" y="3732" font-size="11" fill="#1f2933" class="m">get_job_status_and_times()</text>
+<rect x="1256" y="3722" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="1271" y="3732" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O12</text>
+<text x="1352" y="3732" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.57</text>
+<text x="1355" y="3732" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1402" y="3732" font-size="11" fill="#5b6776" text-anchor="end" class="m">:670</text>
+<text x="1036" y="3747" font-size="11" fill="#1f2933" class="m">remember the ended job</text>
+<rect x="1256" y="3737" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="1271" y="3747" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O14</text>
+<text x="1402" y="3747" font-size="11" fill="#5b6776" text-anchor="end" class="m">:701</text>
+<text x="1028" y="3762" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/utils.py</text>
+<text x="1036" y="3778" font-size="11" fill="#1f2933" class="m">_job_status_and_times_on_head()</text>
+<text x="1402" y="3778" font-size="11" fill="#5b6776" text-anchor="end" class="m">:930</text>
+<text x="1028" y="3793" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/skylet/job_lib.py</text>
+<text x="1036" y="3809" font-size="11" fill="#1f2933" class="m">get_job_status_and_timestamps()</text>
+<text x="1402" y="3809" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1473</text>
+<text x="1028" y="3824" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/controller.py</text>
+<text x="1036" y="3840" font-size="11" fill="#1f2933" class="m">set_started_async()</text>
+<text x="1402" y="3840" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1191</text>
+<rect x="1016" y="3925" width="398" height="180" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1028" y="3947" font-size="14" fill="#1f2933" font-weight="700">Reuse what the launch saw</text>
+<text x="1402" y="3947" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">0.10 s</text>
+<text x="1028" y="3965" font-size="12" fill="#5b6776" font-style="italic">No recorded wait: no head command when the launch already</text>
+<text x="1028" y="3980" font-size="12" fill="#5b6776" font-style="italic">saw SUCCEEDED. Otherwise: wait up to 15 s, then one</text>
+<text x="1028" y="3995" font-size="12" fill="#5b6776" font-style="italic">command for status and end time.</text>
+<text x="1028" y="4010" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/controller.py</text>
+<text x="1036" y="4026" font-size="11" fill="#1f2933" class="m">_monitor_one_task_impl()</text>
+<text x="1402" y="4026" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1481</text>
+<text x="1036" y="4041" font-size="11" fill="#1f2933" class="m">pop_job_status_seen_at...()</text>
+<rect x="1256" y="4031" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="1271" y="4041" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O5</text>
+<text x="1402" y="4041" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1556</text>
+<text x="1036" y="4056" font-size="11" fill="#1f2933" class="m">pop_ended_job_seen_at...()</text>
+<rect x="1256" y="4046" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="1271" y="4056" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O14</text>
+<text x="1402" y="4056" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1557</text>
+<text x="1036" y="4071" font-size="11" fill="#1f2933" class="m">get_job_status_and_ended_job()</text>
+<rect x="1256" y="4061" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="1271" y="4071" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O12</text>
+<text x="1402" y="4071" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1636</text>
+<text x="1036" y="4086" font-size="11" fill="#1f2933" class="m">set_succeeded_async()</text>
+<text x="1402" y="4086" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1746</text>
+<rect x="196" y="4171" width="398" height="210" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="208" y="4193" font-size="14" fill="#1f2933" font-weight="700">Follower waits for saved logs, then exits</text>
+<text x="582" y="4193" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">2.77 s</text>
+<text x="208" y="4211" font-size="12" fill="#5b6776" font-style="italic">SUCCEEDED usually arrives before the follower tails the</text>
+<text x="208" y="4226" font-size="12" fill="#5b6776" font-style="italic">cluster (10 of 11 runs), so a short job's logs appear in</text>
+<text x="208" y="4241" font-size="12" fill="#5b6776" font-style="italic">one burst at the end. The rest of H is the client's own</text>
+<text x="208" y="4256" font-size="12" fill="#5b6776" font-style="italic">exit.</text>
+<text x="208" y="4271" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/utils.py</text>
+<text x="216" y="4287" font-size="11" fill="#1f2933" class="m">check when the controller logs</text>
+<rect x="436" y="4277" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="451" y="4287" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O6</text>
+<text x="582" y="4287" font-size="11" fill="#5b6776" text-anchor="end" class="m">:2826</text>
+<text x="216" y="4302" font-size="11" fill="#1f2933" class="m">trust exit code 0</text>
+<rect x="436" y="4292" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="451" y="4302" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O12</text>
+<text x="582" y="4302" font-size="11" fill="#5b6776" text-anchor="end" class="m">:3222</text>
+<text x="216" y="4317" font-size="11" fill="#1f2933" class="m">_wait_for_persisted_task_logs()</text>
+<rect x="436" y="4307" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="451" y="4317" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O13</text>
+<text x="582" y="4317" font-size="11" fill="#5b6776" text-anchor="end" class="m">:2509</text>
+<text x="216" y="4332" font-size="11" fill="#1f2933" class="m">└ SUCCEEDED → logs saved</text>
+<text x="532" y="4332" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.75</text>
+<text x="535" y="4332" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="216" y="4347" font-size="11" fill="#1f2933" class="m">└ logs saved → final message</text>
+<text x="532" y="4347" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.38</text>
+<text x="535" y="4347" font-size="8" fill="#5b6776" font-weight="700">I</text>
+<text x="216" y="4362" font-size="11" fill="#1f2933" class="m">final message → process exit</text>
+<text x="532" y="4362" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.64</text>
+<text x="535" y="4362" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<rect x="1016" y="4171" width="398" height="258" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1028" y="4193" font-size="14" fill="#1f2933" font-weight="700">Save logs and tear down the cluster</text>
+<text x="1028" y="4211" font-size="12" fill="#5b6776" font-style="italic">Starts after SUCCEEDED. The client waits for the log copy</text>
+<text x="1028" y="4226" font-size="12" fill="#5b6776" font-style="italic">but not for the probe or teardown, which runs on after it</text>
+<text x="1028" y="4241" font-size="12" fill="#5b6776" font-style="italic">exits and is not timed.</text>
+<text x="1028" y="4256" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/controller.py</text>
+<text x="1036" y="4272" font-size="11" fill="#1f2933" class="m">download_log_and_stream()</text>
+<text x="1402" y="4272" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1768</text>
+<text x="1028" y="4287" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/backends/cloud_vm_ray_backend.py</text>
+<text x="1036" y="4303" font-size="11" fill="#1f2933" class="m">sync_down_logs(): known dir</text>
+<rect x="1256" y="4293" width="30" height="13" rx="3" fill="#0f766e"/>
+<text x="1271" y="4303" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O14</text>
+<text x="1402" y="4303" font-size="11" fill="#5b6776" text-anchor="end" class="m">:5042</text>
+<text x="1036" y="4318" font-size="11" fill="#1f2933" class="m">└ home directory echo, 6 nodes</text>
+<text x="1352" y="4318" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.31</text>
+<text x="1355" y="4318" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1036" y="4333" font-size="11" fill="#1f2933" class="m">└ rsync logs, 6 nodes in parallel</text>
+<text x="1352" y="4333" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.45</text>
+<text x="1355" y="4333" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1036" y="4348" font-size="11" fill="#1f2933" class="m">Ray alive-nodes probe</text>
+<text x="1352" y="4348" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.99</text>
+<text x="1355" y="4348" font-size="8" fill="#5b6776" font-weight="700">W</text>
+<text x="1028" y="4363" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/controller.py</text>
+<text x="1036" y="4379" font-size="11" fill="#1f2933" class="m">_cleanup_cluster()</text>
+<text x="1402" y="4379" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1782</text>
+<text x="1028" y="4394" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/jobs/utils.py</text>
+<text x="1036" y="4410" font-size="11" fill="#1f2933" class="m">terminate_cluster()</text>
+<text x="1402" y="4410" font-size="11" fill="#5b6776" text-anchor="end" class="m">:223</text>
+<text x="24" y="4499" font-size="16" fill="#1f2933" font-weight="700">Time breakdown by phase (seconds; rows on the critical path, in order; phase A total from the A/B, B–H from the i2-6 trace)</text>
+<rect x="24" y="4513" width="545" height="26" fill="#223548" rx="4"/>
+<text x="34" y="4531" font-size="13" fill="#ffffff" font-weight="700">A: client start → job row</text>
+<text x="559" y="4531" font-size="13" fill="#ffffff" text-anchor="end" font-weight="700">2.20 s</text>
+<text x="34" y="4557" font-size="12" fill="#1f2933">Start Python, imports, parse the task</text>
+<text x="539" y="4557" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">1.45</text>
+<text x="543" y="4557" font-size="9" fill="#5b6776" font-weight="700">P</text>
+<text x="34" y="4574" font-size="12" fill="#1f2933">POST /validate</text>
+<text x="539" y="4574" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.28</text>
+<text x="543" y="4574" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="34" y="4591" font-size="12" fill="#1f2933">POST /jobs/launch, then the worker starts</text>
+<text x="539" y="4591" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.49</text>
+<text x="543" y="4591" font-size="9" fill="#5b6776" font-weight="700">I</text>
+<text x="34" y="4608" font-size="12" fill="#1f2933">Storage check: reuses the record, not timed</text>
+<text x="539" y="4608" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">–</text>
+<text x="543" y="4608" font-size="9" fill="#5b6776" font-weight="700"></text>
+<text x="50" y="4625" font-size="12" fill="#5b6776">If it reruns: parallel cloud checks</text>
+<text x="539" y="4625" font-size="12" fill="#5b6776" text-anchor="end">4.75</text>
+<text x="543" y="4625" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="50" y="4642" font-size="12" fill="#5b6776">aws configure list</text>
+<text x="539" y="4642" font-size="12" fill="#5b6776" text-anchor="end">2.38</text>
+<text x="543" y="4642" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="50" y="4659" font-size="12" fill="#5b6776">gcloud auth list</text>
+<text x="539" y="4659" font-size="12" fill="#5b6776" text-anchor="end">0.48</text>
+<text x="543" y="4659" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="50" y="4676" font-size="12" fill="#5b6776">gcloud config get project</text>
+<text x="539" y="4676" font-size="12" fill="#5b6776" text-anchor="end">0.46</text>
+<text x="543" y="4676" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="50" y="4693" font-size="12" fill="#5b6776">aws --version</text>
+<text x="539" y="4693" font-size="12" fill="#5b6776" text-anchor="end">0.35</text>
+<text x="543" y="4693" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="34" y="4710" font-size="12" fill="#5b6776" font-style="italic">Not accounted for (Python running, or untimed)</text>
+<text x="539" y="4710" font-size="12" fill="#5b6776" text-anchor="end">0.00</text>
+<rect x="579" y="4513" width="545" height="26" fill="#223548" rx="4"/>
+<text x="589" y="4531" font-size="13" fill="#ffffff" font-weight="700">B: row → STARTING</text>
+<text x="1114" y="4531" font-size="13" fill="#ffffff" text-anchor="end" font-weight="700">2.50 s</text>
+<text x="589" y="4557" font-size="12" fill="#1f2933">Controller dependencies, parallel checks</text>
+<text x="1094" y="4557" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.23</text>
+<text x="1098" y="4557" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="589" y="4574" font-size="12" fill="#1f2933">rsync size check</text>
+<text x="1094" y="4574" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.16</text>
+<text x="1098" y="4574" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="589" y="4591" font-size="12" fill="#1f2933">Commands and rsync for controller files</text>
+<text x="1094" y="4591" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.22</text>
+<text x="1098" y="4591" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="589" y="4608" font-size="12" fill="#1f2933">Scheduler: new Python process on the host</text>
+<text x="1094" y="4608" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">1.55</text>
+<text x="1098" y="4608" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="589" y="4625" font-size="12" fill="#5b6776" font-style="italic">Not accounted for (Python running, or untimed)</text>
+<text x="1094" y="4625" font-size="12" fill="#5b6776" text-anchor="end">0.34</text>
+<rect x="1134" y="4513" width="545" height="26" fill="#223548" rx="4"/>
+<text x="1144" y="4531" font-size="13" fill="#ffffff" font-weight="700">C: STARTING → provisioning</text>
+<text x="1669" y="4531" font-size="13" fill="#ffffff" text-anchor="end" font-weight="700">3.10 s</text>
+<text x="1144" y="4557" font-size="12" fill="#1f2933">POST /validate</text>
+<text x="1649" y="4557" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.13</text>
+<text x="1653" y="4557" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1144" y="4574" font-size="12" fill="#1f2933">POST /launch</text>
+<text x="1649" y="4574" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.11</text>
+<text x="1653" y="4574" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1144" y="4591" font-size="12" fill="#1f2933">aws configure list, in the inner request</text>
+<text x="1649" y="4591" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">2.15</text>
+<text x="1653" y="4591" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1144" y="4608" font-size="12" fill="#5b6776" font-style="italic">Not accounted for (Python running, or untimed)</text>
+<text x="1649" y="4608" font-size="12" fill="#5b6776" text-anchor="end">0.71</text>
+<rect x="1689" y="4513" width="545" height="26" fill="#223548" rx="4"/>
+<text x="1699" y="4531" font-size="13" fill="#ffffff" font-weight="700">D: provisioning → job submitted</text>
+<text x="2224" y="4531" font-size="13" fill="#ffffff" text-anchor="end" font-weight="700">15.22 s</text>
+<text x="1699" y="4557" font-size="12" fill="#1f2933">Before pod creation</text>
+<text x="2204" y="4557" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.83</text>
+<text x="2208" y="4557" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1699" y="4574" font-size="12" fill="#1f2933">Create pods, wait until Running</text>
+<text x="2204" y="4574" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">1.58</text>
+<text x="2208" y="4574" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1715" y="4591" font-size="12" fill="#5b6776">Waiting between polls, with the pod watch</text>
+<text x="2204" y="4591" font-size="12" fill="#5b6776" text-anchor="end">1.06</text>
+<text x="2208" y="4591" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1699" y="4608" font-size="12" fill="#1f2933">get_cluster_info and SSH check</text>
+<text x="2204" y="4608" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.28</text>
+<text x="2208" y="4608" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1699" y="4625" font-size="12" fill="#1f2933">internal_file_mounts</text>
+<text x="2204" y="4625" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">1.96</text>
+<text x="2208" y="4625" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1699" y="4642" font-size="12" fill="#1f2933">setup_runtime_on_cluster</text>
+<text x="2204" y="4642" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">2.38</text>
+<text x="2208" y="4642" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1699" y="4659" font-size="12" fill="#1f2933">Ray wait (workers joining)</text>
+<text x="2204" y="4659" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">4.54</text>
+<text x="2208" y="4659" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1715" y="4676" font-size="12" fill="#5b6776">start_skylet_on_head_node, alongside</text>
+<text x="2204" y="4676" font-size="12" fill="#5b6776" text-anchor="end">2.44</text>
+<text x="2208" y="4676" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1699" y="4693" font-size="12" fill="#1f2933">set_autostop</text>
+<text x="2204" y="4693" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">2.00</text>
+<text x="2208" y="4693" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1715" y="4710" font-size="12" fill="#5b6776">Head command</text>
+<text x="2204" y="4710" font-size="12" fill="#5b6776" text-anchor="end">1.59</text>
+<text x="2208" y="4710" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1699" y="4727" font-size="12" fill="#1f2933">_add_job, the part inside D</text>
+<text x="2204" y="4727" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">1.31</text>
+<text x="2208" y="4727" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1699" y="4744" font-size="12" fill="#5b6776" font-style="italic">Not accounted for (Python running, or untimed)</text>
+<text x="2204" y="4744" font-size="12" fill="#5b6776" text-anchor="end">0.34</text>
+<rect x="24" y="4771" width="545" height="26" fill="#223548" rx="4"/>
+<text x="34" y="4789" font-size="13" fill="#ffffff" font-weight="700">E: job runs on the cluster</text>
+<text x="559" y="4789" font-size="13" fill="#ffffff" text-anchor="end" font-weight="700">6.82 s</text>
+<text x="34" y="4815" font-size="12" fill="#1f2933">_add_job, the rest</text>
+<text x="539" y="4815" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.26</text>
+<text x="543" y="4815" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="34" y="4832" font-size="12" fill="#1f2933">Home directory echo, rsync job script</text>
+<text x="539" y="4832" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.31</text>
+<text x="543" y="4832" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="34" y="4849" font-size="12" fill="#1f2933">Queue the job (head command)</text>
+<text x="539" y="4849" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">1.57</text>
+<text x="543" y="4849" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="34" y="4866" font-size="12" fill="#1f2933">Driver and Ray tasks start on the cluster</text>
+<text x="539" y="4866" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">3.65</text>
+<text x="543" y="4866" font-size="9" fill="#5b6776" font-weight="700">I</text>
+<text x="34" y="4883" font-size="12" fill="#1f2933">Ranks print, first to last</text>
+<text x="539" y="4883" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">1.00</text>
+<text x="543" y="4883" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="34" y="4900" font-size="12" fill="#5b6776" font-style="italic">Not accounted for (Python running, or untimed)</text>
+<text x="539" y="4900" font-size="12" fill="#5b6776" text-anchor="end">0.03</text>
+<rect x="579" y="4771" width="545" height="26" fill="#223548" rx="4"/>
+<text x="589" y="4789" font-size="13" fill="#ffffff" font-weight="700">F: job ended → RUNNING</text>
+<text x="1114" y="4789" font-size="13" fill="#ffffff" text-anchor="end" font-weight="700">2.63 s</text>
+<text x="589" y="4815" font-size="12" fill="#1f2933">is_definitely_autostopping, the rest</text>
+<text x="1094" y="4815" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.97</text>
+<text x="1098" y="4815" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="589" y="4832" font-size="12" fill="#1f2933">Status, times and log dir (head command)</text>
+<text x="1094" y="4832" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">1.57</text>
+<text x="1098" y="4832" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="589" y="4849" font-size="12" fill="#5b6776" font-style="italic">Not accounted for (Python running, or untimed)</text>
+<text x="1094" y="4849" font-size="12" fill="#5b6776" text-anchor="end">0.09</text>
+<rect x="1134" y="4771" width="545" height="26" fill="#223548" rx="4"/>
+<text x="1144" y="4789" font-size="13" fill="#ffffff" font-weight="700">G: RUNNING → SUCCEEDED</text>
+<text x="1669" y="4789" font-size="13" fill="#ffffff" text-anchor="end" font-weight="700">0.10 s</text>
+<text x="1144" y="4815" font-size="12" fill="#1f2933">No recorded wait: reuses what the launch saw</text>
+<text x="1649" y="4815" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.00</text>
+<text x="1653" y="4815" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1144" y="4832" font-size="12" fill="#5b6776" font-style="italic">Not accounted for (Python running, or untimed)</text>
+<text x="1649" y="4832" font-size="12" fill="#5b6776" text-anchor="end">0.10</text>
+<rect x="1689" y="4771" width="545" height="26" fill="#223548" rx="4"/>
+<text x="1699" y="4789" font-size="13" fill="#ffffff" font-weight="700">H: SUCCEEDED → client exits</text>
+<text x="2224" y="4789" font-size="13" fill="#ffffff" text-anchor="end" font-weight="700">2.87 s</text>
+<text x="1699" y="4815" font-size="12" fill="#1f2933">Controller copies the logs</text>
+<text x="2204" y="4815" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.75</text>
+<text x="2208" y="4815" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1699" y="4832" font-size="12" fill="#1f2933">Client sees them and prints</text>
+<text x="2204" y="4832" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">0.38</text>
+<text x="2208" y="4832" font-size="9" fill="#5b6776" font-weight="700">I</text>
+<text x="1699" y="4849" font-size="12" fill="#1f2933">Final message → process exit</text>
+<text x="2204" y="4849" font-size="12" fill="#0b6b43" text-anchor="end" font-weight="700">1.64</text>
+<text x="2208" y="4849" font-size="9" fill="#5b6776" font-weight="700">W</text>
+<text x="1699" y="4866" font-size="12" fill="#5b6776" font-style="italic">Not accounted for (Python running, or untimed)</text>
+<text x="2204" y="4866" font-size="12" fill="#5b6776" text-anchor="end">0.10</text>
+<text x="24" y="4951" font-size="16" fill="#1f2933" font-weight="700">Optimizations on this branch</text>
+<rect x="24" y="4966" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="39" y="4977" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O1</text>
+<text x="62" y="4977" font-size="12" fill="#1e4e8c" class="m">7251606a1</text>
+<text x="142" y="4977" font-size="13" fill="#1f2933">Start Ray before preparing SkyPilot in the pod</text>
+<rect x="764" y="4966" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="779" y="4977" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O2</text>
+<text x="802" y="4977" font-size="12" fill="#1e4e8c" class="m">ab543979c</text>
+<text x="882" y="4977" font-size="13" fill="#1f2933">One blocking Ray wait; skylet starts alongside it</text>
+<rect x="1504" y="4966" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="1519" y="4977" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O3</text>
+<text x="1542" y="4977" font-size="12" fill="#1e4e8c" class="m">863c66883</text>
+<text x="1622" y="4977" font-size="13" fill="#1f2933">Skip ray stop when no Ray is running</text>
+<rect x="24" y="4990" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="39" y="5001" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O4</text>
+<text x="62" y="5001" font-size="12" fill="#1e4e8c" class="m">c727790d3</text>
+<text x="142" y="5001" font-size="13" fill="#1f2933">Pre-install the runtime pins in the image</text>
+<rect x="764" y="4990" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="779" y="5001" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O5</text>
+<text x="802" y="5001" font-size="12" fill="#1e4e8c" class="m">04040ba00</text>
+<text x="882" y="5001" font-size="13" fill="#1f2933">Status + submit time in one command; skip first sleep</text>
+<rect x="1504" y="4990" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="1519" y="5001" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O6</text>
+<text x="1542" y="5001" font-size="12" fill="#1e4e8c" class="m">96019e28a</text>
+<text x="1622" y="5001" font-size="13" fill="#1f2933">Follower checks status when the controller logs</text>
+<rect x="24" y="5014" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="39" y="5025" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O7</text>
+<text x="62" y="5025" font-size="12" fill="#1e4e8c" class="m">dc6c01a92</text>
+<text x="142" y="5025" font-size="13" fill="#1f2933">Storage clouds looked up once per request</text>
+<rect x="764" y="5014" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="779" y="5025" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O8</text>
+<text x="802" y="5025" font-size="12" fill="#1e4e8c" class="m">30890119e</text>
+<text x="882" y="5025" font-size="13" fill="#1f2933">Exact job timestamps over gRPC (no speedup: gRPC off)</text>
+<rect x="1504" y="5014" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="1519" y="5025" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O9</text>
+<text x="1542" y="5025" font-size="12" fill="#1e4e8c" class="m">0c576e860</text>
+<text x="1622" y="5025" font-size="13" fill="#1f2933">Precompile runtime bytecode in the image</text>
+<rect x="24" y="5038" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="39" y="5049" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O10</text>
+<text x="62" y="5049" font-size="12" fill="#1e4e8c" class="m">1ddcc3240</text>
+<text x="142" y="5049" font-size="13" fill="#1f2933">Do not import Ray Serve in ray start</text>
+<rect x="764" y="5038" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="779" y="5049" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O11</text>
+<text x="802" y="5049" font-size="12" fill="#1e4e8c" class="m">71b3c9213</text>
+<text x="882" y="5049" font-size="13" fill="#1f2933">Watch pods between polls</text>
+<rect x="1504" y="5038" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="1519" y="5049" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O12</text>
+<text x="1542" y="5049" font-size="12" fill="#1e4e8c" class="m">7db718aa0</text>
+<text x="1622" y="5049" font-size="13" fill="#1f2933">End time with the status; follower trusts exit code 0</text>
+<rect x="24" y="5062" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="39" y="5073" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O13</text>
+<text x="62" y="5073" font-size="12" fill="#1e4e8c" class="m">680e03581</text>
+<text x="142" y="5073" font-size="13" fill="#1f2933">Check for saved logs every 0.2 s</text>
+<rect x="764" y="5062" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="779" y="5073" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O14</text>
+<text x="802" y="5073" font-size="12" fill="#1e4e8c" class="m">d080ff076</text>
+<text x="882" y="5073" font-size="13" fill="#1f2933">Log directory with the status; no separate lookup</text>
+<rect x="1504" y="5062" width="30" height="14" rx="3" fill="#0f766e"/>
+<text x="1519" y="5073" font-size="9" fill="#ffffff" text-anchor="middle" font-weight="700">O15</text>
+<text x="1542" y="5073" font-size="12" fill="#1e4e8c" class="m">d771518f1</text>
+<text x="1622" y="5073" font-size="13" fill="#1f2933">Reuse an empty storage check for an unchanged config</text>
+<text x="24" y="5111" font-size="14" fill="#5b6776">Phase numbers beside each band: ej-prj-i2-6 → ej-prj-i3-2, same session, 8 runs per arm, launches about 40 s apart, with the permutation p. Client total 41.31 → 37.06 s (p = 0.013). Only phase A changes</text>
+<text x="24" y="5131" font-size="14" fill="#5b6776">significantly. Two of the 8 patched runs hit an expired record, with A about 7 s; the other 6 were 1.6–2.6 s. Launches more than 10 minutes apart get no saving.</text>
+<text x="24" y="5155" font-size="14" fill="#5b6776">Breakdown: this branch adds only the storage check reuse to ej-prj-i2-6, so B–H rows and phase A's client rows come from the i2-6 traced session and were not rerun here. Its phase medians are in the table</text>
+<text x="24" y="5175" font-size="14" fill="#5b6776">above, so they can differ from the band numbers. Time to read the record was not timed; phase A's rows already add up to its A/B median. 1 of 15 traced launches failed at submission.</text>
+<text x="24" y="5199" font-size="14" fill="#5b6776">Phase C keeps its aws configure list: get_cloud_credential_file_mounts is a separate path from the storage check. C was 0.98 vs 3.42 s without and with aws on the API server's PATH (20261102-aws-path-test), and</text>
+<text x="24" y="5219" font-size="14" fill="#5b6776">aws.remote_identity: NO_UPLOAD removes the call. Without aws on the PATH, the storage check also costs less, so the reuse saves less.</text>
+<text x="24" y="5243" font-size="14" fill="#5b6776">Against master, no allowed_clouds or NO_UPLOAD on either side: 796c5bcc8 + published image → ej-prj-i3-2 + bytecode image, 74.3 → 34.2 s for sky jobs launch and 46.70 → 27.57 s for sky launch, both p = 0.0002</text>
+<text x="24" y="5263" font-size="14" fill="#5b6776">(20261103-i3-2-vs-master-no-tips). This branch does not include the ej-prj-i3-1 rsync change.</text>
+<text x="24" y="5287" font-size="14" fill="#5b6776">Overlap: rows do not always add up to their box. Pods bootstrap while the provisioner runs, skylet starts during the Ray wait, and the controller's checks overlap E and H. T times predate later commits and show</text>
+<text x="24" y="5307" font-size="14" fill="#5b6776">relative size only.</text>
+<text x="24" y="5331" font-size="14" fill="#5b6776">Conditions: 6 nodes on kind, one machine, IfNotPresent with the local bytecode image, gRPC off, consolidation mode, aws on the server PATH. The first launch after a server restart is slower (warm-ups were</text>
+<text x="24" y="5351" font-size="14" fill="#5b6776">dropped). The bytecode image is not published.</text>
+<text x="24" y="5375" font-size="14" fill="#5b6776">Not shown: failure and recovery paths, and _submit_remotely() without consolidation mode.</text>
+</svg>
