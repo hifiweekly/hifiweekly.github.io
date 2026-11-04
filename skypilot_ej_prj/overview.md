@@ -1,11 +1,12 @@
 # SkyPilot Take-Home Task for System Engineering: Design Doc
 
+Latest update: Nov 4, 2026  
 ---
 
 ### **Requirement 1: Your prototype on a branch:**
 
 **List:** [https\://github.com/siliconej/skypilot/branches](https://github.com/siliconej/skypilot/branches)  
-**Consolidated single PR:** [https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-6?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-6?expand=1)   
+**Consolidated single PR:** [https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i3-2?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i3-2?expand=1%20)   
 ([See Appendix H: commit list](#bookmark=id.cd6o0eo96un4))
 
 ### **Requirement 2: Your design doc (markdown, in-repo or linked):**
@@ -19,41 +20,68 @@ Markdown version: [https\://hifiweekly.github.io/skypilot\_ej\_prj/overview.md](
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/reproduce\_benchmarks.py](https://hifiweekly.github.io/skypilot_ej_prj/reproduce_benchmarks.py)
 
 **Read Me:**  
-[https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i2.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i2.html)   
-(iteration 1: [https\://hifiweekly.github.io/skypilot\_ej\_prj/README.html](https://hifiweekly.github.io/skypilot_ej_prj/README.html))
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i3.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i3.html)   
+(Iteration 1: [https\://hifiweekly.github.io/skypilot\_ej\_prj/README.html](https://hifiweekly.github.io/skypilot_ej_prj/README.html),  
+ Iteration 2: [https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i2.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i2.html)) 
 
 **\- Sample benchmark run:**  
-python ej/reproduce\_benchmarks.py jobs-ab \--nodes 6      \# \~22 min, 8 measured runs per side  
-python ej/reproduce\_benchmarks.py pod-probe \--nodes 6    \# \~2 min  
-python ej/reproduce\_benchmarks.py pull-policy \--nodes 6  \# \~5 min  
-python ej/reproduce\_benchmarks.py storage-probe          \# \~6 min  
-python ej/reproduce\_benchmarks.py sky-launch-ab \-- run \--candidate-ref ej-prj-3-job1 \--task ej/job.yaml \--runs 5
+BASE=\$(git merge-base origin/master ej-prj-i3-2)
 
-**Result Table: (Iteration 2\)** [https\://hifiweekly.github.io/skypilot\_ej\_prj/report\_11021730.html](https://hifiweekly.github.io/skypilot_ej_prj/report_11021730.html)
+\# sky launch  
+python reproduce\_benchmarks.py sky-launch-ab \--nodes 6 \-- \\  
+    run \--baseline-ref "\$BASE" \--candidate-ref ej-prj-i3-2 \\  
+    \--task ej/task\_published\_ifnotpresent.yaml \\  
+    \--candidate-task ej/task\_bytecode.yaml \\  
+    \--runs 8 \--warmup 1
+
+\# sky jobs launch  
+python reproduce\_benchmarks.py jobs-ab \--nodes 6 \\  
+    \--base "\$BASE" \--candidate ej-prj-i3-2 \\  
+    \--base-task ej/task\_published\_ifnotpresent.yaml \\  
+    \--candidate-task ej/task\_bytecode.yaml \\  
+    \--blocks 4 \--runs 4 \--warmup 1
+
+**Result Table: (Iteration 3\)** [https\://hifiweekly.github.io/skypilot\_ej\_prj/report\_11021730.html](https://hifiweekly.github.io/skypilot_ej_prj/report_11021730.html)  
+**Support Files:**  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/job.yaml](https://hifiweekly.github.io/skypilot_ej_prj/job.yaml) (same as the file in the pdf given)  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/task\_bytecode.yaml](https://hifiweekly.github.io/skypilot_ej_prj/task_bytecode.yaml)  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/task\_published\_ifnotpresent.yaml](https://hifiweekly.github.io/skypilot_ej_prj/task_published_ifnotpresent.yaml)  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/bench\_launch\_latency.py](https://hifiweekly.github.io/skypilot_ej_prj/bench_launch_latency.py) (a pending utility script in branch)
 
 **TL;DR: 6 nodes, medians of 8 interleaved runs per side (range), seconds:**  
-Consult the UML Sequence diagram in SVG for Phase definition and transition: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_i2.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)    
-┌─────────────────────────────┬───────────────────┬──────────────────┬────────┐  
-│ Phase (s)                   │ master            │ ej-prj-i2-5      │ Change │  
-├─────────────────────────────┼───────────────────┼──────────────────┼────────┤  
-│ A: client start → job row   │  6.7 (6.4–7.1)    │  7.0 (6.9–7.4)   │  \+0.2  │  
-│ B: row → STARTING           │  2.6 (2.2–4.4)    │  2.5 (2.1–4.4)   │  −0.1  │  
-│ C: STARTING → provisioning  │  3.4 (3.1–3.9)    │  2.9 (2.5–4.0)   │  −0.4  │  
-│ **D: provisioning → submitted │ 37.4 (29.5–124.8) │ 17.8 (13.8–21.9) │ −19.6**  │ **\<\< \-52.4%**  
-│ E: job runs                 │  8.5 (8.2–8.5)    │  6.7 (6.4–6.8)   │  −1.8  │  
-│ F: job ended → RUNNING      │  2.8 (1.8–3.6)    │  2.6 (2.0–3.1)   │  −0.2  │  
-│ **G: RUNNING → SUCCEEDED      │ 14.5 (10.3–17.6)  │  0.1 (0.1–1.6)   │ −14.4**  │ \<\< **\-99.3%**  
-│ H: SUCCEEDED → client exits │  2.8 (2.3–5.4)    │  3.9 (2.6–5.1)   │  \+1.2  │  
-├─────────────────────────────┼───────────────────┼──────────────────┼────────┤  
-│ **Client total                │ 79.1 (70.0–166.7) │ 45.0 (39.1–49.2) │ −34.0  │ \<\< \-43.0%**  
-└─────────────────────────────┴───────────────────┴──────────────────┴────────┘
+Consult the UML Sequence diagram in SVG for Phase definition and transition: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_i2.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)  
 
-Against master, ej-prj-i2-5 run diff: sky launch by 14.5 s (33%) and sky jobs launch by 34.0 s (43%). Every ej-prj-i2-5 launch beat every master launch on both benchmarks, and all 40 launches succeeded. All run done on Ubuntu 26.04, i7-8700K, 32GB memory
+Summary  
+┌────────────────────────┬─────────────────────┬─────────────────────┬───────────────────┬────────┐  
+│ Benchmark              │ Master              │ ej-prj-i3-2         │ Change            │ p      │  
+├────────────────────────┼─────────────────────┼─────────────────────┼───────────────────┼────────┤  
+│ sky launch wall time   │ 46.70 (41.5–56.1)   │ 27.57 (24.8–33.2)   │ −19.13 (−41%)     │ 0.0002 │  
+│ sky jobs launch total  │ 74.33 (72.3–81.7)   │ 34.17 (31.8–36.0)   │ −40.16 (−54%)     │ 0.0002 │  
+└────────────────────────┴─────────────────────┴─────────────────────┴───────────────────┴────────┘
+
+sky jobs launch phases  
+┌─────────────────────────────────────┬─────────────────────┬─────────────────────┬─────────┬────────┐  
+│ Phase                               │ Master              │ ej-prj-i3-2         │ Change  │ p      │  
+├─────────────────────────────────────┼─────────────────────┼─────────────────────┼─────────┼────────┤  
+│ **A: client start → job row           │  6.97 (6.6–7.2)     │  2.14 (1.8–2.3)     │  −4.83  │ 0.0002** │ \<\< iter 3  
+│ B: row → STARTING                   │  2.69 (2.3–4.8)     │  2.14 (1.9–2.7)     │  −0.55  │ 0.0051 │  
+│ C: STARTING → provisioning          │  3.17 (2.9–4.0)     │  3.21 (3.1–3.5)     │  \+0.04  │ 0.81   │  
+│ **D: provisioning → job submitted     │ 32.62 (28.9–39.0)   │ 14.41 (13.9–15.1)   │ −18.21  │ 0.0002** │ \<\< iter 1&2  
+│ E: job runs                         │  8.71 (8.2–9.5)     │  6.71 (6.5–6.9)     │  −2.00  │ 0.0002 │ \<\< iter 1  
+│ F: job ended → RUNNING              │  2.93 (2.3–3.6)     │  2.25 (1.9–2.6)     │  −0.68  │ 0.0028 │  
+│ **G: RUNNING → SUCCEEDED              │ 13.29 (3.7–17.9)    │  0.11 (0.1–0.2)     │ −13.18  │ 0.0002** │ \<\< iter 2  
+│ H: SUCCEEDED → client exits         │  4.40 (2.6–11.9)    │  2.77 (2.1–4.5)     │  −1.63  │ 0.071  │ \<\< iter 1  
+├─────────────────────────────────────┼─────────────────────┼─────────────────────┼─────────┼────────┤  
+│ Client start → SUCCEEDED            │ 69.82 (61.0–78.9)   │ 31.28 (29.7–32.1)   │ −38.54  │ 0.0002 │  
+│ **Client total                        │ 74.33 (72.3–81.7)   │ 34.17 (31.8–36.0)   │ −40.16  │ 0.0002** │ \<\< **\-54%**  
+└─────────────────────────────────────┴─────────────────────┴─────────────────────┴─────────┴────────┘
+
+Against master, ej-prj-i3-2, All run done on Ubuntu 26.04, i7-8700K, 32GB memory
 
 ### **Requirement 4: A short README explaining how to reproduce your numbers from a clean machine.**
 
 **Read Me:**  
-[https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i2.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i2.html)
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i3.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i3.html)
 
 **Support Files:**  
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/job.yaml](https://hifiweekly.github.io/skypilot_ej_prj/job.yaml) (same as the file in the pdf given)  
@@ -84,11 +112,21 @@ The [second iteration](#bookmark=id.ksoj6pws011n) focused on more aggressive cod
 
 During the refactoring, I found a gRPC data conversion bug, causing some of the timestamps to be malformed. As the current gRPC is not enabled by default, and there are other fixes pending according to the commit logs. I didn’t enable gRPC for the benchmark. According to the profiling, by enabling the gRPC, it can further cut down the latency in Phase D, E, and F. (see [https\://hifiweekly.github.io/skypilot\_ej\_prj/grpc\_latency\_analysis.html](https://hifiweekly.github.io/skypilot_ej_prj/grpc_latency_analysis.html).
 
-Updated workflow svg: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_workflow\_i2\_6.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_workflow_i2_6.svg)
-
+Updated workflow svg: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_workflow\_i2\_6.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_workflow_i2_6.svg)  
 See more details in [https\://hifiweekly.github.io/skypilot\_ej\_prj/launch\_latency\_design\_after\_job2.html](https://hifiweekly.github.io/skypilot_ej_prj/launch_latency_design_after_job2.html).
 
-### **Interation 1 \- First Set: ej-prj-0, ej-prj-1, and ej-prj-3**
+**Nov 2 \~ Nov 3: Third Iteration**
+
+In this iteration, I focused on Phase A, and optimized the way SkyPilot checked the cloud storage configuration. AWS is the hotspot here, and SkyPilot did check twice. On my Ubuntu, even though I don’t have AWS configured, it took about 5 to 6 seconds to perform the whole check in Phase A. The optimization idea is to use the existing fingerprinting mechanism to report the first check’s status and do not repeat the check.
+
+Updated workflow svg: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_workflow\_i3\_2.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_workflow_i3_2.svg)  
+(I also put all the important optimizations with their commit number at the bottom)
+
+See more details in the design write-up iteration 3 section below ([https\://docs.google.com/document/d/1bFl6dX6-Yxn0bbFsV72ajOLRLsWutcu8CikZCKVhpUQ/edit?tab=t.0\#bookmark=id.wb1ickkdm5hc](https://docs.google.com/document/d/1bFl6dX6-Yxn0bbFsV72ajOLRLsWutcu8CikZCKVhpUQ/edit?tab=t.0#bookmark=id.wb1ickkdm5hc)) 
+
+### 
+
+### **Iteration 1 \- First Set: ej-prj-0, ej-prj-1, and ej-prj-3**
 
 These three changes focus on the job preparation and per node job submission, and will have impact on unmanaged job scheduling by ‘sky launch’ as well.
 
@@ -343,11 +381,11 @@ A/B against 5ef55efa4 on kind-skypilot (6 nodes, 8 runs per arm, medians). The b
 
 \- Why the client gains less: SUCCEEDED arrives sooner, but the controller saves the logs after it, so the client waits longer there. ej-prj-i2-6 then cuts that wait from 4.3 s to 2.6 s.
 
-Risks:  
+**Risks:**  
 \- Skipped checks: the new path skips the checks that normally run before marking success, in critical controller code, so it needs close review.  
 \- Log display: RUNNING now lasts about 0.1 s, so a short job's logs usually appear in one burst at the end.
 
-Not tested:  
+**Not tested:**  
 \- smoke tests, including recovery  
 \- an older cluster runtime  
 \- the controller-cluster path  
@@ -357,6 +395,59 @@ Before a PR: b848c9c1e's message has the wrong explanation for the longer wait, 
 
 **Design Doc.**  
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/job\_end\_time\_with\_status\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/job_end_time_with_status_design.html)
+
+### ---
+
+### **Iteration 3 \- Nov 3 \~ Nov 4**
+
+**\* Branch ej-prj-i3-1: This is rather an observation, could be documented.**  
+During Phase A, several seconds were spent on AWS probing for either S3 storage or AWS credential. These time are wasted for local job launches if these jobs don’t have needs to store data in the cloud object storages. There are two configurations KV could be set in the job yaml files that could make the launch much faster.
+
+See Appendix I for the benchmark result, but here is the TL;DR:  
+┌────────────────────────────────┬─────────────────────┬─────────────────────┬─────────────────┬────────┐  
+│ Benchmark (median, with range) │  Master 796c5bcc8   │     ej-prj-i3-1     │     Change      │   p    │  
+├────────────────────────────────┼─────────────────────┼─────────────────────┼─────────────────┼────────┤  
+│ sky launch wall time           │ 46.23 s (42.4–50.3) │ 27.37 s (24.6–28.8) │ −18.86 s (−41%) │ 0.0002 │  
+├────────────────────────────────┼─────────────────────┼─────────────────────┼─────────────────┼────────┤  
+│ **sky jobs launch client total   │ 67.5 s (57.2–70.5)  │ 34.7 s (33.3–39.4)  │ −32.8 s (−49%)  │ 0.0002** │  
+└────────────────────────────────┴─────────────────────┴─────────────────────┴─────────────────┴────────┘
+
+See this HTML for more details:   
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/local\_run\_speedup\_tips.html](https://hifiweekly.github.io/skypilot_ej_prj/local_run_speedup_tips.html).
+
+**\* Branch ej-prj-i3-2: Reuse an empty storage check result for an unchanged config**  
+[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-4?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-4?expand=1)  
+**PR Description:** [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions\_i3.html\#ej-prj-i3-2](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions_i3.html#ej-prj-i3-2%20) 
+
+**Problem:** based on the observation in Branch ej-prj-i3-1 above. **W**ith no storage cloud enabled, the stored list of enabled clouds is empty, which looks the same as "never checked". So every sky jobs launch reran the storage check and its aws and gcloud commands, even for a Kubernetes-only task. That took about 4.75 s of phase A's 7s.
+
+**Fix:** after a storage check finds nothing, store the config fingerprint and the time in the existing config table. Later launches skip the check while the fingerprint matches and the record is under 10 minutes old.
+
+The check still reruns when:  
+\- the config changes (new fingerprint)  
+\- the allowed clouds list changes  
+\- the record reaches 10 minutes, which reusing it doesn't extend
+
+Results (6 nodes, 8 measured runs per side, launches about 40 s apart, patch on vs. off):
+
+┌──────────────────────┬──────────────┬────────────┬─────────┬────────┐  
+│ Measure              │ Without      │ With       │ Change  │ p      │  
+├──────────────────────┼──────────────┼────────────┼─────────┼────────┤  
+│ Phase A              │  6.85 s      │  2.20 s    │ −4.65 s │ 0.0047 │  
+│ sky jobs launch      │ 41.31 s      │ 37.06 s    │ −4.25 s │ 0.013  │  
+└──────────────────────┴──────────────┴────────────┴─────────┴────────┘
+
+No other phase changed significantly. sky launch doesn't appear to benefit, because it reaches this check only for tasks with storage mounts.
+
+**Trade-offs:**  
+\- New credentials added without running sky check can go unnoticed for up to 10 minutes.  
+\- A temporary check failure can also stick for up to 10 minutes. sky check clears both as soon as it finds an enabled cloud.  
+\- Launches more than 10 minutes apart get no saving.
+
+**Scope:** storage checks only, with no API change or migration. Compute checks are unchanged. Phase C's own aws configure list call stays, since it's a separate path that only NO\_UPLOAD removes.
+
+**Design Doc.**  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/empty\_storage\_check\_reuse\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/empty_storage_check_reuse_design.html)
 
 ### ---
 
@@ -817,7 +908,7 @@ Managed Job ID: 475
 ├── To stream controller logs:	sky jobs logs \--controller 475  
 └── To view all managed jobs:	sky jobs queue
 
-real	0m46.066s  
+**real	0m46.066s**  
 user	0m2.755s  
 sys	0m0.259s  
 (skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y \-c i2 ej/task\_bytecode.yaml   
@@ -841,7 +932,7 @@ Managed Job ID: 476
 ├── To stream controller logs:	sky jobs logs \--controller 476  
 └── To view all managed jobs:	sky jobs queue
 
-real	0m41.092s  
+**real	0m41.092s**  
 user	0m2.638s  
 sys	0m0.290s  
 (skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y \-c i2 ej/task\_bytecode.yaml   
@@ -867,7 +958,7 @@ Managed Job ID: 477
 ├── To stream controller logs:	sky jobs logs \--controller 477  
 └── To view all managed jobs:	sky jobs queue
 
-real	0m50.865s  
+**real	0m50.865s**  
 user	0m2.601s  
 sys	0m0.254s  
 (skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y \-c i2 ej/task\_bytecode.yaml   
@@ -891,11 +982,11 @@ Managed Job ID: 478
 ├── To stream controller logs:	sky jobs logs \--controller 478  
 └── To view all managed jobs:	sky jobs queue
 
-real	0m45.767s  
+**real	0m45.767s**  
 user	0m2.671s  
 sys	0m0.257s
 
-## Appendix H: Interation 1 and Interation 2: Commit List baselined on master
+## Appendix H: Iteration 1 and Iteration 2: Commit List baselined on master
 
 ej-prj-i2-6 has 23 commits on top of master at 796c5bcc8, all aimed at faster Kubernetes launches for sky launch and sky jobs launch. It's on fork at 407784c57 and isn't merged.
 
@@ -947,4 +1038,153 @@ ej-prj-i2-6 has 23 commits on top of master at 796c5bcc8, all aimed at faster Ku
 │                      │ 7e488f558 │ Let the benchmark use a separate task for the candidate                    │  
 ├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
 │                      │ 407784c57 │ Add ej/bench\_launch\_latency.py (an old copy) and four ej/\*.yaml task files │  
-└──────────────────────┴───────────┴────────────────────────────────────────────────────────────────────────────┘  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ 650eb5a67 │ \[Kubernetes\] Create a file mount's target in the same call as rsync        │  
+├──────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────┤  
+│                      │ d771518f1 │ \[Core\] Reuse an empty storage check result for an unchanged config         │  
+└──────────────────────┴───────────┴────────────────────────────────────────────────────────────────────────────┘
+
+## Appendix I: Iteration 3: Cloud Storage Configuration Benchmark
+
+ej-prj-i3-1 is much faster than master on both benchmarks with both speedup settings on: sky launch drops from 46.2 s to 27.4 s, and sky jobs launch from 67.5 s to 34.7 s. All 16 measured runs of each benchmark succeeded, and every branch run beat every master run.
+
+┌────────────────────────────────┬─────────────────────┬─────────────────────┬─────────────────┬────────┐  
+│ Benchmark (median, with range) │  Master 796c5bcc8   │     ej-prj-i3-1     │     Change      │   p    │  
+├────────────────────────────────┼─────────────────────┼─────────────────────┼─────────────────┼────────┤  
+│ sky launch wall time           │ 46.23 s (42.4–50.3) │ 27.37 s (24.6–28.8) │ −18.86 s (−41%) │ 0.0002 │  
+├────────────────────────────────┼─────────────────────┼─────────────────────┼─────────────────┼────────**┤**  
+**│ sky jobs launch client total   │ 67.5 s (57.2–70.5)  │ 34.7 s (33.3–39.4)  │ −32.8 s (−49%)  │ 0.0002** │  
+└────────────────────────────────┴─────────────────────┴─────────────────────┴─────────────────┴────────┘
+
+I worked out both p-values from the raw runs (two-sided exact test), because the jobs report rounds its value to 0.0000.
+
+Where sky jobs launch saves time:
+
+┌─────────────────────────────────┬────────┬─────────────┬─────────┐  
+│              Phase              │ Master │ ej-prj-i3-1 │ Change  │  
+├─────────────────────────────────┼────────┼─────────────┼─────────┤  
+│ A: client start → job row       │ 2.3 s  │ 2.4 s       │ 0.0 s   │  
+├─────────────────────────────────┼────────┼─────────────┼─────────┤  
+│ B: row → STARTING               │ 2.4 s  │ 2.7 s       │ \+0.3 s  │  
+├─────────────────────────────────┼────────┼─────────────┼─────────┤  
+│ C: STARTING → provisioning      │ 1.2 s  │ 1.1 s       │ 0.0 s   │  
+├─────────────────────────────────┼────────┼─────────────┼─────────┤  
+│ D: provisioning → job submitted │ 33.2 s │ 15.3 s      │ −17.9 s │  
+├─────────────────────────────────┼────────┼─────────────┼─────────┤  
+│ E: job runs                     │ 9.4 s  │ 7.3 s       │ −2.1 s  │  
+├─────────────────────────────────┼────────┼─────────────┼─────────┤  
+│ F: job ended → RUNNING          │ 2.9 s  │ 2.7 s       │ −0.2 s  │  
+├─────────────────────────────────┼────────┼─────────────┼─────────┤  
+│ G: RUNNING → SUCCEEDED          │ 7.1 s  │ 0.1 s       │ −7.0 s  │  
+├─────────────────────────────────┼────────┼─────────────┼─────────┤  
+│ H: SUCCEEDED → client exits     │ 3.5 s  │ 2.6 s       │ −0.8 s  │  
+└─────────────────────────────────┴────────┴─────────────┴─────────┘
+
+Phase changes are differences of medians, so they don't add up exactly to the total. Inside phase D, the largest savings are:  
+\- Ray wait \+ skylet start: 18.04 → 4.70 s  
+**\- Runtime setup: 8.60 → 2.05 s**
+
+How to read these numbers:  
+\- The settings took effect: phases A and C are about 2.3 s and 1.2 s on both sides, matching the earlier tips results. They're also why the gap is smaller than the earlier 79.1 → 45.0 s, which ran without these settings.  
+\- Image and code are measured together: master uses the published image and the branch uses the bytecode image, so this isn't the code change alone. The bytecode image also isn't published, so users wouldn't get this result today.  
+\- This says nothing about the ej-prj-i3-1 rsync change on its own: file mounts were actually 1.76 s on master and 2.26 s on the branch, with overlapping ranges (1.1–2.2 vs 1.2–3.5 s). The direct test against ej-prj-i2-6 is the better evidence, and it showed 1.45 → 1.08 s with no change in total time.  
+\- The sky launch comparison is less affected by the settings: that benchmark always sets allowed\_clouds, so only NO\_UPLOAD was new there.
+
+## Appendix J: Nov 4 User Perceived Time
+
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y ej/task\_bytecode.yaml  
+YAML to run: ej/task\_bytecode.yaml  
+Launching managed job 'sky-106e-ejiang'...  
+├── Waiting for task resources on 6 nodes.  
+└── Job started. Streaming logs... (Ctrl-C to exit log streaming; job will not be killed)  
+(head, rank=0, pid=1328) \[rank 0\] started at 1793818068.185642809 on sky-106e-ejiang-636-48017c75-head  
+(worker1, rank=1, pid=673, ip=10.244.0.50) \[rank 1\] started at 1793818068.585237383 on sky-106e-ejiang-636-48017c75-worker1  
+(worker5, rank=5, pid=671, ip=10.244.0.53) \[rank 5\] started at 1793818068.639009291 on sky-106e-ejiang-636-48017c75-worker5  
+(worker3, rank=3, pid=672, ip=10.244.0.51) \[rank 3\] started at 1793818068.728010902 on sky-106e-ejiang-636-48017c75-worker3  
+(worker4, rank=4, pid=666, ip=10.244.0.49) \[rank 4\] started at 1793818068.807059254 on sky-106e-ejiang-636-48017c75-worker4  
+(worker2, rank=2, pid=659, ip=10.244.0.52) \[rank 2\] started at 1793818069.076884678 on sky-106e-ejiang-636-48017c75-worker2  
+✓ Job finished (status: SUCCEEDED).  
+✓ Managed job finished: 636 (status: SUCCEEDED).
+
+📋 Useful Commands  
+Managed Job ID: 636  
+├── To cancel the job:		sky jobs cancel 636  
+├── To stream job logs:		sky jobs logs 636  
+├── To stream controller logs:	sky jobs logs \--controller 636  
+└── To view all managed jobs:	sky jobs queue
+
+**real	0m49.501s**  
+user	0m2.693s  
+sys	0m0.260s  
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y ej/task\_bytecode.yaml  
+YAML to run: ej/task\_bytecode.yaml  
+Launching managed job 'sky-a9ad-ejiang'...  
+├── Waiting for task resources on 6 nodes.  
+└── Job started. Streaming logs... (Ctrl-C to exit log streaming; job will not be killed)  
+(head, rank=0, pid=1324) \[rank 0\] started at 1793818107.411045081 on sky-a9ad-ejiang-637-48017c75-head  
+(worker4, rank=4, pid=607, ip=10.244.0.58) \[rank 4\] started at 1793818108.152072607 on sky-a9ad-ejiang-637-48017c75-worker4  
+(worker1, rank=1, pid=603, ip=10.244.0.56) \[rank 1\] started at 1793818108.110732960 on sky-a9ad-ejiang-637-48017c75-worker1  
+(worker3, rank=3, pid=606, ip=10.244.0.59) \[rank 3\] started at 1793818108.180162061 on sky-a9ad-ejiang-637-48017c75-worker3  
+(worker2, rank=2, pid=615, ip=10.244.0.57) \[rank 2\] started at 1793818108.588622946 on sky-a9ad-ejiang-637-48017c75-worker2  
+(worker5, rank=5, pid=612, ip=10.244.0.55) \[rank 5\] started at 1793818108.590081974 on sky-a9ad-ejiang-637-48017c75-worker5  
+✓ Job finished (status: SUCCEEDED).  
+✓ Managed job finished: 637 (status: SUCCEEDED).
+
+📋 Useful Commands  
+Managed Job ID: 637  
+├── To cancel the job:		sky jobs cancel 637  
+├── To stream job logs:		sky jobs logs 637  
+├── To stream controller logs:	sky jobs logs \--controller 637  
+└── To view all managed jobs:	sky jobs queue
+
+**real	0m36.300s**  
+user	0m2.678s  
+sys	0m0.261s  
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y ej/task\_bytecode.yaml  
+YAML to run: ej/task\_bytecode.yaml  
+Launching managed job 'sky-a759-ejiang'...  
+├── Waiting for task resources on 6 nodes.  
+└── Job started. Streaming logs... (Ctrl-C to exit log streaming; job will not be killed)  
+(head, rank=0, pid=1328) \[rank 0\] started at 1793818228.209299101 on sky-a759-ejiang-638-48017c75-head  
+(worker2, rank=2, pid=584, ip=10.244.0.65) \[rank 2\] started at 1793818228.991223431 on sky-a759-ejiang-638-48017c75-worker2  
+(worker3, rank=3, pid=592, ip=10.244.0.61) \[rank 3\] started at 1793818229.045513140 on sky-a759-ejiang-638-48017c75-worker3  
+(worker4, rank=4, pid=584, ip=10.244.0.63) \[rank 4\] started at 1793818229.032756622 on sky-a759-ejiang-638-48017c75-worker4  
+(worker1, rank=1, pid=588, ip=10.244.0.62) \[rank 1\] started at 1793818229.620459745 on sky-a759-ejiang-638-48017c75-worker1  
+(worker5, rank=5, pid=583, ip=10.244.0.64) \[rank 5\] started at 1793818229.620436025 on sky-a759-ejiang-638-48017c75-worker5  
+✓ Job finished (status: SUCCEEDED).  
+✓ Managed job finished: 638 (status: SUCCEEDED).
+
+📋 Useful Commands  
+Managed Job ID: 638  
+├── To cancel the job:		sky jobs cancel 638  
+├── To stream job logs:		sky jobs logs 638  
+├── To stream controller logs:	sky jobs logs \--controller 638  
+└── To view all managed jobs:	sky jobs queue
+
+**real	0m35.944s**  
+user	0m2.581s  
+sys	0m0.277s  
+(skypilot) ejiang@benjamin:\~/2T2/Projects/skypilot\$ time sky jobs launch \-y ej/task\_bytecode.yaml  
+YAML to run: ej/task\_bytecode.yaml  
+Launching managed job 'sky-544d-ejiang'...  
+├── Waiting for task resources on 6 nodes.  
+└── Job started. Streaming logs... (Ctrl-C to exit log streaming; job will not be killed)  
+(head, rank=0, pid=1324) \[rank 0\] started at 1793818293.633702581 on sky-544d-ejiang-639-48017c75-head  
+(worker4, rank=4, pid=597, ip=10.244.0.69) \[rank 4\] started at 1793818294.390290492 on sky-544d-ejiang-639-48017c75-worker4  
+(worker1, rank=1, pid=597, ip=10.244.0.71) \[rank 1\] started at 1793818294.338773376 on sky-544d-ejiang-639-48017c75-worker1  
+(worker2, rank=2, pid=597, ip=10.244.0.67) \[rank 2\] started at 1793818294.356252429 on sky-544d-ejiang-639-48017c75-worker2  
+(worker3, rank=3, pid=601, ip=10.244.0.70) \[rank 3\] started at 1793818294.435096352 on sky-544d-ejiang-639-48017c75-worker3  
+(worker5, rank=5, pid=590, ip=10.244.0.68) \[rank 5\] started at 1793818294.635159965 on sky-544d-ejiang-639-48017c75-worker5  
+✓ Job finished (status: SUCCEEDED).  
+✓ Managed job finished: 639 (status: SUCCEEDED).
+
+📋 Useful Commands  
+Managed Job ID: 639  
+├── To cancel the job:		sky jobs cancel 639  
+├── To stream job logs:		sky jobs logs 639  
+├── To stream controller logs:	sky jobs logs \--controller 639  
+└── To view all managed jobs:	sky jobs queue
+
+**real	0m36.479s**  
+user	0m2.592s  
+sys	0m0.245s  
