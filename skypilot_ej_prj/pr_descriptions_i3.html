@@ -1,0 +1,939 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR descriptions: ej-prj-i2-2 to ej-prj-i3-2</title>
+<meta name="description" content="PR descriptions for ej-prj-i2-2 to ej-prj-i3-2, one section per branch on the fork. Continues pr_descriptions.md in the same format.">
+<meta name="author" content="Edward Jiang">
+<link rel="icon" href="../favicon.ico">
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2e0;
+  --accent: #2f5bd3; --code-bg: #f0f0ed; --th-bg: #f3f3f1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+    --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+  --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+nav { max-width: 920px; margin: 0 auto; padding: 16px 16px 0; font-size: 14px; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--accent); }
+main {
+  max-width: 920px; margin: 12px auto 64px; padding: 28px 32px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+@media (max-width: 640px) { main { margin: 8px 16px 48px; padding: 20px 16px; } }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 16px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 17px; margin: 28px 0 10px; }
+h4 { font-size: 15px; margin: 22px 0 8px; }
+.header-anchor { color: var(--muted); text-decoration: none; opacity: 0; margin-left: -0.9em; padding-right: 0.25em; font-weight: 400; }
+h1:hover .header-anchor, h2:hover .header-anchor, h3:hover .header-anchor, h4:hover .header-anchor { opacity: 1; }
+a { color: var(--accent); }
+p, ul, ol { margin: 0 0 14px; }
+li { margin: 3px 0; }
+li > ul, li > ol { margin: 4px 0; }
+code {
+  font: 0.88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto; margin: 0 0 16px;
+}
+pre code { background: none; padding: 0; font-size: 13px; overflow-wrap: normal; }
+pre.mermaid { background: var(--panel); text-align: center; }
+.table-wrap { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; font-size: 14px; min-width: 50%; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--th-bg); font-weight: 600; }
+blockquote { margin: 0 0 14px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+img { max-width: 100%; }
+.toc a code { color: var(--accent); }
+h2, h3 { scroll-margin-top: 12px; }
+</style>
+</head>
+<body>
+<nav><a href="../">&larr; hifiweekly</a></nav>
+<main>
+<h1 id="pr-descriptions-ej-prj-i2-2-to-ej-prj-i3-2">PR descriptions: <code>ej-prj-i2-2</code> to <code>ej-prj-i3-2</code> <a class="header-anchor" href="#pr-descriptions-ej-prj-i2-2-to-ej-prj-i3-2">#</a></h1>
+<p>Continues <a href="pr_descriptions.html"><code>pr_descriptions.md</code></a>, in the same format. One section per branch on <code>fork</code> (https://github.com/siliconej/skypilot). Copy everything under a branch's heading into its PR.</p>
+<p><strong>Stacking.</strong> <a href="#ej-prj-i2-2"><code>ej-prj-i2-2</code></a>, <a href="#ej-prj-i2-3"><code>-3</code></a> and <a href="#ej-prj-i2-4"><code>-4</code></a> build on <code>ej-prj-3-job1</code>, on master <code>5ef55efa4</code>:</p>
+<p><code>ej-prj-3-job1</code> → <a href="#ej-prj-i2-2"><code>ej-prj-i2-2</code></a> → <a href="#ej-prj-i2-3"><code>ej-prj-i2-3</code></a> → <a href="#ej-prj-i2-4"><code>ej-prj-i2-4</code></a></p>
+<p><a href="#ej-prj-i2-5"><code>ej-prj-i2-5</code></a> is that whole stack rebased onto master <code>796c5bcc8</code>, plus one benchmark commit. <strong>Use one or the other, not both.</strong> Since the older branches are behind master, I'd open PRs from <a href="#ej-prj-i2-5"><code>ej-prj-i2-5</code></a>'s commits and treat the <a href="#ej-prj-i2-2"><code>ej-prj-i2-2</code></a>, <a href="#ej-prj-i2-3"><code>-3</code></a> and <a href="#ej-prj-i2-4"><code>-4</code></a> sections as the text for each piece.</p>
+<p>Later branches build on <a href="#ej-prj-i2-5"><code>ej-prj-i2-5</code></a>. The two <code>ej-prj-i3-*</code> branches split from <a href="#ej-prj-i2-6"><code>ej-prj-i2-6</code></a> separately, so neither includes the other's commit:</p>
+<pre><code>ej-prj-i2-5 → ej-prj-i2-6 ─┬→ ej-prj-i3-1
+                           └→ ej-prj-i3-2
+</code></pre>
+<p>Each <code>ej-prj-i3-*</code> section describes that branch's one new commit, which is the PR to open. The rest of the branch is covered by the earlier sections.</p>
+<p><strong>Test environment for every number below:</strong></p>
+<ul>
+<li><strong>Cluster:</strong> <code>kind-skypilot</code>, one kind node with 12 cores.</li>
+<li><strong>Task:</strong> a one-line <code>echo</code> on 6 nodes, <code>ej/task_bytecode.yaml</code> or <code>ej/task_published_ifnotpresent.yaml</code>.</li>
+<li><strong>Images:</strong> <code>imagePullPolicy: IfNotPresent</code> in both arms, unless stated. The bytecode image is built locally.</li>
+<li><strong>Managed jobs:</strong> consolidation mode (<code>sky api start --deploy</code>).</li>
+<li><strong>A/Bs:</strong> 8 measured runs per arm, medians.</li>
+</ul>
+<p><strong>Checks run on every branch below, in its own worktree</strong> (for <a href="#ej-prj-i2-6"><code>ej-prj-i2-6</code></a>, on <a href="#ej-prj-i3-2"><code>ej-prj-i3-2</code></a>, where its files are unchanged):</p>
+<ul>
+<li><code>yapf --diff</code> and <code>isort --check</code> are clean on the changed Python files.</li>
+<li>Pylint on the changed files under <code>sky/</code> rates 10.00/10.</li>
+<li><code>mypy $(cat tests/mypy_files.txt)</code> has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+</ul>
+<p><strong>No smoke tests or backward compatibility tests are recorded for any of these commits.</strong> The boxes are left unchecked, with suggestions.</p>
+<p><strong>Known flaky tests</strong>, seen while checking <a href="#ej-prj-i2-6"><code>ej-prj-i2-6</code></a> and later:</p>
+<ul>
+<li><code>test_controller.py::TestTaskCleanup::test_storage_teardown_retries_a_transient_error</code> also fails intermittently on master.</li>
+<li><code>test_utils.py::TestStreamLogsByIdJobFinishedBetweenChecks</code> fails intermittently, including when run alone. <strong>This one looks like it comes from this stack:</strong> it failed 3 of 10 runs at <code>96019e28a</code> and 6 of 10 at <code>7db718aa0</code>, with the status-checking tests added by <code>96019e28a</code>. The cause isn't found yet, and it needs fixing before these PRs merge.</li>
+</ul>
+<p><strong>Contents</strong></p>
+<ul class="toc">
+<li><a href="#ej-prj-i2-2"><code>ej-prj-i2-2</code></a>: [Jobs] Keep job timestamps exact over gRPC (<a href="#ej-prj-i2-2-summary">summary</a>, <a href="#ej-prj-i2-2-tested">tested</a>)</li>
+<li><a href="#ej-prj-i2-3"><code>ej-prj-i2-3</code></a>: [Kubernetes] Start Ray and notice running pods sooner (<a href="#ej-prj-i2-3-summary">summary</a>, <a href="#ej-prj-i2-3-tested">tested</a>)</li>
+<li><a href="#ej-prj-i2-4"><code>ej-prj-i2-4</code></a>: [Jobs] Get a finished job's end time with its status (<a href="#ej-prj-i2-4-summary">summary</a>, <a href="#ej-prj-i2-4-tested">tested</a>)</li>
+<li><a href="#ej-prj-i2-5"><code>ej-prj-i2-5</code></a>: The launch latency changes, rebased on master (<a href="#ej-prj-i2-5-summary">summary</a>, <a href="#ej-prj-i2-5-tested">tested</a>, <a href="#ej-prj-i2-5-benchmark-against-master">benchmark against master</a>)</li>
+<li><a href="#ej-prj-i2-6"><code>ej-prj-i2-6</code></a>: [Jobs] Check for saved logs sooner, and find them without a lookup (<a href="#ej-prj-i2-6-summary">summary</a>, <a href="#ej-prj-i2-6-tested">tested</a>)</li>
+<li><a href="#ej-prj-i3-1"><code>ej-prj-i3-1</code></a>: [Kubernetes] Create a file mount's target in the same call as rsync (<a href="#ej-prj-i3-1-summary">summary</a>, <a href="#ej-prj-i3-1-tested">tested</a>)</li>
+<li><a href="#ej-prj-i3-2"><code>ej-prj-i3-2</code></a>: [Core] Reuse an empty storage check result for an unchanged config (<a href="#ej-prj-i3-2-summary">summary</a>, <a href="#ej-prj-i3-2-tested">tested</a>, <a href="#ej-prj-i3-2-benchmark-against-master">benchmark against master</a>)</li>
+</ul>
+<hr />
+<h2 id="ej-prj-i2-2"><span id="ej-prj-i2-2-jobs-keep-job-timestamps-exact-over-grpc"></span><code>ej-prj-i2-2</code>: [Jobs] Keep job timestamps exact over gRPC <a class="header-anchor" href="#ej-prj-i2-2">#</a></h2>
+<p>Commit: <code>a84ddc783</code>. Stacked on <code>ej-prj-3-job1</code>.</p>
+<h3 id="ej-prj-i2-2-summary"><span id="summary"></span>Summary <a class="header-anchor" href="#ej-prj-i2-2-summary">#</a></h3>
+<ul>
+<li><strong>Problem:</strong>
+<ul>
+<li><code>GetJobSubmittedTimestamp</code> and <code>GetJobEndedTimestamp</code> return the time in a protobuf <code>float</code>, which can hold a current Unix time only to the nearest 128 s.</li>
+<li>With <code>SKYPILOT_ENABLE_GRPC</code> on, a managed job's start and end times were off by up to about a minute, and a short job's duration was recorded as 0 s.</li>
+</ul>
+</li>
+<li><strong>Fix:</strong>
+<ul>
+<li>Add <code>optional double timestamp_double</code> to both responses. A float can't be widened in place without breaking the wire format.</li>
+<li>Keep setting the float, so older clients still work.</li>
+<li>When a skylet doesn't set the new field, read the exact value through the existing head command instead of accepting the rounded one.</li>
+<li>Bump <code>SKYLET_VERSION</code> to 44, so existing clusters pick this up.</li>
+</ul>
+</li>
+<li><strong>Not a speedup:</strong> gRPC is off by default, so launch times don't change.</li>
+</ul>
+<p>Files: <code>sky/schemas/proto/jobsv1.proto</code> and the generated files, <code>sky/skylet/services.py</code>, <code>sky/skylet/constants.py</code>, <code>sky/jobs/utils.py</code>, and a new test file.</p>
+<h3 id="ej-prj-i2-2-tested"><span id="tested"></span>Tested <a class="header-anchor" href="#ej-prj-i2-2-tested">#</a></h3>
+<ul>
+<li>[x] Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on the changed <code>sky/</code> files rates 10.00/10. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+<li>[x] Any manual or new tests for this PR (please specify below)
+<ul>
+<li><strong>New unit tests:</strong> <code>tests/unit_tests/test_sky/jobs/test_job_timestamp.py</code>, 8 passed; 6 of them fail without this change. They cover:
+<ul>
+<li>the skylet sets both fields;</li>
+<li>the client reads the exact value;</li>
+<li>the client ignores a rounded value from an older skylet;</li>
+<li>the client falls back when the method is missing.</li>
+</ul>
+</li>
+<li><strong>Manual, on kind:</strong> 4 <code>sky jobs launch</code> runs with <code>SKYPILOT_ENABLE_GRPC=1</code>. Job durations went from 0.00 s to 6.32–6.82 s, and in the run checked the end time is within about 6 ms of the last task's output.</li>
+<li><strong>Only tested with mocks:</strong> a new client with an older skylet.</li>
+</ul>
+</li>
+<li>[ ] All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li>[ ] Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>Not run. Suggested, with gRPC on: <code>test_managed_job.py::test_managed_jobs_basic</code>.</li>
+</ul>
+</li>
+<li>[ ] Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run; recommended, as this changes the skylet's proto and version.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="ej-prj-i2-3"><span id="ej-prj-i2-3-kubernetes-start-ray-and-notice-running-pods-sooner"></span><code>ej-prj-i2-3</code>: [Kubernetes] Start Ray and notice running pods sooner <a class="header-anchor" href="#ej-prj-i2-3">#</a></h2>
+<p>Commits: <code>cab8b302a</code>, <code>0038650ac</code>, <code>16738238e</code>. Stacked on <code>ej-prj-i2-2</code>.</p>
+<h3 id="ej-prj-i2-3-summary"><span id="summary-1"></span>Summary <a class="header-anchor" href="#ej-prj-i2-3-summary">#</a></h3>
+<ul>
+<li><strong>Precompile runtime bytecode in the k8s images</strong> (<code>cab8b302a</code>).
+<ul>
+<li><code>uv</code> doesn't compile bytecode by default, so every pod compiled Ray and its dependencies on first import, before GCS started, which delayed every worker.</li>
+<li>Add <code>--compile-bytecode</code> to the runtime install in <code>Dockerfile_k8s</code> and <code>Dockerfile_k8s_gpu</code>. The image grows from 1.67 GB to 1.83 GB.</li>
+<li>This takes effect once the image is rebuilt and published.</li>
+</ul>
+</li>
+<li><strong>Don't import Ray Serve in <code>ray start</code></strong> (<code>0038650ac</code>).
+<ul>
+<li><code>ray start</code> imported <code>ray.serve.scripts</code> only to register the <code>ray serve</code> command, which pulls in pandas and FastAPI on every pod.</li>
+<li>A patch to Ray's <code>scripts.py</code> registers that command lazily, so Serve is imported only when <code>ray serve</code> is used.</li>
+<li><code>apply_patches.py</code> imported each module to find its file, which would have imported Serve to patch the file that avoids it. It now uses <code>find_spec</code>, which doesn't run the module.</li>
+</ul>
+</li>
+<li><strong>Watch pods between polls</strong> (<code>16738238e</code>).
+<ul>
+<li><code>_wait_for_pods_to_run</code> slept 1 s between polls, so a launch noticed its last pod about 0.5 s late on average.</li>
+<li>A watch now ends the wait early when every waiting pod is running or a pod is going away. The poll that follows still makes every decision, and any watch failure falls back to sleeping out the interval.</li>
+</ul>
+</li>
+</ul>
+<p>Files: <code>Dockerfile_k8s</code>, <code>Dockerfile_k8s_gpu</code>, <code>sky/skylet/ray_patches/</code>, <code>sky/provision/kubernetes/instance.py</code>, and tests.</p>
+<h3 id="ej-prj-i2-3-tested"><span id="tested-1"></span>Tested <a class="header-anchor" href="#ej-prj-i2-3-tested">#</a></h3>
+<ul>
+<li>[x] Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on the changed <code>sky/</code> files rates 10.00/10. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+<li>[x] Any manual or new tests for this PR (please specify below)
+<ul>
+<li><strong>Unit tests:</strong> <code>test_ray_patches_payload.py</code> and the new <code>tests/unit_tests/kubernetes/test_pod_run_wait.py</code>, 37 passed. They cover:
+<ul>
+<li>locating a module without running it, and failing on one it can't locate;</li>
+<li>the wait ends when the last waiting pod runs, and not while others wait or a pod isn't ready;</li>
+<li>a pod going away ends the wait for the poll to report;</li>
+<li>a watch error or a failed watch start falls back to sleeping;</li>
+<li>only the rest of the interval is slept.</li>
+</ul>
+</li>
+<li><strong>Bytecode A/B</strong> (<code>sky launch</code>, pins image vs pins + flag):
+<ul>
+<li>launch wall time 34.90 → <strong>26.25 s</strong> (p = 0.0002);</li>
+<li>provisioning total 19.34 → 12.66 s (p = 0.0005).</li>
+</ul>
+</li>
+<li><strong>Lazy Serve + pod watch A/B</strong> (<code>sky launch</code>, measured together):
+<ul>
+<li>head container → GCS first log 5.82 → <strong>3.37 s</strong> (p = 0.0002);</li>
+<li>head container → last raylet 14.22 → 11.77 s (p = 0.0005);</li>
+<li>last container started → SkyPilot notices 0.70 → <strong>0.16 s</strong> (p = 0.0061);</li>
+<li>create pods, wait until Running 6.04 → 5.15 s (p = 0.026).</li>
+</ul>
+</li>
+<li><strong>Manual:</strong> on Ray 2.56.1 in a container, <code>ray serve</code> still works: <code>--help</code>, <code>-h</code>, subcommands, an unknown subcommand's error, and a real <code>ray serve status</code>. An image that can't be pulled still fails in 8 s with <code>ErrImagePull</code>.</li>
+<li><strong>Only tested with unit tests:</strong> deleting a pod during the wait.</li>
+<li><strong>Not tested:</strong> the GPU image hasn't been built.</li>
+</ul>
+</li>
+<li>[ ] All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li>[ ] Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>Not run. Suggested:
+<ul>
+<li><code>test_basic.py::test_minimal</code></li>
+<li><code>test_cluster_job.py::test_multi_hostname</code>, <code>test_kubernetes_pod_failure_detection</code></li>
+<li><code>test_kubernetes_pod_loss.py::test_launch_fails_fast_when_pod_deleted</code></li>
+<li>a test that runs <code>ray serve</code> on a launched cluster</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>[ ] Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run. Only new pods get the patch. There's no API change.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="ej-prj-i2-4"><span id="ej-prj-i2-4-jobs-get-a-finished-jobs-end-time-with-its-status"></span><code>ej-prj-i2-4</code>: [Jobs] Get a finished job's end time with its status <a class="header-anchor" href="#ej-prj-i2-4">#</a></h2>
+<p>Commit: <code>b848c9c1e</code>. Stacked on <code>ej-prj-i2-3</code>.</p>
+<p><strong>Before opening a PR:</strong> this commit's message says the client &quot;still waits for its own log tail&quot;, which is wrong. Use the reworded copy on <code>ej-prj-i2-5</code> (<code>7db718aa0</code>), or the wording below.</p>
+<h3 id="ej-prj-i2-4-summary"><span id="summary-2"></span>Summary <a class="header-anchor" href="#ej-prj-i2-4-summary">#</a></h3>
+<ul>
+<li><strong>Problem:</strong> after a managed job ended, the controller ran two commands on the head node (status, then end time), and the log follower ran its own status check. Without gRPC, each is a <code>kubectl exec</code> or SSH round trip of a second or more.</li>
+<li><strong>Fix:</strong>
+<ul>
+<li>The combined head command now also returns the end time.</li>
+<li>A launch that saw the job succeed hands its status and end time to the monitor loop, which then needs no head command.</li>
+<li>The monitor loop's status check also returns the end time, so a finished job doesn't fetch it separately. With gRPC or a runtime, it still does.</li>
+<li>The follower trusts a tail exit code of SUCCEEDED, and reads the recorded status every 0.2 s instead of every 1 s until the controller writes it.</li>
+</ul>
+</li>
+<li><strong>Compatibility:</strong> the generated code only calls functions older cluster runtimes already have.</li>
+<li><strong>Side effect:</strong> the wait after SUCCEEDED grows, because the controller saves the logs after SUCCEEDED and the client now reaches that wait sooner. The total still improves slightly.</li>
+</ul>
+<p>Files: <code>sky/jobs/controller.py</code>, <code>sky/jobs/recovery_strategy.py</code>, <code>sky/jobs/utils.py</code>, <code>sky/skylet/job_lib.py</code>, and tests.</p>
+<h3 id="ej-prj-i2-4-tested"><span id="tested-2"></span>Tested <a class="header-anchor" href="#ej-prj-i2-4-tested">#</a></h3>
+<ul>
+<li>[x] Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on the changed <code>sky/</code> files rates 10.00/10. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+<li>[x] Any manual or new tests for this PR (please specify below)
+<ul>
+<li>
+<p><strong>New unit tests</strong> (15), covering:</p>
+<ul>
+<li>a success seen at launch needs no head command, and without a time it's checked;</li>
+<li>the end time from a status check is reused;</li>
+<li>the launch's end time is handed over once, and a recovery doesn't inherit it;</li>
+<li>a tail that says SUCCEEDED needs no status check, and one that says FAILED still checks;</li>
+<li>the final wait polls quickly;</li>
+<li>an end time is dropped for a job not yet seen finished;</li>
+<li>the codegen returns the end time against a real job table.</li>
+</ul>
+</li>
+<li>
+<p><strong><code>tests/unit_tests/test_sky/jobs</code>:</strong> 1390 passed, 1 failed. The failure, <code>test_storage_teardown_retries_a_transient_error</code>, passes when run alone and also fails intermittently on master.</p>
+</li>
+<li>
+<p><strong>A/B on kind</strong> (<code>sky jobs launch</code>, bytecode image, against <code>ej-prj-i2-3</code>):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Before</th>
+<th>After</th>
+<th>p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RUNNING → SUCCEEDED</td>
+<td>3.35 s</td>
+<td><strong>0.12 s</strong></td>
+<td>0.0001</td>
+</tr>
+<tr>
+<td>SUCCEEDED → client exits</td>
+<td>2.48 s</td>
+<td>3.84 s</td>
+<td>0.0001</td>
+</tr>
+<tr>
+<td>Client total</td>
+<td>36.07 s</td>
+<td>34.31 s</td>
+<td>see below</td>
+</tr>
+</tbody>
+</table></div>
+<p>For the total, the rank test gives p = 0.038 and the permutation test on means gives p = 0.38, because of one 41.6 s candidate run.</p>
+</li>
+<li>
+<p><strong>Manual, on kind:</strong> one launch each for a job that succeeds, one that fails (exit 3), one still running when its launch returned, and one with <code>SKYPILOT_ENABLE_GRPC=1</code>. Recorded end times are within 6–60 ms of the job's last output.</p>
+</li>
+</ul>
+</li>
+<li>[ ] All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li>[ ] Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>Not run. Suggested:
+<ul>
+<li><code>test_managed_job.py</code>: <code>test_managed_jobs_basic</code>, <code>test_managed_jobs_cli_exit_codes</code>, <code>test_managed_jobs_logs_tail</code>, <code>test_managed_jobs_recovery_kubernetes_multinode</code>, <code>test_managed_jobs_exit_code_recovery_single</code></li>
+<li><code>test_basic.py::test_jobs_launch_and_logs</code></li>
+</ul>
+</li>
+<li>The non-consolidation (controller cluster) path also needs a CI run.</li>
+</ul>
+</li>
+<li>[ ] Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run; recommended. The codegen uses only <code>job_lib</code> functions that existing cluster runtimes have.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="ej-prj-i2-5"><span id="ej-prj-i2-5-the-launch-latency-changes-rebased-on-master"></span><code>ej-prj-i2-5</code>: The launch latency changes, rebased on master <a class="header-anchor" href="#ej-prj-i2-5">#</a></h2>
+<p>Commits: 20 on master <code>796c5bcc8</code>, ending at <code>7e488f558</code>. Of these, <code>7e488f558</code> is the only new work; the other 19 are the earlier stack, rebased.</p>
+<p>This branch is large for one PR. Use it as the base for smaller PRs, or as a reference for the combined result.</p>
+<h3 id="ej-prj-i2-5-summary"><span id="summary-3"></span>Summary <a class="header-anchor" href="#ej-prj-i2-5-summary">#</a></h3>
+<ul>
+<li>
+<p><strong>Rebase.</strong> Brings <code>ej-prj-3-job1</code> and <code>ej-prj-i2-2</code> to <code>ej-prj-i2-4</code> onto <code>796c5bcc8</code>, which is 14 commits newer than their base. The one conflict, in <code>sky/utils/annotations.py</code> and <code>test_annotations.py</code>, kept both sides.</p>
+</li>
+<li>
+<p><strong>Reworded message.</strong> <code>7db718aa0</code> corrects <code>b848c9c1e</code>'s explanation of the longer wait after SUCCEEDED. The code is the same.</p>
+</li>
+<li>
+<p><strong><code>[Test] Let the launch benchmark use a separate task for the candidate</code></strong> (<code>7e488f558</code>).</p>
+<ul>
+<li>A candidate that needs its own image can't share a task YAML with the baseline.</li>
+<li><code>--candidate-task</code> in <code>bench_launch_latency.py</code> sets the candidate's task, and defaults to <code>--task</code>. The two tasks must have the same <code>num_nodes</code>.</li>
+</ul>
+</li>
+<li>
+<p><strong>Everything in the branch:</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Commits</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ray and pod startup</td>
+<td><code>7251606a1</code>, <code>ab543979c</code>, <code>863c66883</code>, <code>c727790d3</code>, <code>0c576e860</code>, <code>1ddcc3240</code>, <code>71b3c9213</code></td>
+</tr>
+<tr>
+<td>Lost pods</td>
+<td><code>b7f871174</code>, <code>ee4e69d1a</code>, <code>fab8e57ed</code>, <code>cd9a21dcc</code></td>
+</tr>
+<tr>
+<td>Managed jobs</td>
+<td><code>04040ba00</code>, <code>96019e28a</code>, <code>30890119e</code>, <code>7db718aa0</code></td>
+</tr>
+<tr>
+<td>Storage lookup</td>
+<td><code>dc6c01a92</code></td>
+</tr>
+<tr>
+<td>Benchmark</td>
+<td><code>e08dabd78</code>, <code>6de470672</code>, <code>08a101ba1</code>, <code>7e488f558</code></td>
+</tr>
+</tbody>
+</table></div>
+</li>
+</ul>
+<h3 id="ej-prj-i2-5-tested"><span id="tested-3"></span>Tested <a class="header-anchor" href="#ej-prj-i2-5-tested">#</a></h3>
+<ul>
+<li>[x] Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on the changed <code>sky/</code> files rates 10.00/10. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+<li>[x] Any manual or new tests for this PR (please specify below)
+<ul>
+<li><strong><code>tests/unit_tests/test_sky/jobs</code>, <code>test_pod_run_wait.py</code> and <code>test_ray_patches_payload.py</code>:</strong> 1432 passed, 1 failed. The failure is the same <code>test_storage_teardown_retries_a_transient_error</code>, which also fails intermittently on master.</li>
+<li><strong>Full unit suite:</strong> 11,001 passed. 3 failed and passed on rerun, and on master. <code>test_adaptor.py</code> hangs, also on master.</li>
+<li><strong><code>--candidate-task</code>:</strong> used for the <code>sky launch</code> A/B below.</li>
+<li><strong>A/B against master:</strong> see &quot;Benchmark against master&quot; below.</li>
+</ul>
+</li>
+<li>[ ] All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li>[ ] Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>Not run on this branch. The 32 chosen tests in <a href="launch_latency_consolidated_design.html"><code>launch_latency_consolidated_design.md</code></a> §7.5 ran on <code>ej-prj-3-job1</code>, before the <code>ej-prj-i2-*</code> commits and this rebase. Re-run them here.</li>
+</ul>
+</li>
+<li>[ ] Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run; recommended.</li>
+</ul>
+</li>
+</ul>
+<h3 id="ej-prj-i2-5-benchmark-against-master"><span id="benchmark-against-master"></span>Benchmark against master <a class="header-anchor" href="#ej-prj-i2-5-benchmark-against-master">#</a></h3>
+<p><code>ej-prj-i2-5</code> (<code>7e488f558</code>, bytecode image) against master <code>796c5bcc8</code>, the commit it's based on (published image). Both use <code>IfNotPresent</code>, 6 nodes, 8 measured runs per arm, and all runs succeeded. Real master defaults to <code>Always</code>, so this setup slightly favors master.</p>
+<p><strong><code>sky launch</code>:</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>master</th>
+<th><code>ej-prj-i2-5</code></th>
+<th>Change</th>
+<th>p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Launch wall time</strong></td>
+<td>44.13 s (42.1–49.7)</td>
+<td><strong>29.67 s</strong> (24.7–32.5)</td>
+<td><strong>−14.46 s (−33%)</strong></td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td>Provisioning total</td>
+<td>27.03 s (25.1–32.1)</td>
+<td>15.24 s (10.6–18.0)</td>
+<td>−11.79 s (−44%)</td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td>Runtime setup end → launched</td>
+<td>17.41 s (14.9–21.0)</td>
+<td>3.58 s (2.2–6.0)</td>
+<td>−13.83 s (−79%)</td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td>Pods ready</td>
+<td>2.77 s (2.6–3.1)</td>
+<td>1.92 s (1.5–2.2)</td>
+<td>−0.85 s (−31%)</td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td>Runtime setup</td>
+<td>6.70 s (4.8–14.3)</td>
+<td>9.27 s (4.4–13.8)</td>
+<td>+2.58 s</td>
+<td>0.49 (not significant)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code>sky jobs launch</code>:</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>master</th>
+<th><code>ej-prj-i2-5</code></th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A: client start → job row created</td>
+<td>6.7 (6.4–7.1)</td>
+<td>7.0 (6.9–7.4)</td>
+<td>+0.2</td>
+</tr>
+<tr>
+<td>B: row created → STARTING</td>
+<td>2.6 (2.2–4.4)</td>
+<td>2.5 (2.1–4.4)</td>
+<td>−0.1</td>
+</tr>
+<tr>
+<td>C: STARTING → provisioning starts</td>
+<td>3.4 (3.1–3.9)</td>
+<td>2.9 (2.5–4.0)</td>
+<td>−0.4</td>
+</tr>
+<tr>
+<td><strong>D: provisioning → job submitted</strong></td>
+<td>37.4 (29.5–124.8)</td>
+<td><strong>17.8</strong> (13.8–21.9)</td>
+<td><strong>−19.6</strong></td>
+</tr>
+<tr>
+<td>E: job runs on the cluster</td>
+<td>8.5 (8.2–8.5)</td>
+<td>6.7 (6.4–6.8)</td>
+<td>−1.8</td>
+</tr>
+<tr>
+<td>F: job ended → RUNNING</td>
+<td>2.8 (1.8–3.6)</td>
+<td>2.6 (2.0–3.1)</td>
+<td>−0.2</td>
+</tr>
+<tr>
+<td><strong>G: RUNNING → SUCCEEDED</strong></td>
+<td>14.5 (10.3–17.6)</td>
+<td><strong>0.1</strong> (0.1–1.6)</td>
+<td><strong>−14.4</strong></td>
+</tr>
+<tr>
+<td>H: SUCCEEDED → client exits</td>
+<td>2.8 (2.3–5.4)</td>
+<td>3.9 (2.6–5.1)</td>
+<td>+1.2</td>
+</tr>
+<tr>
+<td><strong>Client total</strong></td>
+<td><strong>79.1</strong> (70.0–166.7)</td>
+<td><strong>45.0</strong> (39.1–49.2)</td>
+<td><strong>−34.0 (−43%)</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>The client total's p-value is below 0.001 (permutation test on means).</p>
+<ul>
+<li><strong>Every <code>ej-prj-i2-5</code> launch beat every master launch,</strong> on both benchmarks.</li>
+<li><strong>Runtime setup stalls remain on both arms.</strong> In <code>sky launch</code>, 4 of 8 <code>ej-prj-i2-5</code> runs spent 13.3–13.8 s in runtime setup, and the others 4.4–5.3 s. The cause in this run wasn't found.</li>
+<li><strong>Master's setup was unusually slow in the <code>sky jobs launch</code> run:</strong> a median of 19.9 s, and 107.9 s in the 166.7 s run, against 6.27 s on <code>ej-prj-i2-5</code>. That likely inflates this −34.0 s. An earlier A/B from the older base <code>5ef55efa4</code> measured −28.8 s (69.9 → 41.1 s).</li>
+<li><strong>Users won't see all of this yet.</strong> The bytecode image isn't published, and the template still sets <code>imagePullPolicy: Always</code>.</li>
+</ul>
+<p>Results: <code>ej/bench_results/20261102-1942-master-i2-5/</code> (<code>sky-launch/summary.md</code>, <code>jobs/report.md</code>).</p>
+<hr />
+<h2 id="ej-prj-i2-6"><span id="ej-prj-i2-6-jobs-check-for-saved-logs-sooner-and-find-them-without-a-lookup"></span><code>ej-prj-i2-6</code>: [Jobs] Check for saved logs sooner, and find them without a lookup <a class="header-anchor" href="#ej-prj-i2-6">#</a></h2>
+<p>Commits: <code>680e03581</code>, <code>d080ff076</code>, <code>407784c57</code>. Stacked on <code>ej-prj-i2-5</code>.</p>
+<p><strong>Before opening a PR:</strong></p>
+<ul>
+<li><code>407784c57</code> only adds benchmark files under <code>ej/</code>, so leave it out.</li>
+<li><code>sky/skylet/job_lib.py:1490</code> has a <code>TODO(aylei)</code> that needs rewording under the right author.</li>
+</ul>
+<h3 id="ej-prj-i2-6-summary"><span id="summary-4"></span>Summary <a class="header-anchor" href="#ej-prj-i2-6-summary">#</a></h3>
+<ul>
+<li><strong>Check for a finished job's saved logs every 0.2 s</strong> (<code>680e03581</code>).
+<ul>
+<li>A client following a short job can't exit until the controller has saved the job's logs, and it checked once a second, so it waited about 0.5 s on average after they were saved.</li>
+<li>It now checks every 0.2 s, as it already does while waiting for the job's final status. The wait still ends after 30 s.</li>
+</ul>
+</li>
+<li><strong>Get a finished job's log directory with its status</strong> (<code>d080ff076</code>).
+<ul>
+<li>To download a finished job's logs, the controller first ran a head command to find their directory. Without gRPC, that's a <code>kubectl exec</code> or SSH round trip of a second or more, and a client following the job waits for it.</li>
+<li>The combined head command now also returns the directory, and <code>sync_down_logs</code> skips the lookup when it has one.</li>
+<li>It still looks the directory up over gRPC, with a runtime, or if the check didn't return it.</li>
+</ul>
+</li>
+<li><strong>Compatibility:</strong> the generated code only calls what the lookup itself calls, so older cluster runtimes support it.</li>
+</ul>
+<p>Files: <code>sky/backends/cloud_vm_ray_backend.py</code>, <code>sky/jobs/controller.py</code>, <code>sky/jobs/recovery_strategy.py</code>, <code>sky/jobs/utils.py</code>, <code>sky/skylet/job_lib.py</code>, <code>sky/utils/controller_utils.py</code>, and tests.</p>
+<h3 id="ej-prj-i2-6-tested"><span id="tested-4"></span>Tested <a class="header-anchor" href="#ej-prj-i2-6-tested">#</a></h3>
+<ul>
+<li>[x] Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on the changed <code>sky/</code> files rates 10.00/10. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+<li>[x] Any manual or new tests for this PR (please specify below)
+<ul>
+<li>
+<p><strong><code>tests/unit_tests/test_sky/jobs</code> and <code>test_cloud_vm_ray_backend.py</code>, on <code>ej-prj-i3-2</code>:</strong> 1480 passed, 2 failed. Both failures are the known flaky tests above.</p>
+</li>
+<li>
+<p><strong>A/B on kind</strong> (<code>sky jobs launch</code>, bytecode image, against <code>ej-prj-i2-5</code>):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Phase</th>
+<th><code>ej-prj-i2-5</code></th>
+<th><code>ej-prj-i2-6</code></th>
+<th>p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>SUCCEEDED → client exits</strong></td>
+<td>4.3 s (3.7–4.8)</td>
+<td><strong>2.6 s</strong> (1.9–3.3)</td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td>RUNNING → SUCCEEDED</td>
+<td>0.2 s (0.1–0.2)</td>
+<td>0.1 s (0.1–0.1)</td>
+<td>not tested in this report</td>
+</tr>
+<tr>
+<td>Client total</td>
+<td>41.3 s (40.5–44.9)</td>
+<td>40.0 s (38.0–46.2)</td>
+<td>0.19 (not significant)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Setup time varies by more than the gain, so the total's drop isn't significant by itself. Results: <code>ej/bench_results/20261102-i2-6-ab/</code>.</p>
+</li>
+</ul>
+</li>
+<li>[ ] All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li>[ ] Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>Not run. Suggested: <code>test_managed_job.py</code>: <code>test_managed_jobs_basic</code>, <code>test_managed_jobs_logs_tail</code>, <code>test_managed_jobs_recovery_kubernetes_multinode</code>.</li>
+<li>The non-consolidation (controller cluster) path also needs a CI run.</li>
+</ul>
+</li>
+<li>[ ] Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run; recommended, as this changes generated head commands.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="ej-prj-i3-1"><span id="ej-prj-i3-1-kubernetes-create-a-file-mounts-target-in-the-same-call-as-rsync"></span><code>ej-prj-i3-1</code>: [Kubernetes] Create a file mount's target in the same call as rsync <a class="header-anchor" href="#ej-prj-i3-1">#</a></h2>
+<p>Commit: <code>650eb5a67</code>. Stacked on <code>ej-prj-i2-6</code>.</p>
+<h3 id="ej-prj-i3-1-summary"><span id="summary-5"></span>Summary <a class="header-anchor" href="#ej-prj-i3-1-summary">#</a></h3>
+<ul>
+<li><strong>Problem:</strong> <code>_internal_file_mounts</code> ran <code>mkdir</code>, then <code>rsync</code>, for each file mount on each node, so each <code>mkdir</code> was its own round trip.</li>
+<li><strong>Fix:</strong> add <code>rsync_setup_to_new_path</code> to the command runners, which creates the target's path as part of the upload.
+<ul>
+<li><strong>SSH</strong> uses <code>--rsync-path=&quot;mkdir -p DIR &amp;&amp; rsync&quot;</code>.</li>
+<li><strong>Kubernetes</strong> can't, because <code>rsync_helper.sh</code> runs <code>exec &quot;$@&quot;</code>, which would take that whole string as the program's name. The helper now creates the directory itself, from <code>SKYPILOT_K8S_RSYNC_MKDIR</code>, in the same <code>kubectl exec</code>.</li>
+<li><strong>Slurm and local</strong> runners keep the two calls. <code>mkdir</code> has to run where <code>rsync</code> does, and <code>--rsync-path</code> has no effect without a remote shell.</li>
+</ul>
+</li>
+<li><strong>Behavior change:</strong> a failed <code>mkdir</code> on SSH or Kubernetes now shows up as a failed rsync, and is retried with it.</li>
+<li><strong>Not a measurable launch speedup:</strong> file mounts get about 0.4 s faster on <code>sky launch</code>, but the total doesn't change significantly.</li>
+</ul>
+<p>Files: <code>sky/provision/instance_setup.py</code>, <code>sky/utils/command_runner.py</code>, <code>sky/utils/command_runner.pyi</code>, <code>sky/utils/kubernetes/rsync_helper.sh</code>, and a new test file.</p>
+<h3 id="ej-prj-i3-1-tested"><span id="tested-5"></span>Tested <a class="header-anchor" href="#ej-prj-i3-1-tested">#</a></h3>
+<ul>
+<li>[x] Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on the changed <code>sky/</code> files rates 10.00/10. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+<li>[x] Any manual or new tests for this PR (please specify below)
+<ul>
+<li>
+<p><strong>Unit tests:</strong> the new <code>tests/unit_tests/test_sky/utils/test_rsync_setup_to_new_path.py</code> and <code>test_command_runner.py</code>, 109 passed.</p>
+</li>
+<li>
+<p><strong>A/B on kind</strong> (<code>sky launch</code>, bytecode image in both arms, against <code>ej-prj-i2-6</code>):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th><code>ej-prj-i2-6</code></th>
+<th><code>ej-prj-i3-1</code></th>
+<th>p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>File mounts stage</td>
+<td>1.45 s</td>
+<td><strong>1.08 s</strong></td>
+<td>0.32 on means, 0.046 on ranks</td>
+</tr>
+<tr>
+<td>Provisioning total</td>
+<td>11.40 s (10.9–14.6)</td>
+<td>11.29 s (10.0–15.2)</td>
+<td>0.94</td>
+</tr>
+<tr>
+<td>Launch wall time</td>
+<td>26.56 s (26.1–29.2)</td>
+<td>27.35 s (24.6–30.1)</td>
+<td>0.77</td>
+</tr>
+</tbody>
+</table></div>
+<p>All 16 launches succeeded. The benchmark's &quot;NOT PROVEN&quot; verdict tests a stage this change doesn't touch. Results: <code>ej/bench_results/20261103-i3-1-mkdir-ab/</code>.</p>
+</li>
+<li>
+<p><strong>Only tested with unit tests:</strong> the SSH and Slurm runners, and a failed <code>mkdir</code>. The A/B only exercises Kubernetes.</p>
+</li>
+<li>
+<p><strong>Only exercised on <code>kind</code>:</strong> the <code>rsync_helper.sh</code> change.</p>
+</li>
+</ul>
+</li>
+<li>[ ] All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li>[ ] Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>Not run. Suggested: <code>test_basic.py::test_minimal</code> and a test with file mounts on both SSH and Kubernetes clusters, such as <code>test_mount_and_storage.py::test_file_mounts</code>.</li>
+</ul>
+</li>
+<li>[ ] Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run; recommended, as <code>rsync_helper.sh</code> and the SSH rsync call both change.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="ej-prj-i3-2"><span id="ej-prj-i3-2-core-reuse-an-empty-storage-check-result-for-an-unchanged-config"></span><code>ej-prj-i3-2</code>: [Core] Reuse an empty storage check result for an unchanged config <a class="header-anchor" href="#ej-prj-i3-2">#</a></h2>
+<p>Commit: <code>d771518f1</code>. Stacked on <code>ej-prj-i2-6</code>.</p>
+<p><strong>Before opening a PR:</strong></p>
+<ul>
+<li><strong>To open it from master:</strong> this commit uses <code>current_config_fingerprint</code>, which <code>dc6c01a92</code> renamed from <code>_config_fingerprint</code>. Stack it on that commit, or use the old name. That commit also adds the per-request cache, so numbers on master alone may differ.</li>
+<li><strong>Decide the limit:</strong> it's 10 minutes, and raising it to 1 hour would help people who launch less often (see below). Only 10 minutes has been tested.</li>
+</ul>
+<h3 id="ej-prj-i3-2-summary"><span id="summary-6"></span>Summary <a class="header-anchor" href="#ej-prj-i3-2-summary">#</a></h3>
+<ul>
+<li><strong>Problem:</strong>
+<ul>
+<li>With no storage cloud enabled, the stored list of enabled clouds is empty, which looks the same as &quot;never checked&quot;.</li>
+<li>So every <code>sky jobs launch</code> reran the storage check and its <code>aws</code> and <code>gcloud</code> commands, even for a Kubernetes-only task. That's about 4.75 s of phase A's 7 s, with <code>aws</code> on the API server's <code>PATH</code>.</li>
+</ul>
+</li>
+<li><strong>Fix:</strong>
+<ul>
+<li>After a storage check finds nothing, store the config fingerprint and the time in the existing <code>config</code> table.</li>
+<li>Later launches skip the check while the fingerprint matches and the record is under 10 minutes old. Reusing the record doesn't extend it.</li>
+<li>A changed allowed clouds list still reruns the check, and anything <code>sky check</code> enables takes effect at once.</li>
+</ul>
+</li>
+<li><strong>Behavior changes:</strong>
+<ul>
+<li>New credentials added without running <code>sky check</code> can go unnoticed for up to 10 minutes.</li>
+<li>A temporary check failure can stick for up to 10 minutes, or until <code>sky check</code> finds a cloud.</li>
+</ul>
+</li>
+<li><strong>Scope:</strong> storage checks only. Compute checks are unchanged, and there's no API change or migration. <code>sky launch</code> doesn't appear to benefit, because it reaches this check only for tasks with storage mounts. Launches more than 10 minutes apart get no saving.</li>
+</ul>
+<p>Files: <code>sky/check.py</code>, <code>sky/global_user_state.py</code>, and a new test file. Design: <code>ej/empty_storage_check_reuse_design.md</code>.</p>
+<h3 id="ej-prj-i3-2-tested"><span id="tested-6"></span>Tested <a class="header-anchor" href="#ej-prj-i3-2-tested">#</a></h3>
+<ul>
+<li>[x] Code formatting: <code>yapf --diff</code> and <code>isort --check</code> are clean on the changed files. Pylint on the changed <code>sky/</code> files rates 10.00/10. mypy has no errors beyond master's 2 in <code>fetch_nebius.py</code>.</li>
+<li>[x] Any manual or new tests for this PR (please specify below)
+<ul>
+<li>
+<p><strong>New unit tests:</strong> <code>tests/unit_tests/test_sky/test_check_empty_storage_result.py</code>, 9 tests. With <code>test_check_persistence.py</code> and <code>test_enabled_storage_clouds_cache.py</code>, 46 passed. They cover:</p>
+<ul>
+<li>an empty result is reused on the same config;</li>
+<li>a config change, an expired record, a backward clock or a changed allowed clouds list reruns the check;</li>
+<li>credentials found after expiry are used, and a list stored by <code>sky check</code> takes effect at once;</li>
+<li>a non-empty result isn't recorded as empty;</li>
+<li>compute checks are never skipped or recorded.</li>
+</ul>
+</li>
+<li>
+<p><strong>A/B on kind</strong> (<code>sky jobs launch</code>, bytecode image in both arms, the same commit with and without the patch, launches about 40 s apart):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Without patch</th>
+<th>With patch</th>
+<th>p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A: client start → job row</strong></td>
+<td>6.85 s (6.5–7.1)</td>
+<td><strong>2.20 s</strong> (1.6–7.1)</td>
+<td>0.0047</td>
+</tr>
+<tr>
+<td><strong>Client total</strong></td>
+<td>41.31 s (38.3–52.0)</td>
+<td><strong>37.06 s</strong> (34.6–43.2)</td>
+<td>0.013</td>
+</tr>
+</tbody>
+</table></div>
+<p>No other phase changed significantly. Two patched runs had a phase A of about 7 s, because their records had just passed 10 minutes. Results: <code>ej/bench_results/20261103-empty-storage-check-ab/</code>.</p>
+</li>
+<li>
+<p><strong>Manual, on kind:</strong> 4 launches kept the same fingerprint and timestamp in the stored record, with phase A at 9.34 s on the first and 1.97–2.36 s after that.</p>
+</li>
+<li>
+<p><strong>Not tested:</strong> a real user adding credentials, a job using cloud storage, a remote or Postgres-backed server, or a user who can't write to the workspace.</p>
+</li>
+</ul>
+</li>
+<li>[ ] All smoke tests: <code>/smoke-test</code> (CI) or <code>pytest tests/test_smoke.py</code> (local)</li>
+<li>[ ] Relevant individual tests: <code>/smoke-test -k test_name</code> (CI) or <code>pytest tests/test_smoke.py::test_name</code> (local)
+<ul>
+<li>Not run. Suggested: <code>test_managed_job.py::test_managed_jobs_basic</code>, and a managed job with cloud storage mounts, to cover a user who has a storage cloud.</li>
+</ul>
+</li>
+<li>[ ] Backward compatibility: <code>/quicktest-core</code> (CI) or <code>pytest tests/smoke_tests/test_backward_compat.py</code> (local)
+<ul>
+<li>Not run. There's no API change, and the record is one more row that an older server ignores.</li>
+</ul>
+</li>
+</ul>
+<h3 id="ej-prj-i3-2-benchmark-against-master"><span id="benchmark-against-master-1"></span>Benchmark against master <a class="header-anchor" href="#ej-prj-i3-2-benchmark-against-master">#</a></h3>
+<p><code>ej-prj-i3-2</code> (<code>d771518f1</code>, bytecode image) against master <code>796c5bcc8</code>, the commit it's based on (published image). Both use <code>IfNotPresent</code>, 6 nodes and 8 measured runs per arm, with no <code>allowed_clouds</code> or <code>NO_UPLOAD</code> on either side, and all runs succeeded. This measures the whole branch and the image together, not this commit alone. p-values are exact two-sided permutation tests on means.</p>
+<p><strong><code>sky launch</code>:</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>master</th>
+<th><code>ej-prj-i3-2</code></th>
+<th>Change</th>
+<th>p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Launch wall time</strong></td>
+<td>46.70 s (41.5–56.1)</td>
+<td><strong>27.57 s</strong> (24.8–33.2)</td>
+<td><strong>−19.13 s (−41%)</strong></td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td>Provisioning total</td>
+<td>29.69 s (23.6–40.3)</td>
+<td>12.99 s (10.5–18.5)</td>
+<td>−16.70 s (−56%)</td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td>Runtime setup end → launched</td>
+<td>16.24 s (9.4–22.7)</td>
+<td>5.24 s (2.3–6.5)</td>
+<td>−11.00 s (−68%)</td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td>Pods ready</td>
+<td>2.73 s (2.7–3.2)</td>
+<td>1.99 s (1.7–2.3)</td>
+<td>−0.74 s (−27%)</td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td>Runtime setup</td>
+<td>13.37 s (5.6–17.2)</td>
+<td>4.83 s (4.1–14.5)</td>
+<td>−8.54 s (−64%)</td>
+<td>0.011</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code>sky jobs launch</code>:</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>master</th>
+<th><code>ej-prj-i3-2</code></th>
+<th>Change</th>
+<th>p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A: client start → job row created</strong></td>
+<td>6.97 (6.6–7.2)</td>
+<td><strong>2.14</strong> (1.8–2.3)</td>
+<td><strong>−4.83</strong></td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td>B: row created → STARTING</td>
+<td>2.69 (2.3–4.8)</td>
+<td>2.14 (1.9–2.7)</td>
+<td>−0.55</td>
+<td>0.0051</td>
+</tr>
+<tr>
+<td>C: STARTING → provisioning starts</td>
+<td>3.17 (2.9–4.0)</td>
+<td>3.21 (3.1–3.5)</td>
+<td>+0.04</td>
+<td>0.81</td>
+</tr>
+<tr>
+<td><strong>D: provisioning → job submitted</strong></td>
+<td>32.62 (28.9–39.0)</td>
+<td><strong>14.41</strong> (13.9–15.1)</td>
+<td><strong>−18.21</strong></td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td>E: job runs on the cluster</td>
+<td>8.71 (8.2–9.5)</td>
+<td>6.71 (6.5–6.9)</td>
+<td>−2.00</td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td>F: job ended → RUNNING</td>
+<td>2.93 (2.3–3.6)</td>
+<td>2.25 (1.9–2.6)</td>
+<td>−0.68</td>
+<td>0.0028</td>
+</tr>
+<tr>
+<td><strong>G: RUNNING → SUCCEEDED</strong></td>
+<td>13.29 (3.7–17.9)</td>
+<td><strong>0.11</strong> (0.1–0.2)</td>
+<td><strong>−13.18</strong></td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td>H: SUCCEEDED → client exits</td>
+<td>4.40 (2.6–11.9)</td>
+<td>2.77 (2.1–4.5)</td>
+<td>−1.63</td>
+<td>0.071</td>
+</tr>
+<tr>
+<td><strong>Client total</strong></td>
+<td><strong>74.33</strong> (72.3–81.7)</td>
+<td><strong>34.17</strong> (31.8–36.0)</td>
+<td><strong>−40.16 (−54%)</strong></td>
+<td>0.0002</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>Every <code>ej-prj-i3-2</code> launch beat every master launch,</strong> on both benchmarks.</li>
+<li><strong>Phase C keeps its <code>aws configure list</code>.</strong> It's a separate path from the storage check, and only <code>aws.remote_identity: NO_UPLOAD</code> removes it.</li>
+<li><strong>File mounts are slower on the branch, for a reason not yet found:</strong> 1.05 s vs 2.33 s in phase D.</li>
+<li><strong>Users won't see all of this yet.</strong> The bytecode image isn't published, and the template still sets <code>imagePullPolicy: Always</code>.</li>
+</ul>
+<p>Results: <code>ej/bench_results/20261103-i3-2-vs-master-no-tips/</code> (<code>sky-launch/summary.md</code>, <code>jobs/report.md</code>). Consolidated: <code>ej/report_i3_2_vs_master.md</code>.</p>
+
+</main>
+
+</body>
+</html>
