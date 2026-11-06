@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Benchmarking launch latency on the latest branch</title>
-<meta name="description" content="How to benchmark sky launch and sky jobs launch on the latest branch, ej-prj-i4-5, against master: setup, the bytecode image, measuring one change, tracing Ray&#x27;s startup and reading the results.">
+<meta name="description" content="How to benchmark sky launch and sky jobs launch on the latest branch, ej-prj-i4-5, against master: setup, the bytecode image, measuring one change, gRPC, tracing Ray&#x27;s startup and reading the results.">
 <meta name="author" content="Edward Jiang">
 <link rel="icon" href="../favicon.ico">
 <style>
@@ -93,6 +93,14 @@ python ej/reproduce_benchmarks.py jobs-ab --nodes 6 \
     --blocks 4 --runs 4 --warmup 1 --out &quot;$OUT/jobs&quot;
 </code></pre>
 <p><code>ej/bench_results/20261105-i4-5b-vs-master/run.sh</code> runs both, exactly as for the reference results. Before running, do the setup in section 2 and the checks in 3.1.</p>
+<p><strong>With gRPC on</strong> (section 3.5), the latest branch is <code>ej-prj-i4-7</code>, and only <code>sky jobs launch</code> has been benchmarked:</p>
+<pre><code class="language-bash">export SKYPILOT_ENABLE_GRPC=1                         # the API server it restarts inherits this
+python ej/reproduce_benchmarks.py jobs-ab --nodes 6 \
+    --base &quot;$BASE&quot; --candidate ej-prj-i4-7 \
+    --base-task &quot;$PWD/ej/task_published_ifnotpresent.yaml&quot; \
+    --candidate-task &quot;$PWD/ej/task_bytecode.yaml&quot; \
+    --blocks 4 --runs 4 --warmup 1 --out &quot;$OUT/jobs-grpc&quot;
+</code></pre>
 <h2 id="what-changed-from-readme_i3md">What changed from <a href="README_i3.html"><code>README_i3.md</code></a> <a class="header-anchor" href="#what-changed-from-readme_i3md">#</a></h2>
 <div class="table-wrap"><table>
 <thead>
@@ -138,6 +146,11 @@ python ej/reproduce_benchmarks.py jobs-ab --nodes 6 \
 <td>Not covered</td>
 <td>Section 5</td>
 </tr>
+<tr>
+<td><strong>gRPC</strong></td>
+<td>Off, not covered</td>
+<td>Off by default; how to turn it on and test it is in 3.5</td>
+</tr>
 </tbody>
 </table></div>
 <p>Always pass <code>--candidate</code> and <code>--candidate-ref</code>, because the scripts' defaults still point at <code>ej-prj-3-job1</code>.</p>
@@ -173,13 +186,23 @@ python ej/reproduce_benchmarks.py jobs-ab --nodes 6 \
 <td><code>ej-prj-i4-3</code> plus the lean skylet launcher</td>
 </tr>
 <tr>
-<td><code>ej-prj-i4-5</code> (latest)</td>
+<td><code>ej-prj-i4-5</code></td>
 <td><code>1266cccd2</code>, <code>fa974f21e</code></td>
 <td>No Ray dashboard; 0.2 s Ray local connect retry</td>
 </tr>
+<tr>
+<td><code>ej-prj-i4-6</code></td>
+<td><code>2c362915d</code></td>
+<td><code>ej-prj-i4-5</code> plus a type annotation that fixes 3 mypy errors; no runtime change</td>
+</tr>
+<tr>
+<td><code>ej-prj-i4-7</code> (latest)</td>
+<td><code>d4c05fd31</code></td>
+<td>Notice a short managed job's end sooner: end time and log dir with the status over gRPC too, and checks 1, 1, 2, 2, 4, 4 s apart after a launch that saw the job running</td>
+</tr>
 </tbody>
 </table></div>
-<p>Details and PR text: <a href="pr_descriptions_i4.html"><code>pr_description_i4.md</code></a>.</p>
+<p>Details and PR text: <a href="pr_descriptions_i4.html"><code>pr_description_i4.md</code></a>, which covers up to <code>ej-prj-i4-5</code>. The gRPC-off commands in this file name <code>ej-prj-i4-5</code>, as the reference runs did. <code>ej-prj-i4-7</code> works in their place, but hasn't been benchmarked with gRPC off.</p>
 <h2 id="1-prerequisites">1. Prerequisites <a class="header-anchor" href="#1-prerequisites">#</a></h2>
 <ul>
 <li><strong>Tools:</strong> <code>git</code>, <code>kubectl</code>, <a href="https://docs.astral.sh/uv/"><code>uv</code></a>, Docker and <a href="https://kind.sigs.k8s.io/">kind</a>.</li>
@@ -197,7 +220,7 @@ git remote add fork https://github.com/siliconej/skypilot.git
 git fetch fork
 
 # The scripts look refs up by local name.
-for b in ej-prj-i4-5 ej-prj-i4-4 ej-prj-i4-3 ej-prj-i4-1 ej-prj-i3-2; do
+for b in ej-prj-i4-7 ej-prj-i4-6 ej-prj-i4-5 ej-prj-i4-4 ej-prj-i4-3 ej-prj-i4-1 ej-prj-i3-2; do
     git branch $b fork/$b
 done
 </code></pre>
@@ -301,6 +324,53 @@ python ej/bench_results/20261105-i4-5b-vs-master/sky_launch_no_tips.py \
 <p>For <code>sky launch</code>, pass the same two commits to <code>--baseline-ref</code> and <code>--candidate-ref</code>, with <code>--task</code> and <code>--candidate-task</code> both <code>ej/task_bytecode.yaml</code>.</p>
 <p><strong>To measure an uncommitted change,</strong> both harnesses need a commit, so either commit it first, or switch the change in and out of the working tree between blocks, on one commit. <code>bench_results/20261105-no-dashboard-ab/run.py</code> does the second: it copies the changed files in for one arm and runs <code>git checkout --</code> for the other, in blocks ABBAABBA, and always restores the change at the end. It has its file list and paths written in, so copy and adapt it.</p>
 <p><strong>More runs help here.</strong> The single-change A/Bs used 16 measured runs per side rather than 8.</p>
+<h3 id="35-with-grpc-on">3.5 With gRPC on <a class="header-anchor" href="#35-with-grpc-on">#</a></h3>
+<p>SkyPilot can send the API server's commands on the head (add and queue a job, set autostop, job status, end time, log dirs) to the skylet's gRPC server instead of starting Python on the head over <code>kubectl exec</code>. It's off by default.</p>
+<p><strong>How the flag works:</strong></p>
+<ul>
+<li><strong>The variable:</strong> <code>SKYPILOT_ENABLE_GRPC=1</code> (<code>sky/utils/env_options.py:29</code>). It's read in the process that talks to the cluster, through <code>CloudVmRayResourceHandle.is_grpc_enabled_with_flag</code> (<code>sky/backends/cloud_vm_ray_backend.py:2778</code>). It also needs <code>handle.is_grpc_enabled</code>, which is true for new clusters, and a cloud other than Slurm.</li>
+<li><strong>Set it on the API server, not the client.</strong> In consolidation mode (<code>--deploy</code>), the jobs controller runs as a process on the API server host and inherits it. Setting it only in the shell where you run <code>sky jobs launch</code> does nothing, because the server is already running.</li>
+<li><strong>Without the flag,</strong> every call falls back to the <code>kubectl exec</code> path. Nothing on the cluster changes: the skylet's gRPC server runs either way.</li>
+</ul>
+<p><strong>1. Restart the server with gRPC on, and check it took:</strong></p>
+<pre><code class="language-bash">export SKYPILOT_ENABLE_GRPC=1
+sky api stop; sky api start --deploy
+tr '\0' '\n' &lt; /proc/$(pgrep -f 'sky.server.server --deploy' | head -1)/environ \
+    | grep SKYPILOT_ENABLE_GRPC              # must print SKYPILOT_ENABLE_GRPC=1
+</code></pre>
+<p><strong>2. Check that a cluster works over gRPC</strong> (about 2 minutes):</p>
+<pre><code class="language-bash">sky launch -y -c grpc-check ej/task_bytecode.yaml    # runs on all 6 ranks
+sky exec grpc-check 'echo hello from $SKYPILOT_NODE_RANK'
+sky queue grpc-check                                  # both jobs SUCCEEDED
+sky logs grpc-check 2                                 # prints the echo
+sky down -y grpc-check
+</code></pre>
+<p>Then one managed job, with the client total and the time from the job ending to SUCCEEDED in mind:</p>
+<pre><code class="language-bash">time sky jobs launch -y -n grpc-check ej/task_bytecode.yaml   # about 25 s on ej-prj-i4-7
+sky jobs queue                                                # SUCCEEDED
+</code></pre>
+<p>If <code>_execute</code> falls back to the old path, the launch still works, but phase D's &quot;cluster launched → job submitted&quot; stage is about 3.5 s instead of about 2.2 s in the benchmark.</p>
+<p><strong>3. Benchmark <code>sky jobs launch</code>:</strong> run <code>jobs-ab</code> in the same shell, so each server it restarts inherits the flag. Do the checks in 3.1 first.</p>
+<pre><code class="language-bash">export SKYPILOT_ENABLE_GRPC=1
+OUT=$PWD/ej/bench_results/$(date +%Y%m%d-%H%M%S)-i4-7-grpc-vs-master; mkdir -p &quot;$OUT&quot;
+python ej/reproduce_benchmarks.py jobs-ab --nodes 6 \
+    --base &quot;$BASE&quot; --candidate ej-prj-i4-7 \
+    --base-task &quot;$PWD/ej/task_published_ifnotpresent.yaml&quot; \
+    --candidate-task &quot;$PWD/ej/task_bytecode.yaml&quot; \
+    --blocks 4 --runs 4 --warmup 1 --out &quot;$OUT/jobs&quot;
+</code></pre>
+<p><code>ej/bench_results/20261106-i4-7-grpc-vs-master/run.sh</code> is the exact script for the reference results. Both arms get gRPC, so the comparison is master with gRPC against the branch with gRPC.</p>
+<p><strong>4. Turn it off again</strong> when you're done, since <code>jobs-ab</code> leaves the server running with whatever it inherited:</p>
+<pre><code class="language-bash">unset SKYPILOT_ENABLE_GRPC
+sky api stop; sky api start --deploy
+</code></pre>
+<p><strong>Reading gRPC results:</strong></p>
+<ul>
+<li><strong>Master's phases D to G aren't valid with gRPC on.</strong> Master's gRPC path rounds job timestamps to 128 s (fixed on the branches by <code>ej-prj-i2-2</code>), so its D, E, F, G and &quot;cluster launched → job submitted&quot; come out wrong, sometimes negative by tens of seconds. Client total, A, B, C, H, the other D stages, and D + E + F + G are still right.</li>
+<li><strong>F is negative on the branch.</strong> The gRPC status check is fast enough that the controller marks the job RUNNING before it ends, so read F + G (job ended → SUCCEEDED).</li>
+<li><strong>Use <code>ej-prj-i4-7</code> for gRPC, not <code>ej-prj-i4-5</code>.</strong> On <code>ej-prj-i4-5</code>, the fast check sees a short job still running, and the next check then waited a random 0–15 s: phase G was 8.84 s and gRPC was slower than no gRPC overall.</li>
+<li><strong><code>sky launch</code> hasn't been benchmarked with gRPC.</strong> <code>sky_launch_no_tips.py</code> passes your environment to the servers it starts, so exporting the flag before it should work. Check each server's environment on ports 46601 and 46602 the same way as in step 1.</li>
+</ul>
 <h2 id="4-read-the-results">4. Read the results <a class="header-anchor" href="#4-read-the-results">#</a></h2>
 <div class="table-wrap"><table>
 <thead>
@@ -449,9 +519,58 @@ python ej/bench_results/20261105-i4-5b-vs-master/sky_launch_no_tips.py \
 <td>22.98 s</td>
 <td>&lt; 0.0001</td>
 </tr>
+<tr>
+<td>master <code>796c5bcc8</code> vs <code>ej-prj-i4-7</code> <code>d4c05fd31</code>, gRPC on for both</td>
+<td><code>sky jobs launch</code> client total</td>
+<td>63.30 s</td>
+<td>25.25 s</td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td></td>
+<td>Phase A</td>
+<td>7.13 s</td>
+<td>2.13 s</td>
+<td>0.0011</td>
+</tr>
+<tr>
+<td></td>
+<td>Ray wait + skylet start</td>
+<td>17.46 s</td>
+<td>0.77 s</td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td></td>
+<td>Runtime setup</td>
+<td>4.54 s (3.2–14.4)</td>
+<td>2.22 s (1.5–2.7)</td>
+<td>0.0002</td>
+</tr>
+<tr>
+<td><code>ej-prj-i4-5</code> vs <code>ej-prj-i4-7</code>, gRPC on, separate sessions</td>
+<td><code>sky jobs launch</code> client total</td>
+<td>33.39 s</td>
+<td>25.25 s</td>
+<td>0.0023</td>
+</tr>
+<tr>
+<td></td>
+<td>Job ended → SUCCEEDED (F + G)</td>
+<td>7.55 s</td>
+<td>1.60 s</td>
+<td>0.0017</td>
+</tr>
+<tr>
+<td><code>ej-prj-i4-5</code> gRPC off vs <code>ej-prj-i4-7</code> gRPC on, separate sessions</td>
+<td><code>sky jobs launch</code> client total</td>
+<td>30.84 s</td>
+<td>25.25 s</td>
+<td>0.0011</td>
+</tr>
 </tbody>
 </table></div>
-<p>Results: <code>20261105-i4-5b-vs-master/</code>, <code>20261105-i4-5-vs-master/</code> and <code>20261105-no-dashboard-ab/</code>. Reports: <code>report_i4_5b_vs_master.md</code> and <code>report_i4_5_vs_master.md</code>.</p>
+<p>Results: <code>20261105-i4-5b-vs-master/</code>, <code>20261105-i4-5-vs-master/</code>, <code>20261105-no-dashboard-ab/</code>, <code>20261105-i4-5-grpc-vs-master/</code> and <code>20261106-i4-7-grpc-vs-master/</code>. Reports: <code>report_i4_5b_vs_master.md</code>, <code>report_i4_5_vs_master.md</code>, and <code>bench_results/20261106-i4-7-grpc-vs-master/summary.md</code> for gRPC.</p>
 <p><strong>How to compare:</strong></p>
 <ul>
 <li><strong>Compare the two arms within one run,</strong> not numbers from different runs. Absolute times move between sessions: the master arm's <code>sky jobs launch</code> was 72.24 s in one session and 74.95 s in the next.</li>
@@ -502,12 +621,13 @@ git worktree list
 <h2 id="7-notes">7. Notes <a class="header-anchor" href="#7-notes">#</a></h2>
 <ul>
 <li><strong>After a run, the server stays in <code>--deploy</code> mode.</strong> Run <code>sky api stop; sky api start</code> to change that.</li>
+<li><strong>After a gRPC run, the server keeps gRPC on</strong> until you restart it without <code>SKYPILOT_ENABLE_GRPC</code> (3.5, step 4).</li>
 <li><strong>Each restart clears the server's request history.</strong></li>
 <li><strong><code>bench_launch_latency.py</code> needs an <code>origin/master</code> ref</strong> in the repo, and <code>uv</code> on <code>PATH</code>.</li>
 <li><strong>With the speedup settings:</strong> <a href="README_i3.html"><code>README_i3.md</code></a> sections 3.5 and 3.6 still apply, with <code>ej-prj-i4-5</code> as the candidate.</li>
 <li><strong>Other subcommands</strong> (<code>storage-probe</code>, <code>pod-probe</code>, <code>pull-policy</code>) are described in <a href="README.html"><code>README.md</code></a> and haven't been rerun on these branches.</li>
 <li><strong>Clusters without the Ray dashboard:</strong> on <code>ej-prj-i4-5</code>, Ray's dashboard, metrics export and job and state APIs aren't available on a launched cluster. Port 8266 is closed.</li>
-<li><strong>Docs:</strong> <a href="pr_descriptions_i4.html"><code>pr_description_i4.md</code></a> (one section per change), <code>report_i4_5b_vs_master.md</code> (the latest full report), <code>ray_api_trace_report.md</code> (how Ray starts up), and <a href="sky_ray_time_workflow_i4_5_v4.svg"><code>sky_ray_time_workflow_i4_5_v4.svg</code></a> (the latest timeline).</li>
+<li><strong>Docs:</strong> <a href="pr_descriptions_i4.html"><code>pr_description_i4.md</code></a> (one section per change), <code>report_i4_5b_vs_master.md</code> (the latest full report), <code>ray_api_trace_report.md</code> (how Ray starts up), <a href="sky_ray_time_workflow_i4_5_v4.svg"><code>sky_ray_time_workflow_i4_5_v4.svg</code></a> (the latest Ray timeline), and, for gRPC on <code>ej-prj-i4-7</code>, <code>sky_jobs_launch_workflow_i4_7.svg</code> (workflow and timeline) and <code>sky_jobs_launch_timing_i4_7.svg</code> (phase chart).</li>
 </ul>
 
 </main>
