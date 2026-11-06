@@ -20,28 +20,55 @@ Markdown version: [https\://hifiweekly.github.io/skypilot\_ej\_prj/overview.md](
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/reproduce\_benchmarks.py](https://hifiweekly.github.io/skypilot_ej_prj/reproduce_benchmarks.py)
 
 **Read Me:**  
-[https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i3.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i3.html)   
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i4.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i4.html)   
 (Iteration 1: [https\://hifiweekly.github.io/skypilot\_ej\_prj/README.html](https://hifiweekly.github.io/skypilot_ej_prj/README.html),  
- Iteration 2: [https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i2.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i2.html)) 
+ Iteration 2: [https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i2.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i2.html),  
+ Iteration 3: [https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i3.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i3.html)) 
 
-**\- Sample benchmark run:**  
-BASE=\$(git merge-base origin/master ej-prj-i3-2)
+**TL;DR:**
 
-\# sky launch  
-python reproduce\_benchmarks.py sky-launch-ab \--nodes 6 \-- \\  
-    run \--baseline-ref "\$BASE" \--candidate-ref ej-prj-i3-2 \\  
-    \--task ej/task\_published\_ifnotpresent.yaml \\  
-    \--candidate-task ej/task\_bytecode.yaml \\  
-    \--runs 8 \--warmup 1
+How to run the benchmark
 
-\# sky jobs launch  
-python reproduce\_benchmarks.py jobs-ab \--nodes 6 \\  
-    \--base "\$BASE" \--candidate ej-prj-i3-2 \\  
-    \--base-task ej/task\_published\_ifnotpresent.yaml \\  
-    \--candidate-task ej/task\_bytecode.yaml \\  
-    \--blocks 4 \--runs 4 \--warmup 1
+**One-time setup (README section 2):**
 
-**Result Table: (Iteration 3\)** [https\://hifiweekly.github.io/skypilot\_ej\_prj/report\_11021730.html](https://hifiweekly.github.io/skypilot_ej_prj/report_11021730.html)  
+1\. Get the code: fetch the fork and create local branches named ej-prj-i4-5 and the others. The scripts look refs up by local name.  
+2\. Install: create the venv with uv pip install \-e ".\[kubernetes,aws\]". The aws extra matters, because phases A and C depend on the aws CLI being on PATH.  
+3\. Copy the scripts in: ej/reproduce\_benchmarks.py, run.sh and sky\_launch\_no\_tips.py aren't in git, so copy them in, keep them untracked, and run sky local up.  
+4\. Build the bytecode image: build it from Dockerfile\_k8s, load it into kind, and check that it has a uv cache. Without the cache, the offline wheel install falls back to the network.  
+5\. Warm up: do one throwaway launch per task with sky api start \--deploy.
+
+**Before each run:**  
+\- The working tree is clean.  
+\- No pods, clusters or managed jobs are left.  
+\- which aws finds the CLI.  
+\- BASE=\$(git merge-base origin/master ej-prj-i4-5) prints 796c5bcc8.
+
+**Run (about 40 minutes in all):**  
+OUT=\$PWD/ej/bench\_results/\$(date \+%Y%m%d-%H%M%S)-i4-5-vs-master; mkdir \-p "\$OUT"
+
+**\# sky launch: isolated servers and worktrees, no speedup settings**  
+python ej/bench\_results/20261105-i4-5b-vs-master/sky\_launch\_no\_tips.py \\  
+    run \--baseline-ref "\$BASE" \--candidate-ref ej-prj-i4-5 \\  
+    \--task "\$PWD/ej/task\_published\_ifnotpresent.yaml" \\  
+    \--candidate-task "\$PWD/ej/task\_bytecode.yaml" \\  
+    \--runs 8 \--warmup 1 \--context kind-skypilot \--out "\$OUT/sky-launch"
+
+**\# sky jobs launch: switches your checkout and restarts your server per block**  
+python ej/reproduce\_benchmarks.py jobs-ab \--nodes 6 \\  
+    \--base "\$BASE" \--candidate ej-prj-i4-5 \\  
+    \--base-task "\$PWD/ej/task\_published\_ifnotpresent.yaml" \\  
+    \--candidate-task "\$PWD/ej/task\_bytecode.yaml" \\  
+    \--blocks 4 \--runs 4 \--warmup 1 \--out "\$OUT/jobs"
+
+Or run bash ej/bench\_results/20261105-i4-5b-vs-master/run.sh, which does both exactly as for the reference results.
+
+**Read the results:**  
+\- sky-launch/summary.md. Its Checks list must be all ticked. Wall time is the launch\_wall\_s column in results.csv.  
+\- jobs/report.md. Every run must show Clean True and rc 0, with 8 measured runs per arm.  
+\- p-values: summary.md gives one-sided p-values, and report.md rounds them, showing 0.0000 when every run of one arm beats the other. With 8 runs per arm, the exact two-sided value is then 0.0002.
+
+**Result Table: (Iteration 4\)** [https\://hifiweekly.github.io/skypilot\_ej\_prj/report\_1105.html](https://hifiweekly.github.io/skypilot_ej_prj/report_1105.html)
+
 **Support Files:**  
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/job.yaml](https://hifiweekly.github.io/skypilot_ej_prj/job.yaml) (same as the file in the pdf given)  
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/task\_bytecode.yaml](https://hifiweekly.github.io/skypilot_ej_prj/task_bytecode.yaml)  
@@ -49,41 +76,65 @@ python reproduce\_benchmarks.py jobs-ab \--nodes 6 \\
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/bench\_launch\_latency.py](https://hifiweekly.github.io/skypilot_ej_prj/bench_launch_latency.py) (a pending utility script in branch)
 
 **TL;DR: 6 nodes, medians of 8 interleaved runs per side (range), seconds:**  
-Consult the UML Sequence diagram in SVG for Phase definition and transition: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs\_launch\_sequence\_i2.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_jobs_launch_sequence_6nodes.svg)  
+Consult the workflow diagram in SVG for Phase definition and transition:  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_ray\_time\_workflow\_i4\_5\_v4.svg](https://hifiweekly.github.io/skypilot_ej_prj/sky_ray_time_workflow_i4_5_v4.svg)   
 
 Summary  
-┌────────────────────────┬─────────────────────┬─────────────────────┬───────────────────┬────────┐  
-│ Benchmark              │ Master              │ ej-prj-i3-2         │ Change            │ p      │  
-├────────────────────────┼─────────────────────┼─────────────────────┼───────────────────┼────────┤  
-│ sky launch wall time   │ 46.70 (41.5–56.1)   │ 27.57 (24.8–33.2)   │ −19.13 (−41%)     │ 0.0002 │  
-│ sky jobs launch total  │ 74.33 (72.3–81.7)   │ 34.17 (31.8–36.0)   │ −40.16 (−54%)     │ 0.0002 │  
-└────────────────────────┴─────────────────────┴─────────────────────┴───────────────────┴────────┘
+┌──────────────────────────────────┬─────────────────────┬─────────────────────┬─────────────────┬────────┐  
+│ Median (range)                   │ Master 796c5bcc8    │ i4-5 fa974f21e      │ Change          │ p      │  
+├──────────────────────────────────┼─────────────────────┼─────────────────────┼─────────────────┼────────┤  
+│ **sky launch wall time             │ 45.67 s (43.3–55.3) │ 22.44 s (20.9–25.2) │ −23.23 s (−51%) │ 0.0002** │  
+│ **sky jobs launch client total     │ 74.95 s (70.8–83.4) │ 30.84 s (30.5–32.9) │ −44.11 s (−59%) │ 0.0002** │  
+├──────────────────────────────────┼─────────────────────┼─────────────────────┼─────────────────┼────────┤  
+│ Phase D: provisioning → submit   │ 33.08 s             │ 10.43 s             │ −22.64 s        │ 0.0002 │  
+│   Ray wait \+ skylet start        │ 16.84 s             │  1.06 s             │ −15.78 s        │ 0.0002 │  
+│   Runtime setup                  │  7.98 s (2.5–24.3)  │  2.00 s (1.8–2.3)   │  −5.99 s        │ 0.0002 │  
+│ Phase G: RUNNING → SUCCEEDED     │ 12.58 s             │  0.22 s             │ −12.36 s        │ 0.0002 │  
+└──────────────────────────────────┴─────────────────────┴─────────────────────┴─────────────────┴────────┘  
+Also notice that iteration 4 also fixed the uv installation’s stall issue that’s causing the big variation of the runtime.
 
-sky jobs launch phases  
 ┌─────────────────────────────────────┬─────────────────────┬─────────────────────┬─────────┬────────┐  
-│ Phase                               │ Master              │ ej-prj-i3-2         │ Change  │ p      │  
+│ Phase                               │ Master              │ ej-prj-i4-5         │ Change  │ p      │  
 ├─────────────────────────────────────┼─────────────────────┼─────────────────────┼─────────┼────────┤  
-│ **A: client start → job row           │  6.97 (6.6–7.2)     │  2.14 (1.8–2.3)     │  −4.83  │ 0.0002** │ \<\< iter 3  
-│ B: row → STARTING                   │  2.69 (2.3–4.8)     │  2.14 (1.9–2.7)     │  −0.55  │ 0.0051 │  
-│ C: STARTING → provisioning          │  3.17 (2.9–4.0)     │  3.21 (3.1–3.5)     │  \+0.04  │ 0.81   │  
-│ **D: provisioning → job submitted     │ 32.62 (28.9–39.0)   │ 14.41 (13.9–15.1)   │ −18.21  │ 0.0002** │ \<\< iter 1&2  
-│ E: job runs                         │  8.71 (8.2–9.5)     │  6.71 (6.5–6.9)     │  −2.00  │ 0.0002 │ \<\< iter 1  
-│ F: job ended → RUNNING              │  2.93 (2.3–3.6)     │  2.25 (1.9–2.6)     │  −0.68  │ 0.0028 │  
-│ **G: RUNNING → SUCCEEDED              │ 13.29 (3.7–17.9)    │  0.11 (0.1–0.2)     │ −13.18  │ 0.0002** │ \<\< iter 2  
-│ H: SUCCEEDED → client exits         │  4.40 (2.6–11.9)    │  2.77 (2.1–4.5)     │  −1.63  │ 0.071  │ \<\< iter 1  
+│ A: client start → job row           │  7.03 (6.4–7.2)     │  2.31 (1.8–2.7)     │  −4.72  │ 0.0002 │ \<\< iter 3  
+│ B: row → STARTING                   │  2.81 (2.3–5.5)     │  2.37 (1.9–3.7)     │  −0.44  │ 0.090  │  
+│ C: STARTING → provisioning          │  3.20 (2.5–3.6)     │  3.21 (2.4–3.8)     │  \+0.01  │ 0.86   │  
+│ D: provisioning → job submitted     │ 33.08 (30.8–42.9)   │ 10.43 (9.9–11.4)    │ −22.64  │ 0.0002 │ \<\< iter 1&2&4  
+│ E: job runs                         │  8.75 (8.2–10.0)    │  6.76 (6.5–6.9)     │  −1.99  │ 0.0002 │ \<\< iter 1  
+│ F: job ended → RUNNING              │  2.94 (1.6–3.4)     │  2.45 (2.1–2.9)     │  −0.49  │ 0.13   │  
+│ G: RUNNING → SUCCEEDED              │ 12.58 (3.8–20.7)    │  0.22 (0.1–1.1)     │ −12.36  │ 0.0002 │ \<\< iter 2  
+│ H: SUCCEEDED → client exits         │  4.76 (2.6–6.0)     │  2.78 (2.6–3.9)     │  −1.98  │ 0.027  │ \<\< iter 1  
 ├─────────────────────────────────────┼─────────────────────┼─────────────────────┼─────────┼────────┤  
-│ Client start → SUCCEEDED            │ 69.82 (61.0–78.9)   │ 31.28 (29.7–32.1)   │ −38.54  │ 0.0002 │  
-│ **Client total                        │ 74.33 (72.3–81.7)   │ 34.17 (31.8–36.0)   │ −40.16  │ 0.0002** │ \<\< **\-54%**  
+│ Client start → SUCCEEDED            │ 70.17 (66.9–80.7)   │ 27.94 (27.2–29.0)   │ −42.22  │ 0.0002 │  
+│ Client total                        │ 74.95 (70.8–83.4)   │ 30.84 (30.5–32.9)   │ −44.11  │ 0.0002 │ **\<\< \-59%**  
 └─────────────────────────────────────┴─────────────────────┴─────────────────────┴─────────┴────────┘
 
+Phase D breaks down as follows:
+
+┌─────────────────────────────────────┬─────────────────────┬─────────────────────┬─────────┬────────┐  
+│ Phase D stage                       │ Master              │ ej-prj-i4-5         │ Change  │ p      │  
+├─────────────────────────────────────┼─────────────────────┼─────────────────────┼─────────┼────────┤  
+│ Create pods, wait until Running     │  2.72 (2.6–3.2)     │  1.89 (1.7–2.4)     │  −0.83  │ 0.0002 │  
+│ SSH readiness                       │  0.25 (0.2–0.3)     │  0.33 (0.3–0.4)     │  \+0.08  │ 0.0002 │  
+│ internal\_file\_mounts                │  1.19 (1.1–2.9)     │  1.23 (1.2–1.3)     │  \+0.04  │ 0.45   │  
+│ setup\_runtime\_on\_cluster            │  7.98 (2.5–24.3)    │  2.00 (1.8–2.3)     │  −5.99  │ 0.0002 │ \<\< iter 4  
+│ Ray wait \+ skylet start             │ 16.84 (7.8–20.0)    │  1.06 (0.7–1.4)     │ −15.78  │ 0.0002 │ \<\< iter 1&2&4  
+│ Cluster launched → job submitted    │  3.57 (3.4–5.6)     │  3.52 (3.4–3.6)     │  −0.05  │ 0.12   │  
+├─────────────────────────────────────┼─────────────────────┼─────────────────────┼─────────┼────────┤  
+│ Phase D total                       │ 33.08 (30.8–42.9)   │ 10.43 (9.9–11.4)    │ −22.64  │ 0.0002 │  
+│ Skylet start on its own             │  1.69 (1.6–1.8)     │  0.47 (0.3–0.6)     │  −1.21  │ 0.0002 │ \<\< iter 4  
+└─────────────────────────────────────┴─────────────────────┴─────────────────────┴─────────┴────────┘
+
+Notice that almost all running time has been optimized.  
 Against master, ej-prj-i3-2, All run done on Ubuntu 26.04, i7-8700K, 32GB memory
 
 ### **Requirement 4: A short README explaining how to reproduce your numbers from a clean machine.**
 
 **Read Me:**  
-[https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i3.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i3.html)
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/README\_i4.html](https://hifiweekly.github.io/skypilot_ej_prj/README_i4.html)
 
 **Support Files:**  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/20261105-i4-5b-vs-master.zip](https://hifiweekly.github.io/skypilot_ej_prj/20261105-i4-5b-vs-master.zip) (.py and .sh required)  
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/job.yaml](https://hifiweekly.github.io/skypilot_ej_prj/job.yaml) (same as the file in the pdf given)  
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/task\_bytecode.yaml](https://hifiweekly.github.io/skypilot_ej_prj/task_bytecode.yaml)  
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/task\_published\_ifnotpresent.yaml](https://hifiweekly.github.io/skypilot_ej_prj/task_published_ifnotpresent.yaml)  
@@ -124,7 +175,16 @@ Updated workflow svg: [https\://hifiweekly.github.io/skypilot\_ej\_prj/sky\_jobs
 
 See more details in the design write-up iteration 3 section below ([https\://docs.google.com/document/d/1bFl6dX6-Yxn0bbFsV72ajOLRLsWutcu8CikZCKVhpUQ/edit?tab=t.0\#bookmark=id.wb1ickkdm5hc](https://docs.google.com/document/d/1bFl6dX6-Yxn0bbFsV72ajOLRLsWutcu8CikZCKVhpUQ/edit?tab=t.0#bookmark=id.wb1ickkdm5hc)) 
 
-### 
+**Nov 4 \~ Nov 5: Fourth Iteration**
+
+In this iteration, I focused on the Phase D and Phase E, particularly on the provision time, runtime loading time and the synchronization of cluster head node and worker node. In this investigation, I identified the dashboard loading is in the critical path of loading and cost the longest delay. In the latest branch, I removed the dashboard loading using Ray patch. The workflow then further unveiled a new 1s wait time in the C++, which I also optimized.
+
+**Before Iteration 4:**  
+![][image1]  
+A more detailed analysis of the wait time in the chart above: [https\://docs.google.com/document/d/1qSaU-\_E6NFg3casAC-K5Ti-kH\_sHWn0Z6eaKMfhKjPc/edit?tab=t.0](https://docs.google.com/document/d/1qSaU-_E6NFg3casAC-K5Ti-kH_sHWn0Z6eaKMfhKjPc/edit?tab=t.0) 
+
+**After Iteration 4:**  
+     ![][image2]
 
 ### **Iteration 1 \- First Set: ej-prj-0, ej-prj-1, and ej-prj-3**
 
@@ -416,7 +476,7 @@ See this HTML for more details:
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/local\_run\_speedup\_tips.html](https://hifiweekly.github.io/skypilot_ej_prj/local_run_speedup_tips.html).
 
 **\* Branch ej-prj-i3-2: Reuse an empty storage check result for an unchanged config**  
-[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-4?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i2-4?expand=1)  
+[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i3-2?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i3-2?expand=1%20)   
 **PR Description:** [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions\_i3.html\#ej-prj-i3-2](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions_i3.html#ej-prj-i3-2%20) 
 
 **Problem:** based on the observation in Branch ej-prj-i3-1 above. **W**ith no storage cloud enabled, the stored list of enabled clouds is empty, which looks the same as "never checked". So every sky jobs launch reran the storage check and its aws and gcloud commands, even for a Kubernetes-only task. That took about 4.75 s of phase A's 7s.
@@ -450,6 +510,52 @@ No other phase changed significantly. sky launch doesn't appear to benefit, beca
 [https\://hifiweekly.github.io/skypilot\_ej\_prj/empty\_storage\_check\_reuse\_design.html](https://hifiweekly.github.io/skypilot_ej_prj/empty_storage_check_reuse_design.html)
 
 ### ---
+
+### **Iteration 4 \- Nov 4 \~ Nov 5**
+
+**\* Branch ej-prj-i4-1 thru Branch ej-prj-i4-5:** the ej-prj-i4-\* branches all build on ej-prj-i3-2 (d771518f1). Together they add five launch-speed changes, all inside provisioning, phase D. ej-prj-i4-5 contains all five.  
+[https\://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i4-5?expand=1](https://github.com/skypilot-org/skypilot/compare/master...siliconej:skypilot:ej-prj-i4-5?expand=1)   
+**PR Description:** [https\://hifiweekly.github.io/skypilot\_ej\_prj/pr\_descriptions\_i4.html](https://hifiweekly.github.io/skypilot_ej_prj/pr_descriptions_i4.html) 
+
+┌─────────────┬────────────────────┬──────────────────────────────────────────────────────────┬────────────────┐  
+│ Branch      │ Based on           │ Adds                                                     │ On the fork?   │  
+├─────────────┼────────────────────┼──────────────────────────────────────────────────────────┼────────────────┤  
+│ ej-prj-i4-1 │ ej-prj-i3-2        │ 925abd467  0.2 s head-node poll                          │ yes            │  
+│ ej-prj-i4-2 │ ej-prj-i4-1        │ afd94a698  Lean skylet launcher                          │ yes            │  
+│ ej-prj-i4-3 │ ej-prj-i4-1        │ 8bfc6e4c6  Offline wheel install                         │ yes            │  
+│ ej-prj-i4-4 │ ej-prj-i4-3        │ d6fa30e94  Lean skylet launcher (from i4-2, lint fix)    │ yes            │  
+│ ej-prj-i4-5 │ ej-prj-i4-4        │ 1266cccd2  No Ray dashboard                              │ yes            │  
+│             │                    │ fa974f21e  0.2 s Ray local connect retry                 │ no (local)     │  
+└─────────────┴────────────────────┴──────────────────────────────────────────────────────────┴────────────────┘
+
+**The changes**
+
+**1\. 0.2 s head-node poll (925abd467)**  
+   \- What: a new Ray patch (utils.py.patch) makes a worker's ray start check every 0.2 s, instead of every 2 s, whether the head has registered. The number of checks rises tenfold, so the time before giving up stays the same.  
+   \- Measured: sky launch −0.93 s (p \= 0.0048).  
+**2\. Lean skylet launcher (afd94a698, then d6fa30e94 on i4-4)**  
+   \- What: skylet starts without import sky. A new launch\_constants.py has no SkyPilot imports, and attempt\_skylet.py has its own copies of the few helpers it needs.  
+   \- Measured: skylet start fell from about 3.0 s to 0.3 s. Launch totals didn't change until the dashboard was removed, because Ray's own wait was longer than skylet's start.  
+**3\. Offline wheel install (8bfc6e4c6)**  
+   \- What: pods install the SkyPilot wheel with uv pip install \--offline and fall back to the network only if that fails. The PyPI dry run is skipped once the uv cache is warm.  
+   \- Measured: runtime setup 3.05 → 1.64 s, and setup stalls 3/24 → 0/24 launches. sky launch −0.63 s (p \= 0.0073).  
+**4\. No Ray dashboard (1266cccd2)**  
+   \- What: SKYPILOT\_RAY\_NO\_DASHBOARD=1 and two Ray patches (services.py.patch and agent.py.patch). ray start no longer starts or waits for the dashboard, and the dashboard agent loads no modules.  
+   \- Measured: sky jobs launch −3.57 s and sky launch −3.12 s (both p \< 0.0001).  
+   \- Cost: Ray's dashboard UI, metrics export and Ray job and state APIs are gone on SkyPilot clusters.  
+**5\. 0.2 s Ray local connect retry (fa974f21e)**  
+   \- What: RAY\_raylet\_client\_connect\_timeout\_milliseconds=200 and RAY\_raylet\_client\_num\_connect\_attempts=50 on ray start. Ray now retries after 0.2 s instead of 1 s when a raylet's first connect to its plasma store fails, which happened on about a third of raylets. Ray still gives up after about 10 s, as before.  
+   \- Measured: the last worker registers about 0.46 s sooner, and the alive-nodes wait fell from 1.83 to 0.50 s. Neither launch total moved significantly, because file mounts and runtime setup now decide the length of the launch.
+
+**Together**
+
+Against master, ej-prj-i4-5 cuts sky jobs launch from 74.95 to 30.84 s (−59%) and sky launch from 45.67 to 22.44 s (−51%). Every branch run beat every master run. These numbers include the bytecode image, which isn't published.
+
+**State**  
+All changes committed and pushed to fork.
+
+**Design doc.**  
+[https\://hifiweekly.github.io/skypilot\_ej\_prj/launch\_latency\_design\_i4.html](https://hifiweekly.github.io/skypilot_ej_prj/launch_latency_design_i4.html) 
 
 ### **Bonus: 90s timeout handling** 
 
@@ -637,8 +743,7 @@ Managed Job ID: 9
 └── To view all managed jobs:	sky jobs queue  
 sky jobs launch \-y \-c last\_test ej/job.yaml  **0.90s user 0.26s system 3% cpu 30.486 total**
 
-##   Appendix C: Ubuntu Benchmark Result: sky-launch-ab
-
+Appendix C: Ubuntu Benchmark Result: sky-launch-ab  
 This run is valid: on a 6-node sky launch, ej-prj-3-job1 (5cb8dace3) reached "Cluster launched" about 6 s (24%) faster than baseline 5ef55efa4, where it branched from master. All 10 measured launches succeeded on all 6 ranks, with 1 warm-up launch per build excluded, and no launch fell back to restarting Ray. The first table is your summary.md as a real ASCII table.
 
 \+--------------------------+--------------------------+--------------------------+---------------+--------+  
@@ -1188,3 +1293,8 @@ Managed Job ID: 639
 **real	0m36.479s**  
 user	0m2.592s  
 sys	0m0.245s  
+
+
+[image1]: <data:image/png;base64,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>
+
+[image2]: <data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfkAAADMCAYAAABwdtpOAAAcX0lEQVR4Xu3diXOc5X3A8f4FvaadSTvT0mYynVBIYuKGHBCOAoUmqROStEwCGXCAEBICARpMwBwxxtQXNvgCG+T7wqfwfeET4wPb+MCWZUuyJVs+ZEu2fOjW030feVfa931+j6XVavfZfb4f5jfvLdkvkr5aSV79mQIAAHnpz8I7AABAfshY5MsrKtXkWQvDu73X3NycWJ8wZY5qamrf9l3lyarEesG0+arqTHWHo37bsn130vbpqrNJ2z77eOuuxPqw0RNVY2NTh6N+W73+E71saWlRb46ZpJdoM/it91Rra6uecQWzwodzVsYiP/b9mfrm7dt/KHzIW0Hg+/7uRb0+LnZ/Ar94vF/HU7x18FCZ6vtE272ZPnexXv5pyNiOp3hr2pxFsbeT5xPbD/72BXU09kk0lJo8u1Dd/9hzej1+j8bm0Qfs7ggeRDzw67aPL/H3rceeebXjKd56dfAYvQzeduL3qOP7WC7LWOSDG/arp19R52svhA95be2mbXr5y9/118vXhr3T8bDXVn70cWJ934FD6o2REzoc9duAK5/wDBoxXi+JfLvgk55A8AG7qakpETQo9cyLg/XyzXGT1RPPDVQTps4JneGv/oPeUmfOVic+SYzHPtdlLPJzP1yhWlpa1bI1G8OHvBaPfMGMBXqZL29Y6RCP/MKlaxJfRkObeOSLS47oWf/Jp6Ez/BWPfHzJ+1S7eOTjIYsvfTcy9klP/GNM/O3l4SdfCp2VmzIW+YaGRlVUXBrejQ4+P3g4vAtAN+zcvT+8C1ds2rozvAtXbNuxN7wrZ2Us8gAAILMyGvkLl+rCu3AFPwEsC74KBLOmDv86A+34zo4d3/ryB5F3BJGXEXkZkTejYXZE3h9E3hFEXkbkZUTejIbZEXl/ZC3yw8ZMU0NGT3V2Fixdp3bvK47sZ7o3qXxwIfIyIm+WwpuZV1J5P0Ruykrkd+4pinzwZ/yYRSu6/k8oibyMyJvRMDsi7w8iz2R05hSuDr1VXB2RlxF5MxpmR+T9kdORHxr6kv+4SfPVyPGz1JiCuWp0wZzI+bk0Q2MzZuLcpH3jpyxoOxb7ew8fNz1yTS4MkU8vIm9Gw+yIvD9yNvKBt2JB77hdc65WFS7foDZv36MuXLwUuSaXJngfPHf+QmJ7+Njp+h0z+CQmMGPeisSxhUvXq5kLVur1RSs3qXcnL1BFh47offMWf6SGxa4tmPGhXv9wxcbI68rkEPn0IvJmNMyOyPsjZyM/fe6ypMgHE0Q+WB6tOBk5Pxcn0HH9cl29Xi+YsSgR+eARfV1sf+mRY2r95p1q2ZrN+twtO/Ylrhs1YbbasbtIrwefLNTVN0ReV6aGyKcXkTejYXZE3h85H/ngkWv8y/bxyAfC5+faBOYtXqu/bL/u4x3qQHGZam5u0cc6Rn7sxLlqz/7D+p12xdotat6ij9Thsgod+XGT5umXszZ2fTzyM+avUNVX7lM2ZuW6rfrP0RVEXkbkzWiYHZH3R85Gnmmf96d/qMZNnKfXJ89ektgfRD5Yxj8JCkycuThyfSaHyKcXkTejYXZE3h9E3qOZNCu7gQ+Gf0KXXkTejIbZEXl/ZCXywZeewx/8GT8m+NZDVxF5GZE3o2F2RN4fWYk8onhaWxmRlxF5MxpmR+T9QeQdQeRlRF5G5M1omB2R9weRdwSRlxF5GZE3o2F2RN4fRN4R3kS+tUUdHHBdp6ahqlRfQuRlRN6MhtkReX8QeUf4EvmmC6cjMZfm6Pj/1tcQeRmRN6NhdkTeH0TeEUQ+OkT+6oi8GQ2zI/L+IPKO8C3y5RMfjC2vTwS98oOnE+vHZz5B5DuJyJvRMDsi7w8i7wifIl8y4nZ1dlOB3g5iXjryTnX0vZ+p1qZ61XLpXGI/kb86Im9Gw+yIvD+IvCN8ivyppW/oiAfij96DH8irP1mctJ/IXx2RN6NhdkTeH0TeET5FvuTN29SFA2v0ds22Gap01D3q+Kwn9UdmIt81RN6MhtkReX8QeUf4FPkg4IeH35p4FB9M2dg+SdtEvnOIvBkNsyPy/iDyjvAt8p0ZIn91RN6MhtkReX8QeUf4EvnmSzWRmEtTMfkhfQ2RlxF5MxpmR+T9QeQd4UvkU0HkZUTejIbZEXl/EHlHEHkZkZcReTMaZkfk/UHkHUHkZUReRuTNaJgdkfcHkXcEkW/T0tKqikor0zI+IPJmNMyOyPuDyDuCyLdpiN2HcKxTHR8QeTMaZkfk/UHkHUHk2xD5riHyZjTMjsj7g8g7gsi3MUV+x95D6sbbvqf2Hz6mt7d9VqRuuftedc+9P1eLVm5Q37r9+4ljRB4BGmZH5P1B5B1B5NuYIv/F62/Uyzv73KeXk2YuVNPmLNLrQeyDZd/Hn41c5wMib0bD7Ii8P4i8I4h8G1Pkr7m2t17edNcP9XL77oNq78Gjev+BkuN6ySN5dETD7Ii8P4i8I4h8G1PkB781Xt3wnTvV2IKZOujjYstese2fPPCo+qd//Tf15a/frB56/JnIdT4g8mY0zI7I+4PIO4LItzFFPtXxAZE3o2F2RN4fRN4RRL4Nke8aIm9Gw+yIvD+IvCOIfLtwrFMdHxB5MxpmR+T9QeQdQeRlPK2tjMib0TA7Iu8PIu8IIi8j8jIib0bD7Ii8P4i8I4i8jMjLiLwZDbMj8v64auSHjJ7arak5V5t4WUReRuRlRF5G5M1omB2R90ePR7706PHEyyLyMiIvI/IyIm9Gw+yIvD+IvCOIvIzIy4i8GQ2zI/L+IPKOIPIyIi8j8mY0zI7I+4PIO4LIy4i8jMib0TA7Iu8PIu8IIi8j8jIib0bD7Ii8P4i8I4i8jMjLiLwZDbMj8v4g8o4g8jIiLyPyZjTMjsj7g8g7gsjLiLyMyJvRMDsi74+rRn70+3Mi4e7sDB0zLellEXkZkZcReRmRN6NhdkTeH1eNfDoReRmRlxF5GZE3o2F2RN4fRN4RRF5G5GVE3oyG2RF5fxB5RxB5GZGXEXkzGmZH5P2RtcgfHHCdM7N/zP+om55aom5/dplepnv2llSpotLKrEw+IPIyIm9Gw+yIvD+IfGy2DekTCXM6Z/X2I5H4ZmryAZGXEXkzGmZH5P1B5Af0fORXbi2LxDdTkw+IvIzIm9EwOyLvj9yK/GtfSbr22NRH9HbJm7er4oG99Ht25JpOTGcif7m+7YNpfHtbUZXe/u7vl6r7B61Xs9eWRq5JJfJ97uurrrm2d2L75UFv6u3PD1Wou3/0M3XDTXdFrrFNPiDyMiJvRsPsiLw/ciryFZP6Jl3b2tKsl4GKyQ/3aOTLT11UE5cfUvc8v1JvB5ZvO6bXfzdqS9oiHwR9X3G52r67WG9ff+NtalzBLLVszcfqq9+8XRVMnx+5xjb5gMjLiLwZDbPj/vgjpyIfTPzaw8NuiUW+qW1fa8uVZc9Fvrq2QS3cdFTd9uwydccflut3kjdm7lF/mvqZPp7OyG/ctkeH/rP9ZYno3/GD+2KP4u9MepTfmckHRF5G5M2ImB33xx85F/nzuwuTlvWV+2PL66/sWxg5vzPTmch/sK5MrdlZqe6OPZLvP3Gnen36brW9qCpx/NXJuyLXpBL5gmnz1AOPPqnXH3vqj2rh0rXqx/c/oreHjXpPDRw6OnKNbfIBkZcReTMiZsf98UfORb4npjOR7850JfLpnnxA5GVE3oyI2XF//EHkY7N9aM9Gfs2n/BO67iDyMiJvRsTsuD/+yFrka7bNUqeWve7EBCYsOahOVl9W09eUqDfn7kvbjIhN4NSZ89apPF0T2dfdyZdn0SPyMiJvRsTsuD/+yFrkkSxfgtwTiLyMyJsRMTvujz+IvCOIvIzIy4i8GRGz4/74g8hnwcXiDershneS5vS6sZF93ZngdeQLIi8j8mZEzI774w8inwXhH/zrqckXRF5G5M2ImB33xx9EPgvCMe6pyRdEXkbkzYiYHffHH0Q+C8Ix7qnJF0ReRuTNiJgd98cfRD4LwjEOz7Gpj6navUtVS+NlvX16+RDVeLY8cX39sX2qYsqvIteFJ18QeRmRNyNidtwffxD5LAjHODyJ5+LvcG75xIdU5QfP6PXW5sbINabJF0ReRuTNiJgd98cfRD4LwjEOT+PZirZIx94Ty0b9IBHsYNl88awqGXGHqju2J3JdePIFkZcReTMiZsf98QeRz4JwjE1Tu2eJKh7UW50ofFFvx5dH3vmxOr+r7ZfzXG3yBZGXEXkzImbH/fEHkc+CcIx7avJFPZEXNTUReRMiZtfKDfIGkc+CcIx7avIFkZcReTMaZkfk/UHks6C+cr+6cGBV0tTsWx7Z152przwQfrU5i8jLiLwZDbMj8v4g8o7guetlRF5G5M1omB2R9weRdwSRlxF5GZE3o2F2RN4fKUV+wZK1avbCVV2e6fNWqKqz58IvDorI2xB5GZE3o2F2RN4fXY58dU2tGjJ6arcGUUReRuRlRN6MhtkReX+kEPnzkWh3dRBF5GVEXkbkzWiYHZH3B5F3BJGXEXkZkTejYXZE3h9E3hFEXkbkZUTejIbZEXl/EHlHEHkZkZcReTMaZkfk/UHkHUHkZUReRuTNaJgdkfcHkXcEkZcReRmRN6NhdkTeH0TeEUReRuRlRN6MhtkReX90PfLn+HfyPYHIy4i8jMib0TA7Iu+PLkc+UF/foOpSmDPV51VLC29cJkReRuRlRN6MhtkReX+kFPlU8dz1MiIvI/IyIm9Gw+yIvD+IvCOIvIzIy4i8GQ2zI/L+yErkj5+qVkWllU5PphF5GZGXEXkzGmZH5P2RlciHg+riHDtZHfrT9ywiLyPyMiJvRsPsiLw/iLwwRN4dRF5G5M1omB2R90fORn7kuIlJ2yPGFujl/MVr9ITP7+oQeXcQeRmRN6NhdkTeHzkZ+V7fvkNdc23vxPZXv3V70vbdP/p55JquDpF3B5GXEXkzGmZH5P2Rk5EPpmPUO24fKDmu7iHyeYXIy4i8GQ2zI/L+yPnIh5cDBr8dOTeVIfLuIPIyIm9Gw+yIvD9yNvI9PUTeHUReRuTNaJgdkfcHkReGyLuDyMuIvBkNsyPy/iDywpypuRD60/csIi8j8jIib0bD7Ii8P7ISeUQReVkDkRcReTMaZkfk/UHkHUHkZUReRuTNaJgdkfcHkXcEkZcReRmRN6NhdkTeH0Re0FJ/QR0ccJ3zEwjeYcM/UxCfQ0dPhf5muYfIy4i8GQ2zI/L+IPKCC0UfRYLq4gTq6hsjce84uY7Iy4i8GQ2zI/L+IPICIu8OIi8j8mY0zI7I+4PIC9IV+arVbydtV0x9NLbvLVX98SQ94fO7OgEi7y8ib0bD7Ii8P4i8IB2Rrzu+T10q2Zq0fWrpoMR2Y83xyDVdnQCR9xeRN6NhdkTeH0RekI7IB9Mx8sHEI9/aWBc5N5UJEHl/EXkzGmZH5P1B5AXpjHzp6D6q+PUb9HY88oHwualMgMj7i8ib0TA7Iu8PIi9IV+R7egJE3l9E3oyG2RF5fxB5AZF3B5GXEXkzGmZH5P1B5AVN505EguriBJqbWyJhj0/xkROhv1nuIfIyIm9Gw+yIvD+IvCN4WlsZkZcReTMaZkfk/UHkHUHkZUReRuTNaJgdkfcHkXcEkZcReRmRN6NhdkTeH0TeEZmK/AcfFUW+b5+pOViW2g8BEnkZkTejYXZE3h9E3hGZinw4vJmeVBB5GZE3o2F2RN4fRN4RRF5G5GVE3oyG2RF5fxB5R7ga+Z/c/6jauG1PYvvnDz+hxrw3XX1+qEL1ua9v5PyrTSqIvIzIm9EwOyLvDyLvCBcj/9Cvn1Z7D5ara67trbf3FZerqR98qLd7f/duve/td6dErrNNKoi8jMib0TA7Iu8PIu8IFyP/4/sf0ct45INH9E8+94renrtolV6+MGBo5DrbpILIy4i8GQ2zI/L+IPKOcDHyK9dvVXf/6Gfqnnvv14/ct+46oL797z/Qcf/Ns/31l/J3fV4Suc42qSDyMiJvRsPsiLw/iLwjXIx8T0wqiLyMyJvRMDsi7w8i7wgiLyPyMiJvRsPsiLw/iLwjMhX5kXP3RsKbqTl15lz4j9MpRF5G5M1omB2R9weRd0SmIp+LiLyMyJvRMDsi7w8i7wgiLyPyMiJvRsPsiLw/iLwjiLyMyMuIvBkNsyPy/iDyjshW5G96aomeB//0ser/nbPihL+/numBGZE3o2F2RN4fRN4R2Y78ff02RsJO5N1H5M1omB2R9weRdwSRtw/MiLwZDbMj8v4g8o7Ip8hv3LpHPyveH6885W3wy2yC7Vvv+bHejj9NblcGZkTejIbZEXl/EHlH5FPk/+Vr39bLeMyHj34/sR38khsinz5E3oyG2RF5fxB5R+RV5Ht9Ry87xjz49bTxbSKfPkTejIbZEXl/EHlH5FPk9x8+pkP+6Z5ivTxQclwvp8wu1MeJfPoQeTMaZkfk/UHkHZFPke+JgRmRN6NhdkTeH0TeEUTePjAj8mY0zI7I+4PIOyJbkS/8uFxH/lJ9k3rj+zWRuAezcUq9qqqujYQ3U1N+4kz4j40riLwZDbMj8v4g8o7IVuRzAU9rKyPyZjTMjsj7g8g7gsjLiLyMyJvRMDsi7w8i7wgiLyPyMiJvRsPsiLw/iLwjiLws1cgPGT2V8WziaJgdkfcHkXcEkZcReaazE0fD7Ii8P4i8I4i8jMgznZ04GmZH5P1B5B1B5GW+Rr64pFw1NjWptZt26O0jFSdUU3OzWr1hu/77BR+oh42dHrkumOFX9l+6XKeGjpmWWK+rb8iLeyNNHA2zI/L+IPKOIPIyXyMfTM25WrVoxUa93tDYdh/enbJAbx8/UaUmTFuo14MP2odKy1VLS6t+W9q9/7A+N/jBvPWf7NLnBJFfv3mn3j9y/Cx14lTb8w8E5wTH62OfAIRff65NHA2zI/L+IPKOIPIyXyN/uuqsXgYfkIePm6EmTG0Lem3tRf2IvHD5hsS5wTnBsuPfPRB+JB/fv2LtFlVx/JRef3vC7NjrqlZvxcIf/jPk2sTRMDsi7w8i7wgiL/M18pNmLVGX6+rVqPc+0I/oV67bqi5frtfHgu1gJs5crLera2oT+8cUzNWfBATxXrxqkzpTfU4fqzxZlThn+Ljp6uKly3o92JcP9yuYOBpmR+T9QeQdQeRlvkY+U/NB4WpVXFoe2Z+LE0fD7Ii8P4i8I4i8jMgznZ04GmZH5P1B5B1B5GWpRr7o0BE1efaSvJ5JsxZH9vk61edqE//vaZgdkfcHkXcEkZelGnkf8LS2ZjTMjsj7g8g7gsjLiLyMyJvRMDsi7w8i7wgiLyPyMiKfrK7yc3WpbGtOTuDzIzVqR/GZlCZwua5BXerEXLxcH9knTWBX+RG14XAxE5tA+fGT6ugxt+ZUVXXbO0EIkXcEkZcReRmRb9fa0qwODrguZ+fAa19TNz21JOV5ctRmVVRamfapqq5Vf/7ck8yV+dLLz0d+4NOVMSHyjiDyMiIvI/LtWluaIuHMpSHyuTFffInIi4i8jMjLiLyMyLcj8psjgU7HEPnkIfIWRF5G5GVEXkbk23U28oeGfEu1Nlxq3/faV1VLbDtQMeVh1VhdoU6vGKyPnSzsr4oHfk2vx5ftc31i/fDwW5OONVSVtV0zqHfoGnl6MvJf/vrN6ovX3Zi0/Y1b/1N9tr9UPfjY02rClDmRazIR+YFLCtXp2vOJ7cCp8+dUrzdeVSNXr1BlVaeTjgXLv+z3VGLfP7/cL+lYMH/z/O8jryed053Izy5crf+s8e0Nn+xSJ0+fVYdKK/TvjqiuOa/mL14bua6zY0LkHUHkZUReRuTbdTbywZxZMypp+8TC51Vra4uqWj1C1Z88qKo3T9T7z256Pxb3Xqqp9rSeIPTB9/5b6i/q/Vdesz430HSuUh1596c68iXDb1N1FbvVuU/nRF6/aXoy8tdc21s91e/VpO0bbrpLbfusSG3ZdSBrkQ8mHPk95UfV/F2f6u1w5P/hpT+oUevaQjlp80b1zvo16qfjR7f9X2ht1eeduVCr5u/YFnk96ZruRD4e4vh68Eun4vvKyiv132H8ld9RkcqYEHlHEHkZkZcR+XapRL5y3vOqbGwfVbt7kX4ZQZSPzfiNqt27TB+PR77+RJFqOHVI7ws+GQgiXzHll22vt6lBhz0QRD44J4j8yQX91bHpv9b7w6/fND0d+VvuvldtjUV95fqtevvFAUPVso82OxP5VwrnqeKTJ1S/BXPU03Nm6H3hyP9m5hQ1aPlivb5y3271jf97Ve08Uqq365sa1TcGvaJeW1qof0Vz+PWka9IV+U8+3at/nfTUOcsSvwJ61sJVel/4ms6OCZF3BJGXEXkZkW/XlciHp+TN21Xx6zfo9WOTH44cD08Q+cNDv5vYPj7jt5Fzgm8DVMReVvHrvaLHDNOTkQ9m36GKpO0tO/dHzjFNT0e+4/xVv6dUn7EjI/uD+evYsS+88Iz6rzEjEvt+UfBu5Lw7Rg5WX3rl+cj+dE13Ix+emfNXtq8vWBU53pUxIfKOIPIyIi8j8u26E/muTtnYH0b2dXd6OvKpTiYjnwuT7sinc0yIvCOIvIzIy4h8B60tkXDm0hQN7BUJd1fmmbFbIoFOx9ScvxQJnc/zHyOGROLqypgQeUcQeRmRlxF5M5611Y6ntfUHkXcEkZcReRmRN6NhdkTeH0TeEUReRuRlRN6MhtkReX8QeUcQeRmRlxF5s1xuWN2xPZHv13dmarbNUNe+9mLke8i+zAOTxodvJRSRdwaRlxF5GZE3y+XIh+PdlQmHz7dBFJF3BJGXEXkZkTcj8n4Oooi8I4i8jMjLiLwZkc/M9J3yftL2b2dNTaw/Mq0gcn5PD6KIvCOIvIzIy4i8GZHv+blQ1/bxPL7dErvpXxn4krrc2PYUrR2PZWoQReQdQeRlRF5G5M2IfGYmEF+ftmWzamxuUu9uWBs5lqlBFJF3BJGXEXkZkTcj8pmZQLBcV7Rftcb++8XEd1VTc3PSsUwOooi8I4i8jMjLiLwZkc/O3DJicGRfJgdRRN4RRF5G5GVE3ozI+zmIIvKOIPIyIi8j8ma5HPnDQ2+OxLszc3jYzZHo+TaIIvKOIPIyIi8j8ma5HPlM4Glt/UHkHUHkZUReRuTNaJgdkfcHkXcEkZcReRmRN6NhdkTeH0TeEUReRuRlRN7M54ZVTP5l5Pv1V5vLR3eov/3j05HvcTPJ882hr4dvt/OIvCOIvIzIy4i8mc+RDwe8M1P69vciQWPMk2uIvCOIvIzIy4i8GZHv2hD5zk+uIfKOIPIyIi8j8mZEvmvjSuQHLl6YtD1i1TK9/PsXnlF9J42PnJ+NyTVE3hFEXkbkZUTejMh3bVyIfOCmYYPU4r2f6e3yM1XqH19+Tp25UKuPPT5ziupXODdyXaYn1xB5RxB5GZGXEXkzIt+1cSHywVxuaFC9Br2s14N/ARAs4+oaG9XIj1ZFrsn05Boi7wgiLyPyMiJvRuS7Ni5EPoj67oqj6r1N61RV7NH7ol071OClH6pPy0pUfVOjWlu0X9311tDIdZmeXEPkHUHkZUReRuTNiHzXxoXIm+bv+v+vXv5FbL7w4rOR49mYXEPkHUHkZUReRuTNiHzXxtXIuzi5hsg7gsjLiLyMyJsR+a5N5WyeCKezk2uIvCOIvIzIy4i8mc+R7wye1tYfRN4RRF5G5GVE3oyG2RF5f2Q08gAAIHP+H/hsswSTjNGoAAAAAElFTkSuQmCC>
