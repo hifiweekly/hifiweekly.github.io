@@ -1,0 +1,544 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2260" height="3568" viewBox="0 0 2260 3568" font-family="Helvetica, Arial, sans-serif">
+<title>Ray time on the head and worker pods</title>
+<style>.m{font-family:"DejaVu Sans Mono",Menlo,Consolas,monospace}</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#4a5563"/></marker></defs>
+<rect width="2260" height="3568" fill="#ffffff"/>
+<rect x="0" y="244" width="2260" height="131" fill="#f4f6f8"/>
+<line x1="0" y1="244" x2="2260" y2="244" stroke="#c8d0d9"/>
+<text x="24" y="282" font-size="24" fill="#1f2933" font-weight="700">A</text>
+<text x="24" y="304" font-size="13" fill="#5b6776">Pods start, Ray</text>
+<text x="24" y="320" font-size="13" fill="#5b6776">patches applied</text>
+<text x="24" y="338" font-size="14" fill="#1f2933" font-weight="700">0.80 s</text>
+<text x="24" y="356" font-size="12" fill="#5b6776">6.57 → 7.37 s</text>
+<rect x="0" y="385" width="2260" height="565" fill="#ffffff"/>
+<line x1="0" y1="385" x2="2260" y2="385" stroke="#c8d0d9"/>
+<text x="24" y="423" font-size="24" fill="#1f2933" font-weight="700">B</text>
+<text x="24" y="445" font-size="13" fill="#5b6776">Head Ray comes up</text>
+<text x="24" y="463" font-size="14" fill="#1f2933" font-weight="700">4.94 s</text>
+<text x="24" y="481" font-size="12" fill="#5b6776">7.37 → 12.30 s</text>
+<rect x="0" y="960" width="2260" height="670" fill="#f4f6f8"/>
+<line x1="0" y1="960" x2="2260" y2="960" stroke="#c8d0d9"/>
+<text x="24" y="998" font-size="24" fill="#1f2933" font-weight="700">C</text>
+<text x="24" y="1020" font-size="13" fill="#5b6776">Workers join</text>
+<text x="24" y="1038" font-size="14" fill="#1f2933" font-weight="700">7.54 s</text>
+<text x="24" y="1056" font-size="12" fill="#5b6776">7.22 → 14.75 s</text>
+<rect x="0" y="1640" width="2260" height="236" fill="#ffffff"/>
+<line x1="0" y1="1640" x2="2260" y2="1640" stroke="#c8d0d9"/>
+<text x="24" y="1678" font-size="24" fill="#1f2933" font-weight="700">D</text>
+<text x="24" y="1700" font-size="13" fill="#5b6776">Driver starts</text>
+<text x="24" y="1718" font-size="14" fill="#1f2933" font-weight="700">1.31 s</text>
+<text x="24" y="1736" font-size="12" fill="#5b6776">18.26 → 19.57 s</text>
+<rect x="0" y="1886" width="2260" height="310" fill="#f4f6f8"/>
+<line x1="0" y1="1886" x2="2260" y2="1886" stroke="#c8d0d9"/>
+<text x="24" y="1924" font-size="24" fill="#1f2933" font-weight="700">E</text>
+<text x="24" y="1946" font-size="13" fill="#5b6776">Connect, placement</text>
+<text x="24" y="1962" font-size="13" fill="#5b6776">group, worker</text>
+<text x="24" y="1978" font-size="13" fill="#5b6776">processes</text>
+<text x="24" y="1996" font-size="14" fill="#1f2933" font-weight="700">1.13 s</text>
+<text x="24" y="2014" font-size="12" fill="#5b6776">19.57 → 20.70 s</text>
+<rect x="0" y="2206" width="2260" height="190" fill="#ffffff"/>
+<line x1="0" y1="2206" x2="2260" y2="2206" stroke="#c8d0d9"/>
+<text x="24" y="2244" font-size="24" fill="#1f2933" font-weight="700">F</text>
+<text x="24" y="2266" font-size="13" fill="#5b6776">Tasks run on every</text>
+<text x="24" y="2282" font-size="13" fill="#5b6776">node</text>
+<text x="24" y="2300" font-size="14" fill="#1f2933" font-weight="700">2.45 s</text>
+<text x="24" y="2318" font-size="12" fill="#5b6776">20.71 → 23.16 s</text>
+<rect x="0" y="2406" width="2260" height="174" fill="#f4f6f8"/>
+<line x1="0" y1="2406" x2="2260" y2="2406" stroke="#c8d0d9"/>
+<text x="24" y="2444" font-size="24" fill="#1f2933" font-weight="700">G</text>
+<text x="24" y="2466" font-size="13" fill="#5b6776">Job ends</text>
+<text x="24" y="2484" font-size="14" fill="#1f2933" font-weight="700">1.08 s</text>
+<text x="24" y="2502" font-size="12" fill="#5b6776">23.16 → 24.24 s</text>
+<line x1="441.0" y1="218" x2="441.0" y2="2580" stroke="#e3e7ec" stroke-dasharray="3 5"/>
+<line x1="951.0" y1="218" x2="951.0" y2="2580" stroke="#e3e7ec" stroke-dasharray="3 5"/>
+<line x1="1461.0" y1="218" x2="1461.0" y2="2580" stroke="#e3e7ec" stroke-dasharray="3 5"/>
+<line x1="1971.0" y1="218" x2="1971.0" y2="2580" stroke="#e3e7ec" stroke-dasharray="3 5"/>
+<path d="M951.0 337L951.0 403" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M951.0 584L951.0 614" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M951.0 778L951.0 808" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1196 429L1971.0 429L1971.0 978" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="1583.5" y="423" font-size="12" fill="#5b6776" text-anchor="middle" font-style="italic">GCS port opens</text>
+<path d="M1971.0 1098L1971.0 1128" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1971.0 1218L1971.0 1248" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1971.0 1383L1971.0 1413" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M686 1684L1461.0 1684L1461.0 1718" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<path d="M1461.0 1838L1461.0 1904" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1216 1930L951.0 1930L951.0 1964" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="1083.5" y="1924" font-size="12" fill="#5b6776" text-anchor="middle" font-style="italic">CreatePlacementGroup</text>
+<path d="M1461.0 1994L1461.0 2024" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1706 2050L1971.0 2050L1971.0 2084" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="1838.5" y="2044" font-size="12" fill="#5b6776" text-anchor="middle" font-style="italic">PushTask, across pods</text>
+<path d="M1461.0 2129L1461.0 2224" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M1706 2250L1971.0 2250L1971.0 2284" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="1838.5" y="2244" font-size="12" fill="#5b6776" text-anchor="middle" font-style="italic">PushTask, across pods</text>
+<path d="M1216 2250L951.0 2250L951.0 2284" fill="none" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<path d="M1461.0 2329L1461.0 2424" fill="none" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="24" y="42" font-size="26" fill="#1f2933" font-weight="700">Ray on the head and workers: workflow, functions, line numbers and measured times</text>
+<text x="24" y="68" font-size="14" fill="#5b6776">Code: ej-prj-i4-1 925abd467, Ray 2.56.1. One sky launch (run 5 of 6) on 6 pods on k8s/kind-skypilot, one echo. Clock times are seconds from the start of sky launch.</text>
+<text x="24" y="90" font-size="14" fill="#5b6776">The letter beside a time says where it comes from. Time ranges cover the 5 worker pods. The timeline is at the bottom.</text>
+<text x="24" y="112" font-size="12" fill="#5b6776" font-weight="700">H</text>
+<text x="44" y="112" font-size="13" fill="#1f2933">timers in each Python process, in the trace image</text>
+<text x="744" y="112" font-size="12" fill="#5b6776" font-weight="700">L</text>
+<text x="764" y="112" font-size="13" fill="#1f2933">timestamps in Ray's own logs: gcs_server.out, raylet.out, dashboard_agent.log</text>
+<text x="24" y="132" font-size="12" fill="#5b6776" font-weight="700">P</text>
+<text x="44" y="132" font-size="13" fill="#1f2933">the provisioner's own log (provision.log)</text>
+<text x="744" y="132" font-size="12" fill="#5b6776" font-weight="700">S</text>
+<text x="764" y="132" font-size="13" fill="#1f2933">Ray event stats, earlier sky exec trace (20261104-ray-api-trace)</text>
+<rect x="1500" y="100" width="26" height="16" rx="3" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="1534" y="113" font-size="13" fill="#1f2933">Largest times</text>
+<line x1="1500" y1="130" x2="1534" y2="130" stroke="#4a5563" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="1542" y="135" font-size="13" fill="#1f2933">Next step</text>
+<line x1="1630" y1="130" x2="1664" y2="130" stroke="#4a5563" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="1672" y="135" font-size="13" fill="#1f2933">Across processes  ·  :N = line</text>
+<rect x="196" y="166" width="490" height="50" rx="6" fill="#223548"/>
+<text x="441.0" y="187" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="700">Provisioner</text>
+<text x="441.0" y="206" font-size="12" fill="#c8d3df" text-anchor="middle">API server, over kubectl exec</text>
+<rect x="706" y="166" width="490" height="50" rx="6" fill="#223548"/>
+<text x="951.0" y="187" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="700">Head pod: Ray</text>
+<text x="951.0" y="206" font-size="12" fill="#c8d3df" text-anchor="middle">ray start, GCS, raylet, agents</text>
+<rect x="1216" y="166" width="490" height="50" rx="6" fill="#223548"/>
+<text x="1461.0" y="187" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="700">Head pod: job driver</text>
+<text x="1461.0" y="206" font-size="12" fill="#c8d3df" text-anchor="middle">sky_job_N, starts per job</text>
+<rect x="1726" y="166" width="490" height="50" rx="6" fill="#223548"/>
+<text x="1971.0" y="187" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="700">Worker pods (5)</text>
+<text x="1971.0" y="206" font-size="12" fill="#c8d3df" text-anchor="middle">ray start, raylet, per-job Ray workers</text>
+<text x="24" y="187" font-size="15" fill="#1f2933" font-weight="700">Stage</text>
+<text x="24" y="206" font-size="12" fill="#5b6776">duration, clock time</text>
+<rect x="706" y="262" width="490" height="75" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="718" y="284" font-size="14" fill="#1f2933" font-weight="700">Apply Ray patches</text>
+<text x="1184" y="284" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">0.48 s</text>
+<text x="718" y="302" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/templates/kubernetes-ray.yml.j2</text>
+<text x="726" y="318" font-size="11" fill="#1f2933" class="m">{{ ray_patches_cmd }}</text>
+<text x="1124" y="318" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">6.57–7.05</text>
+<text x="1127" y="318" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="1184" y="318" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1510</text>
+<rect x="1726" y="262" width="490" height="75" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1738" y="284" font-size="14" fill="#1f2933" font-weight="700">Apply Ray patches</text>
+<text x="2204" y="284" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">0.51 s</text>
+<text x="1738" y="302" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/templates/kubernetes-ray.yml.j2</text>
+<text x="1746" y="318" font-size="11" fill="#1f2933" class="m">{{ ray_patches_cmd }}</text>
+<text x="2144" y="318" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">6.70–7.22</text>
+<text x="2147" y="318" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="2204" y="318" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1510</text>
+<rect x="706" y="403" width="490" height="181" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="718" y="425" font-size="14" fill="#1f2933" font-weight="700">ray start --head → GCS listening</text>
+<text x="1184" y="425" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">1.10 s</text>
+<text x="718" y="443" font-size="12" fill="#b4530a" font-style="italic">Almost all Python start and imports for the ray CLI. GCS itself takes</text>
+<text x="718" y="458" font-size="12" fill="#b4530a" font-style="italic">tens of ms. Workers wait for this port.</text>
+<text x="718" y="473" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/templates/kubernetes-ray.yml.j2</text>
+<text x="726" y="489" font-size="11" fill="#1f2933" class="m">{{ ray_head_start_command }}</text>
+<text x="1184" y="489" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1522</text>
+<text x="718" y="504" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/provision/instance_setup.py</text>
+<text x="726" y="520" font-size="11" fill="#1f2933" class="m">ray_head_start_command()</text>
+<text x="1184" y="520" font-size="11" fill="#5b6776" text-anchor="end" class="m">:741</text>
+<text x="726" y="535" font-size="11" fill="#1f2933" class="m">ray start process starts</text>
+<text x="1124" y="535" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">7.37</text>
+<text x="1127" y="535" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="726" y="550" font-size="11" fill="#1f2933" class="m">ray CLI imported</text>
+<text x="1124" y="550" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">8.42</text>
+<text x="1127" y="550" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="726" y="565" font-size="11" fill="#1f2933" class="m">GCS listening on 6380</text>
+<text x="1124" y="565" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">8.46</text>
+<text x="1127" y="565" font-size="8" fill="#5b6776" font-weight="700">L</text>
+<rect x="706" y="614" width="490" height="164" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="718" y="636" font-size="14" fill="#1f2933" font-weight="700">Wait for the dashboard, then raylet</text>
+<text x="1184" y="636" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">2.75 s</text>
+<text x="718" y="654" font-size="12" fill="#b4530a" font-style="italic">ray start polls every 0.1 s until the dashboard publishes its address.</text>
+<text x="718" y="669" font-size="12" fill="#b4530a" font-style="italic">This delays the workers too, through the head's node record.</text>
+<text x="726" y="684" font-size="11" fill="#1f2933" class="m">poll for the dashboard address</text>
+<text x="1124" y="684" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">2.42 s</text>
+<text x="1127" y="684" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="726" y="699" font-size="11" fill="#1f2933" class="m">└ dashboard process starts</text>
+<text x="1124" y="699" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">8.85</text>
+<text x="1127" y="699" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="726" y="714" font-size="11" fill="#1f2933" class="m">└ dashboard: Python start, imports</text>
+<text x="1124" y="714" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.51 s</text>
+<text x="1127" y="714" font-size="8" fill="#5b6776" font-weight="700">L</text>
+<text x="726" y="729" font-size="11" fill="#1f2933" class="m">└ dashboard: load head modules</text>
+<text x="1124" y="729" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.62 s</text>
+<text x="1127" y="729" font-size="8" fill="#5b6776" font-weight="700">L</text>
+<text x="726" y="744" font-size="11" fill="#1f2933" class="m">└ dashboard: start subprocess modules</text>
+<text x="1124" y="744" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.08 s</text>
+<text x="1127" y="744" font-size="8" fill="#5b6776" font-weight="700">L</text>
+<text x="726" y="759" font-size="11" fill="#1f2933" class="m">raylet first log</text>
+<text x="1124" y="759" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">11.21</text>
+<text x="1127" y="759" font-size="8" fill="#5b6776" font-weight="700">L</text>
+<rect x="706" y="808" width="490" height="104" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="718" y="830" font-size="14" fill="#1f2933" font-weight="700">Raylet running → registered with GCS</text>
+<text x="1184" y="830" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">1.09 s</text>
+<text x="718" y="848" font-size="12" fill="#5b6776" font-style="italic">The raylet blocks until the dashboard agent writes its ports.</text>
+<text x="726" y="863" font-size="11" fill="#1f2933" class="m">dashboard agent, start → port written</text>
+<text x="1124" y="863" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.95 s</text>
+<text x="1127" y="863" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="726" y="878" font-size="11" fill="#1f2933" class="m">GCS: registering new node</text>
+<text x="1124" y="878" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">12.30</text>
+<text x="1127" y="878" font-size="8" fill="#5b6776" font-weight="700">L</text>
+<text x="726" y="893" font-size="11" fill="#1f2933" class="m">ray start exits</text>
+<text x="1124" y="893" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">12.35</text>
+<text x="1127" y="893" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<rect x="196" y="403" width="490" height="135" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="208" y="425" font-size="14" fill="#1f2933" font-weight="700">File mounts and runtime setup</text>
+<text x="674" y="425" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">4.58 s</text>
+<text x="208" y="443" font-size="12" fill="#5b6776" font-style="italic">Sets when the Ray wait begins. Runtime setup was 1.6–24.1 s across 6</text>
+<text x="208" y="458" font-size="12" fill="#5b6776" font-style="italic">launches, likely from the uv dry-run stalls found earlier; not checked</text>
+<text x="208" y="473" font-size="12" fill="#5b6776" font-style="italic">in these runs.</text>
+<text x="208" y="488" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/provision/instance_setup.py</text>
+<text x="216" y="504" font-size="11" fill="#1f2933" class="m">internal_file_mounts</text>
+<text x="614" y="504" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.28 s</text>
+<text x="617" y="504" font-size="8" fill="#5b6776" font-weight="700">P</text>
+<text x="216" y="519" font-size="11" fill="#1f2933" class="m">setup_runtime_on_cluster</text>
+<text x="614" y="519" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">3.31 s</text>
+<text x="617" y="519" font-size="8" fill="#5b6776" font-weight="700">P</text>
+<rect x="1726" y="978" width="490" height="120" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1738" y="1000" font-size="14" fill="#1f2933" font-weight="700">Wait for the head port</text>
+<text x="2204" y="1000" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">1.32 s</text>
+<text x="1738" y="1018" font-size="12" fill="#5b6776" font-style="italic">Set by the head's imports. ray start begins within 0.08 s of GCS</text>
+<text x="1738" y="1033" font-size="12" fill="#5b6776" font-style="italic">listening.</text>
+<text x="1738" y="1048" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/templates/kubernetes-ray.yml.j2</text>
+<text x="1746" y="1064" font-size="11" fill="#1f2933" class="m">until timeout 1 bash -c ": &lt; /dev/tcp/..."</text>
+<text x="2204" y="1064" font-size="11" fill="#5b6776" text-anchor="end" class="m">:1549</text>
+<text x="1746" y="1079" font-size="11" fill="#1f2933" class="m">ray start process starts</text>
+<text x="2144" y="1079" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">8.50–8.62</text>
+<text x="2147" y="1079" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<rect x="1726" y="1128" width="490" height="90" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1738" y="1150" font-size="14" fill="#1f2933" font-weight="700">ray start: imports</text>
+<text x="2204" y="1150" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">0.84 s</text>
+<text x="1738" y="1168" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/provision/instance_setup.py</text>
+<text x="1746" y="1184" font-size="11" fill="#1f2933" class="m">ray_worker_start_command()</text>
+<text x="2204" y="1184" font-size="11" fill="#5b6776" text-anchor="end" class="m">:788</text>
+<text x="1746" y="1199" font-size="11" fill="#1f2933" class="m">ray CLI imported</text>
+<text x="2144" y="1199" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">9.35–9.56</text>
+<text x="2147" y="1199" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<rect x="1726" y="1248" width="490" height="135" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="1738" y="1270" font-size="14" fill="#1f2933" font-weight="700">Poll for the head's node record</text>
+<text x="2204" y="1270" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">3.04 s</text>
+<text x="1738" y="1288" font-size="12" fill="#b4530a" font-style="italic">With the 0.2 s poll patch, this is now a real wait for the head to</text>
+<text x="1738" y="1303" font-size="12" fill="#b4530a" font-style="italic">register, not wasted sleep: workers notice it 0.15 s later.</text>
+<text x="1738" y="1318" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/skylet/ray_patches/utils.py.patch</text>
+<text x="1746" y="1334" font-size="11" fill="#1f2933" class="m">time.sleep(0.2), head node not registered</text>
+<text x="2144" y="1334" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">15 polls</text>
+<text x="2147" y="1334" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="1746" y="1349" font-size="11" fill="#1f2933" class="m">head registered</text>
+<text x="2144" y="1349" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">12.30</text>
+<text x="2147" y="1349" font-size="8" fill="#5b6776" font-weight="700">L</text>
+<text x="1746" y="1364" font-size="11" fill="#1f2933" class="m">raylet first log</text>
+<text x="2144" y="1364" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">12.55–12.56</text>
+<text x="2147" y="1364" font-size="8" fill="#5b6776" font-weight="700">L</text>
+<rect x="1726" y="1413" width="490" height="179" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="1738" y="1435" font-size="14" fill="#1f2933" font-weight="700">Raylet waits for the dashboard agent</text>
+<text x="2204" y="1435" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">1.43 s</text>
+<text x="1738" y="1453" font-size="12" fill="#b4530a" font-style="italic">No sleep to shorten: 0 sleeps before the port was written, in 6</text>
+<text x="1738" y="1468" font-size="12" fill="#b4530a" font-style="italic">launches. The raylet polls the port file every 50 ms in C++. The time is</text>
+<text x="1738" y="1483" font-size="12" fill="#b4530a" font-style="italic">the agent starting up.</text>
+<text x="1746" y="1498" font-size="11" fill="#1f2933" class="m">└ agent: process starts</text>
+<text x="2144" y="1498" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">12.63–13.63</text>
+<text x="2147" y="1498" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="1746" y="1513" font-size="11" fill="#1f2933" class="m">└ agent: Python start, imports</text>
+<text x="2144" y="1513" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.75 s</text>
+<text x="2147" y="1513" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="1746" y="1528" font-size="11" fill="#1f2933" class="m">└ agent: get_all_modules</text>
+<text x="2144" y="1528" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.55 s</text>
+<text x="2147" y="1528" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="1746" y="1543" font-size="11" fill="#1f2933" class="m">└ agent: HTTP server, write port</text>
+<text x="2144" y="1543" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.01 s</text>
+<text x="2147" y="1543" font-size="8" fill="#5b6776" font-weight="700">L</text>
+<text x="1746" y="1558" font-size="11" fill="#1f2933" class="m">GCS: registering new node</text>
+<text x="2144" y="1558" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">13.90–14.75</text>
+<text x="2147" y="1558" font-size="8" fill="#5b6776" font-weight="700">L</text>
+<text x="1746" y="1573" font-size="11" fill="#1f2933" class="m">ray start exits</text>
+<text x="2144" y="1573" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">14.73–15.73</text>
+<text x="2147" y="1573" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<rect x="196" y="978" width="490" height="105" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="208" y="1000" font-size="14" fill="#1f2933" font-weight="700">Skylet start, and wait for all 6 nodes</text>
+<text x="674" y="1000" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">3.13 s</text>
+<text x="208" y="1018" font-size="12" fill="#5b6776" font-style="italic">These run together, and the launch waits for both.</text>
+<text x="208" y="1033" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/provision/instance_setup.py</text>
+<text x="216" y="1049" font-size="11" fill="#1f2933" class="m">start_skylet_on_head_node()</text>
+<text x="614" y="1049" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">2.89 s</text>
+<text x="617" y="1049" font-size="8" fill="#5b6776" font-weight="700">P</text>
+<text x="674" y="1049" font-size="11" fill="#5b6776" text-anchor="end" class="m">:955</text>
+<text x="216" y="1064" font-size="11" fill="#1f2933" class="m">ray_wait_for_alive_nodes_command()</text>
+<text x="614" y="1064" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">11.83–14.79</text>
+<text x="617" y="1064" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="674" y="1064" font-size="11" fill="#5b6776" text-anchor="end" class="m">:454</text>
+<rect x="196" y="1658" width="490" height="150" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="208" y="1680" font-size="14" fill="#1f2933" font-weight="700">Setup between Ray and the job</text>
+<text x="674" y="1680" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">3.47 s</text>
+<text x="208" y="1698" font-size="12" fill="#5b6776" font-style="italic">SkyPilot, not Ray: two Python commands on the head, mostly imports. This</text>
+<text x="208" y="1713" font-size="12" fill="#5b6776" font-style="italic">launch sets no autostop; a managed job also runs set_autostop here.</text>
+<text x="208" y="1728" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/backends/cloud_vm_ray_backend.py</text>
+<text x="216" y="1744" font-size="11" fill="#1f2933" class="m">_add_job(): python -c on head</text>
+<text x="614" y="1744" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.18 s</text>
+<text x="617" y="1744" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="674" y="1744" font-size="11" fill="#5b6776" text-anchor="end" class="m">:4518</text>
+<text x="216" y="1759" font-size="11" fill="#1f2933" class="m">home directory echo, rsync job script</text>
+<text x="614" y="1759" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">≈0.72 s</text>
+<text x="617" y="1759" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="216" y="1774" font-size="11" fill="#1f2933" class="m">_exec_code_on_head(): queue job</text>
+<text x="614" y="1774" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.16 s</text>
+<text x="617" y="1774" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="674" y="1774" font-size="11" fill="#5b6776" text-anchor="end" class="m">:4306</text>
+<text x="216" y="1789" font-size="11" fill="#1f2933" class="m">other server work, kubectl exec</text>
+<text x="614" y="1789" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">≈0.4 s</text>
+<text x="617" y="1789" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<rect x="1216" y="1718" width="490" height="120" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="1228" y="1740" font-size="14" fill="#1f2933" font-weight="700">Python start and imports</text>
+<text x="1694" y="1740" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">1.31 s</text>
+<text x="1228" y="1758" font-size="12" fill="#b4530a" font-style="italic">Largest fixed cost in the job: import sky loads the whole backend,</text>
+<text x="1228" y="1773" font-size="12" fill="#b4530a" font-style="italic">though the driver uses five modules.</text>
+<text x="1228" y="1788" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/backends/task_codegen.py</text>
+<text x="1236" y="1804" font-size="11" fill="#1f2933" class="m">import ray</text>
+<text x="1694" y="1804" font-size="11" fill="#5b6776" text-anchor="end" class="m">:339</text>
+<text x="1236" y="1819" font-size="11" fill="#1f2933" class="m">from sky.skylet import job_lib</text>
+<text x="1694" y="1819" font-size="11" fill="#5b6776" text-anchor="end" class="m">:66</text>
+<rect x="1216" y="1904" width="490" height="90" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1228" y="1926" font-size="14" fill="#1f2933" font-weight="700">Connect, reserve one bundle per node</text>
+<text x="1694" y="1926" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">0.45 s</text>
+<text x="1228" y="1944" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/backends/task_codegen.py</text>
+<text x="1236" y="1960" font-size="11" fill="#1f2933" class="m">ray.init()</text>
+<text x="1634" y="1960" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.40 s</text>
+<text x="1637" y="1960" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="1694" y="1960" font-size="11" fill="#5b6776" text-anchor="end" class="m">:356</text>
+<text x="1236" y="1975" font-size="11" fill="#1f2933" class="m">ray_util.placement_group(), ready</text>
+<text x="1634" y="1975" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.05 s</text>
+<text x="1637" y="1975" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="1694" y="1975" font-size="11" fill="#5b6776" text-anchor="end" class="m">:465</text>
+<rect x="706" y="1964" width="490" height="59" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="718" y="1986" font-size="14" fill="#1f2933" font-weight="700">GCS asks each raylet to reserve</text>
+<text x="726" y="2004" font-size="11" fill="#1f2933" class="m">Prepare and Commit BundleResources</text>
+<text x="1124" y="2004" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">6 calls each</text>
+<text x="1127" y="2004" font-size="8" fill="#5b6776" font-weight="700">S</text>
+<rect x="1216" y="2024" width="490" height="105" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1228" y="2046" font-size="14" fill="#1f2933" font-weight="700">Run check_ip on every node</text>
+<text x="1694" y="2046" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">0.66 s</text>
+<text x="1228" y="2064" font-size="12" fill="#5b6776" font-style="italic">Waits for new Ray worker processes.</text>
+<text x="1228" y="2079" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/backends/task_codegen.py</text>
+<text x="1236" y="2095" font-size="11" fill="#1f2933" class="m">@ray.remote check_ip()</text>
+<text x="1694" y="2095" font-size="11" fill="#5b6776" text-anchor="end" class="m">:553</text>
+<text x="1236" y="2110" font-size="11" fill="#1f2933" class="m">ray.get([check_ip...])</text>
+<text x="1694" y="2110" font-size="11" fill="#5b6776" text-anchor="end" class="m">:555</text>
+<rect x="1726" y="2084" width="490" height="74" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1738" y="2106" font-size="14" fill="#1f2933" font-weight="700">Ray worker process starts, runs check_ip</text>
+<text x="2204" y="2106" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">0.43 s</text>
+<text x="1746" y="2124" font-size="11" fill="#1f2933" class="m">default_worker.py starts</text>
+<text x="2144" y="2124" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">20.06–20.12</text>
+<text x="2147" y="2124" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="1746" y="2139" font-size="11" fill="#1f2933" class="m">get_node_ip_address()</text>
+<text x="2144" y="2139" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">20.43–20.61</text>
+<text x="2147" y="2139" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<rect x="1216" y="2224" width="490" height="105" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="1228" y="2246" font-size="14" fill="#1f2933" font-weight="700">Submit tasks, wait for each rank</text>
+<text x="1694" y="2246" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">2.45 s</text>
+<text x="1228" y="2264" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/backends/task_codegen.py</text>
+<text x="1236" y="2280" font-size="11" fill="#1f2933" class="m">ray.remote(run_bash_command...)</text>
+<text x="1694" y="2280" font-size="11" fill="#5b6776" text-anchor="end" class="m">:419</text>
+<text x="1236" y="2295" font-size="11" fill="#1f2933" class="m">ray.wait(futures), first rank</text>
+<text x="1634" y="2295" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">1.63 s</text>
+<text x="1637" y="2295" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="1694" y="2295" font-size="11" fill="#5b6776" text-anchor="end" class="m">:389</text>
+<text x="1236" y="2310" font-size="11" fill="#1f2933" class="m">ray.wait, other ranks</text>
+<text x="1634" y="2310" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">0.82 s</text>
+<text x="1637" y="2310" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<rect x="1726" y="2284" width="490" height="74" rx="6" fill="#fff4e8" stroke="#b4530a" stroke-width="2"/>
+<text x="1738" y="2306" font-size="14" fill="#1f2933" font-weight="700">Load the task function, run the command</text>
+<text x="2204" y="2306" font-size="13" fill="#b4530a" text-anchor="end" font-weight="700">2.45 s</text>
+<text x="1738" y="2324" font-size="12" fill="#b4530a" font-style="italic">Includes importing what the task function needs.</text>
+<text x="1746" y="2339" font-size="11" fill="#1f2933" class="m">subprocess_daemon.py starts</text>
+<text x="2144" y="2339" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">22.82–23.17</text>
+<text x="2147" y="2339" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<rect x="706" y="2284" width="490" height="59" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="718" y="2306" font-size="14" fill="#1f2933" font-weight="700">Head's own rank</text>
+<text x="1184" y="2306" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">2.31 s</text>
+<text x="726" y="2324" font-size="11" fill="#1f2933" class="m">subprocess_daemon.py starts</text>
+<text x="1124" y="2324" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">22.35</text>
+<text x="1127" y="2324" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<rect x="1216" y="2424" width="490" height="120" rx="6" fill="#ffffff" stroke="#c8d0d9" stroke-width="1"/>
+<text x="1228" y="2446" font-size="14" fill="#1f2933" font-weight="700">Remove the placement group, exit</text>
+<text x="1694" y="2446" font-size="13" fill="#0b6b43" text-anchor="end" font-weight="700">1.08 s</text>
+<text x="1228" y="2464" font-size="12" fill="#5b6776" font-style="italic">After the last Ray call: Ray's shutdown and Python's exit, not broken</text>
+<text x="1228" y="2479" font-size="12" fill="#5b6776" font-style="italic">down.</text>
+<text x="1228" y="2494" font-size="11" fill="#1e4e8c" font-weight="700" class="m">sky/backends/task_codegen.py</text>
+<text x="1236" y="2510" font-size="11" fill="#1f2933" class="m">ray_util.remove_placement_group()</text>
+<text x="1694" y="2510" font-size="11" fill="#5b6776" text-anchor="end" class="m">:407</text>
+<text x="1236" y="2525" font-size="11" fill="#1f2933" class="m">driver process exits</text>
+<text x="1634" y="2525" font-size="11" fill="#0b6b43" text-anchor="end" font-weight="700">24.24</text>
+<text x="1637" y="2525" font-size="8" fill="#5b6776" font-weight="700">H</text>
+<text x="24" y="2614" font-size="16" fill="#1f2933" font-weight="700">Timeline of one sky launch, run 5 of 6, with no setup stall (seconds from the start of sky launch, wall time 26.41 s; worker rows are medians of 5 pods)</text>
+<line x1="330.0" y1="2636" x2="330.0" y2="3030" stroke="#e3e7ec"/>
+<text x="330.0" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">0</text>
+<line x1="464.2857142857143" y1="2636" x2="464.2857142857143" y2="3030" stroke="#e3e7ec"/>
+<text x="464.2857142857143" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">2</text>
+<line x1="598.5714285714286" y1="2636" x2="598.5714285714286" y2="3030" stroke="#e3e7ec"/>
+<text x="598.5714285714286" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">4</text>
+<line x1="732.8571428571429" y1="2636" x2="732.8571428571429" y2="3030" stroke="#e3e7ec"/>
+<text x="732.8571428571429" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">6</text>
+<line x1="867.1428571428571" y1="2636" x2="867.1428571428571" y2="3030" stroke="#e3e7ec"/>
+<text x="867.1428571428571" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">8</text>
+<line x1="1001.4285714285714" y1="2636" x2="1001.4285714285714" y2="3030" stroke="#e3e7ec"/>
+<text x="1001.4285714285714" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">10</text>
+<line x1="1135.7142857142858" y1="2636" x2="1135.7142857142858" y2="3030" stroke="#e3e7ec"/>
+<text x="1135.7142857142858" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">12</text>
+<line x1="1270.0" y1="2636" x2="1270.0" y2="3030" stroke="#e3e7ec"/>
+<text x="1270.0" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">14</text>
+<line x1="1404.2857142857142" y1="2636" x2="1404.2857142857142" y2="3030" stroke="#e3e7ec"/>
+<text x="1404.2857142857142" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">16</text>
+<line x1="1538.5714285714287" y1="2636" x2="1538.5714285714287" y2="3030" stroke="#e3e7ec"/>
+<text x="1538.5714285714287" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">18</text>
+<line x1="1672.857142857143" y1="2636" x2="1672.857142857143" y2="3030" stroke="#e3e7ec"/>
+<text x="1672.857142857143" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">20</text>
+<line x1="1807.142857142857" y1="2636" x2="1807.142857142857" y2="3030" stroke="#e3e7ec"/>
+<text x="1807.142857142857" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">22</text>
+<line x1="1941.4285714285713" y1="2636" x2="1941.4285714285713" y2="3030" stroke="#e3e7ec"/>
+<text x="1941.4285714285713" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">24</text>
+<line x1="2075.714285714286" y1="2636" x2="2075.714285714286" y2="3030" stroke="#e3e7ec"/>
+<text x="2075.714285714286" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">26</text>
+<line x1="2210.0" y1="2636" x2="2210.0" y2="3030" stroke="#e3e7ec"/>
+<text x="2210.0" y="2632" font-size="11" fill="#5b6776" text-anchor="middle">28</text>
+<text x="24" y="2656" font-size="12" fill="#1f2933">Provisioner: mounts, runtime setup</text>
+<rect x="804.7" y="2642" width="85.6" height="20" rx="2" fill="#8a94a3"/>
+<text x="847.4703213146754" y="2656" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">1.28</text>
+<rect x="890.3" y="2642" width="222.2" height="20" rx="2" fill="#8a94a3"/>
+<text x="1001.3617535999842" y="2656" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">3.31 setup</text>
+<text x="24" y="2682" font-size="12" fill="#1f2933">Provisioner: skylet start</text>
+<rect x="1112.4" y="2668" width="194.3" height="20" rx="2" fill="#d9822b"/>
+<text x="1209.605327333723" y="2682" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">2.89 mostly imports</text>
+<text x="24" y="2708" font-size="12" fill="#1f2933">Provisioner: alive-nodes wait</text>
+<rect x="1124.6" y="2694" width="198.1" height="20" rx="2" fill="#d8dee6"/>
+<text x="1223.6700800486974" y="2708" font-size="10" fill="#1f2933" text-anchor="middle" font-weight="700">2.95</text>
+<text x="24" y="2734" font-size="12" fill="#1f2933">Head: patches</text>
+<rect x="770.9" y="2720" width="32.5" height="20" rx="2" fill="#8a94a3"/>
+<text x="24" y="2760" font-size="12" fill="#1f2933">Head: ray start</text>
+<rect x="824.5" y="2746" width="70.5" height="20" rx="2" fill="#d9822b"/>
+<text x="859.7720614501409" y="2760" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">1.05 imports</text>
+<rect x="895.0" y="2746" width="3.2" height="20" rx="2" fill="#3b6fb5"/>
+<rect x="898.2" y="2746" width="18.6" height="20" rx="2" fill="#3b6fb5"/>
+<rect x="916.8" y="2746" width="162.2" height="20" rx="2" fill="#d8dee6"/>
+<text x="997.872955288206" y="2760" font-size="10" fill="#1f2933" text-anchor="middle" font-weight="700">2.42 dashboard wait</text>
+<rect x="1079.0" y="2746" width="3.7" height="20" rx="2" fill="#3b6fb5"/>
+<rect x="1082.6" y="2746" width="73.3" height="20" rx="2" fill="#d8dee6"/>
+<text x="1119.264613560268" y="2760" font-size="10" fill="#1f2933" text-anchor="middle" font-weight="700">1.09</text>
+<text x="24" y="2786" font-size="12" fill="#1f2933">Head: dashboard</text>
+<rect x="924.4" y="2772" width="34.2" height="20" rx="2" fill="#d9822b"/>
+<text x="941.4733212334769" y="2786" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">0.51</text>
+<rect x="958.6" y="2772" width="41.6" height="20" rx="2" fill="#d9822b"/>
+<text x="979.3388918467931" y="2786" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">0.62</text>
+<rect x="1000.1" y="2772" width="72.4" height="20" rx="2" fill="#3b6fb5"/>
+<text x="1036.3096070289612" y="2786" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">1.08 modules</text>
+<text x="24" y="2812" font-size="12" fill="#1f2933">Head: dashboard agent</text>
+<rect x="1089.4" y="2798" width="63.9" height="20" rx="2" fill="#d9822b"/>
+<text x="1121.3157720225197" y="2812" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">0.95</text>
+<text x="24" y="2838" font-size="12" fill="#1f2933">Workers: patches</text>
+<rect x="780.1" y="2824" width="34.5" height="20" rx="2" fill="#8a94a3"/>
+<text x="24" y="2864" font-size="12" fill="#1f2933">Workers: wait for head port</text>
+<rect x="814.6" y="2850" width="88.9" height="20" rx="2" fill="#d8dee6"/>
+<text x="859.0319347381592" y="2864" font-size="10" fill="#1f2933" text-anchor="middle" font-weight="700">1.32</text>
+<text x="24" y="2890" font-size="12" fill="#1f2933">Workers: ray start</text>
+<rect x="903.5" y="2876" width="56.3" height="20" rx="2" fill="#d9822b"/>
+<text x="931.6607853344508" y="2890" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">0.84</text>
+<rect x="961.8" y="2876" width="204.2" height="20" rx="2" fill="#d8dee6"/>
+<text x="1063.9082997185844" y="2890" font-size="10" fill="#1f2933" text-anchor="middle" font-weight="700">3.04 wait for head</text>
+<rect x="1166.0" y="2876" width="6.9" height="20" rx="2" fill="#3b6fb5"/>
+<rect x="1172.9" y="2876" width="96.1" height="20" rx="2" fill="#d8dee6"/>
+<text x="1220.9860411712102" y="2890" font-size="10" fill="#1f2933" text-anchor="middle" font-weight="700">1.43 agent</text>
+<text x="24" y="2916" font-size="12" fill="#1f2933">Workers: dashboard agent</text>
+<rect x="1178.2" y="2902" width="50.2" height="20" rx="2" fill="#d9822b"/>
+<text x="1203.2651254108973" y="2916" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">0.75</text>
+<rect x="1228.4" y="2902" width="36.9" height="20" rx="2" fill="#d9822b"/>
+<text x="1246.7966445854731" y="2916" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">0.55</text>
+<text x="24" y="2942" font-size="12" fill="#1f2933">SkyPilot: between Ray and job</text>
+<rect x="1322.7" y="2928" width="233.1" height="20" rx="2" fill="#8a94a3"/>
+<text x="1439.2977281979151" y="2942" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">3.47 not Ray</text>
+<text x="24" y="2968" font-size="12" fill="#1f2933">Driver</text>
+<rect x="1555.9" y="2954" width="87.8" height="20" rx="2" fill="#d9822b"/>
+<text x="1599.7613438538142" y="2968" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">1.31 imports</text>
+<rect x="1643.7" y="2954" width="31.8" height="20" rx="2" fill="#3b6fb5"/>
+<rect x="1675.5" y="2954" width="44.3" height="20" rx="2" fill="#d8dee6"/>
+<text x="1697.5863107613154" y="2968" font-size="10" fill="#1f2933" text-anchor="middle" font-weight="700">0.66</text>
+<rect x="1720.2" y="2954" width="164.8" height="20" rx="2" fill="#0f766e"/>
+<text x="1802.6105385167257" y="2968" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">2.45 tasks</text>
+<rect x="1885.1" y="2954" width="72.2" height="20" rx="2" fill="#8a94a3"/>
+<text x="1921.1898049286433" y="2968" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">1.08</text>
+<text x="24" y="2994" font-size="12" fill="#1f2933">Head: Ray worker, task</text>
+<rect x="1647.0" y="2980" width="28.7" height="20" rx="2" fill="#d9822b"/>
+<rect x="1675.7" y="2980" width="154.8" height="20" rx="2" fill="#0f766e"/>
+<text x="1753.1297673497882" y="2994" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">2.31</text>
+<text x="24" y="3020" font-size="12" fill="#1f2933">Workers: Ray worker, task</text>
+<rect x="1677.6" y="3006" width="28.7" height="20" rx="2" fill="#d9822b"/>
+<rect x="1706.3" y="3006" width="164.7" height="20" rx="2" fill="#0f766e"/>
+<text x="1788.5963313920158" y="3020" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="700">2.45</text>
+<rect x="24" y="3035" width="22" height="14" rx="2" fill="#d9822b"/>
+<text x="52" y="3046" font-size="13" fill="#1f2933">Python start and imports</text>
+<rect x="252" y="3035" width="22" height="14" rx="2" fill="#3b6fb5"/>
+<text x="280" y="3046" font-size="13" fill="#1f2933">Ray processes</text>
+<rect x="403" y="3035" width="22" height="14" rx="2" fill="#d8dee6"/>
+<text x="431" y="3046" font-size="13" fill="#1f2933">Waiting</text>
+<rect x="512" y="3035" width="22" height="14" rx="2" fill="#0f766e"/>
+<text x="540" y="3046" font-size="13" fill="#1f2933">Running the task</text>
+<rect x="684" y="3035" width="22" height="14" rx="2" fill="#8a94a3"/>
+<text x="712" y="3046" font-size="13" fill="#1f2933">SkyPilot or other</text>
+<text x="24" y="3080" font-size="16" fill="#1f2933" font-weight="700">Durations across all 6 launches (seconds; worker values are medians of 5 pods per launch)</text>
+<rect x="24" y="3094" width="740" height="26" fill="#223548" rx="4"/>
+<text x="34" y="3112" font-size="13" fill="#ffffff" font-weight="700">Step</text>
+<text x="464" y="3112" font-size="13" fill="#ffffff" font-weight="700">Run 5</text>
+<text x="554" y="3112" font-size="13" fill="#ffffff" font-weight="700">Median</text>
+<text x="644" y="3112" font-size="13" fill="#ffffff" font-weight="700">Range</text>
+<text x="34" y="3138" font-size="12" fill="#1f2933">Head: ray start → GCS listening</text>
+<text x="464" y="3138" font-size="12" fill="#0b6b43" font-weight="700">1.10</text>
+<text x="554" y="3138" font-size="12" fill="#0b6b43" font-weight="700">1.11</text>
+<text x="644" y="3138" font-size="12" fill="#5b6776">1.02–1.18</text>
+<text x="34" y="3156" font-size="12" fill="#1f2933">Head: GCS listening → raylet first log</text>
+<text x="464" y="3156" font-size="12" fill="#0b6b43" font-weight="700">2.75</text>
+<text x="554" y="3156" font-size="12" fill="#0b6b43" font-weight="700">2.82</text>
+<text x="644" y="3156" font-size="12" fill="#5b6776">2.52–2.98</text>
+<text x="34" y="3174" font-size="12" fill="#1f2933">  of which poll for the dashboard address</text>
+<text x="464" y="3174" font-size="12" fill="#0b6b43" font-weight="700">2.42</text>
+<text x="554" y="3174" font-size="12" fill="#0b6b43" font-weight="700">2.51</text>
+<text x="644" y="3174" font-size="12" fill="#5b6776">2.30–2.72</text>
+<text x="34" y="3192" font-size="12" fill="#1f2933">Head: raylet first log → registered</text>
+<text x="464" y="3192" font-size="12" fill="#0b6b43" font-weight="700">1.09</text>
+<text x="554" y="3192" font-size="12" fill="#0b6b43" font-weight="700">0.95</text>
+<text x="644" y="3192" font-size="12" fill="#5b6776">0.87–1.09</text>
+<text x="34" y="3210" font-size="12" fill="#1f2933">Workers: patches done → ray start</text>
+<text x="464" y="3210" font-size="12" fill="#0b6b43" font-weight="700">1.32</text>
+<text x="554" y="3210" font-size="12" fill="#0b6b43" font-weight="700">1.34</text>
+<text x="644" y="3210" font-size="12" fill="#5b6776">0.89–1.46</text>
+<text x="34" y="3228" font-size="12" fill="#1f2933">Workers: ray start imports</text>
+<text x="464" y="3228" font-size="12" fill="#0b6b43" font-weight="700">0.84</text>
+<text x="554" y="3228" font-size="12" fill="#0b6b43" font-weight="700">0.85</text>
+<text x="644" y="3228" font-size="12" fill="#5b6776">0.62–1.11</text>
+<text x="34" y="3246" font-size="12" fill="#1f2933">Workers: poll for the head's node record</text>
+<text x="464" y="3246" font-size="12" fill="#0b6b43" font-weight="700">3.04</text>
+<text x="554" y="3246" font-size="12" fill="#0b6b43" font-weight="700">2.84</text>
+<text x="644" y="3246" font-size="12" fill="#5b6776">2.73–3.15</text>
+<text x="34" y="3264" font-size="12" fill="#1f2933">Workers: head registered → poll notices</text>
+<text x="464" y="3264" font-size="12" fill="#0b6b43" font-weight="700">0.15</text>
+<text x="554" y="3264" font-size="12" fill="#0b6b43" font-weight="700">0.08</text>
+<text x="644" y="3264" font-size="12" fill="#5b6776">0.04–0.15</text>
+<text x="34" y="3282" font-size="12" fill="#1f2933">Workers: raylet first log → registered</text>
+<text x="464" y="3282" font-size="12" fill="#0b6b43" font-weight="700">1.43</text>
+<text x="554" y="3282" font-size="12" fill="#0b6b43" font-weight="700">1.43</text>
+<text x="644" y="3282" font-size="12" fill="#5b6776">1.30–1.54</text>
+<text x="34" y="3300" font-size="12" fill="#1f2933">  of which agent Python start and imports</text>
+<text x="464" y="3300" font-size="12" fill="#0b6b43" font-weight="700">0.75</text>
+<text x="554" y="3300" font-size="12" fill="#0b6b43" font-weight="700">0.76</text>
+<text x="644" y="3300" font-size="12" fill="#5b6776">0.66–0.92</text>
+<text x="34" y="3318" font-size="12" fill="#1f2933">  of which agent get_all_modules</text>
+<text x="464" y="3318" font-size="12" fill="#0b6b43" font-weight="700">0.55</text>
+<text x="554" y="3318" font-size="12" fill="#0b6b43" font-weight="700">0.50</text>
+<text x="644" y="3318" font-size="12" fill="#5b6776">0.45–0.55</text>
+<text x="34" y="3336" font-size="12" fill="#1f2933">Head ray start → last worker registered</text>
+<text x="464" y="3336" font-size="12" fill="#0b6b43" font-weight="700">7.39</text>
+<text x="554" y="3336" font-size="12" fill="#0b6b43" font-weight="700">7.32</text>
+<text x="644" y="3336" font-size="12" fill="#5b6776">6.84–7.59</text>
+<text x="34" y="3354" font-size="12" fill="#1f2933">Driver start → first rank done</text>
+<text x="464" y="3354" font-size="12" fill="#0b6b43" font-weight="700">4.08</text>
+<text x="554" y="3354" font-size="12" fill="#0b6b43" font-weight="700">3.72</text>
+<text x="644" y="3354" font-size="12" fill="#5b6776">3.46–4.08</text>
+<text x="24" y="3396" font-size="14" fill="#5b6776">Six sky launch runs on 6 pods, code ej-prj-i4-1 925abd467 (0.2 s head-node poll), Ray 2.56.1, kind on one machine, so all pods share a clock. The timeline is one real launch; the table shows how much each stage</text>
+<text x="24" y="3416" font-size="14" fill="#5b6776">varies. Runtime setup was 2.64, 3.31 and 1.62 s in three launches, and 6.73, 11.51 and 24.1 s in the others, likely uv dry-run stalls, which these runs did not check. There is no comparison or significance test</text>
+<text x="24" y="3436" font-size="14" fill="#5b6776">here.</text>
+<text x="24" y="3460" font-size="14" fill="#5b6776">No sleep to shorten in the raylet's wait for the dashboard agent: no agent recorded a sleep before writing its port, in any launch, and the raylet polls the port file every 50 ms in C++</text>
+<text x="24" y="3480" font-size="14" fill="#5b6776">(src/ray/util/port_persistence.h). The time is the agent's Python start and imports, plus get_all_modules importing every module under ray.dashboard.modules.</text>
+<text x="24" y="3504" font-size="14" fill="#5b6776">The trace image adds timers to every Python process. Never benchmark latency with it. Who called whom in S rows is inferred from sent and received counts in an earlier trace. Not shown: tasks with setup,</text>
+<text x="24" y="3524" font-size="14" fill="#5b6776">failures, and cancellation.</text>
+</svg>

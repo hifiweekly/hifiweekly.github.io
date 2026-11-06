@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: launch latency changes in ej-prj-i4-*</title>
+<meta name="description" content="Five changes in the ej-prj-i4-* branches, all acting while a cluster is provisioned. Against master 796c5bcc8 on a 6-node kind cluster, sky launch drops from 45.67 s to 22.44 s and sky jobs launch from 74.95 s to 30.84 s.">
+<meta name="author" content="Edward Jiang">
+<link rel="icon" href="../favicon.ico">
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2e0;
+  --accent: #2f5bd3; --code-bg: #f0f0ed; --th-bg: #f3f3f1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+    --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151517; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #333338;
+  --accent: #7c9cff; --code-bg: #26262a; --th-bg: #26262a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+nav { max-width: 920px; margin: 0 auto; padding: 16px 16px 0; font-size: 14px; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--accent); }
+main {
+  max-width: 920px; margin: 12px auto 64px; padding: 28px 32px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+@media (max-width: 640px) { main { margin: 8px 16px 48px; padding: 20px 16px; } }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 16px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 17px; margin: 28px 0 10px; }
+h4 { font-size: 15px; margin: 22px 0 8px; }
+.header-anchor { color: var(--muted); text-decoration: none; opacity: 0; margin-left: -0.9em; padding-right: 0.25em; font-weight: 400; }
+h1:hover .header-anchor, h2:hover .header-anchor, h3:hover .header-anchor, h4:hover .header-anchor { opacity: 1; }
+a { color: var(--accent); }
+p, ul, ol { margin: 0 0 14px; }
+li { margin: 3px 0; }
+li > ul, li > ol { margin: 4px 0; }
+code {
+  font: 0.88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto; margin: 0 0 16px;
+}
+pre code { background: none; padding: 0; font-size: 13px; overflow-wrap: normal; }
+pre.mermaid { background: var(--panel); text-align: center; }
+.table-wrap { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; font-size: 14px; min-width: 50%; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--th-bg); font-weight: 600; }
+blockquote { margin: 0 0 14px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+img { max-width: 100%; }
+</style>
+</head>
+<body>
+<nav><a href="../">&larr; hifiweekly</a></nav>
+<main>
+<h1 id="design-launch-latency-changes-in-ej-prj-i4-">Design: launch latency changes in <code>ej-prj-i4-*</code> <a class="header-anchor" href="#design-launch-latency-changes-in-ej-prj-i4-">#</a></h1>
+<p>This doc continues <a href="launch_latency_design_after_job2.html"><code>launch_latency_design_after_job2.md</code></a> and <a href="empty_storage_check_reuse_design.html"><code>empty_storage_check_reuse_design.md</code></a>, which stop at <code>ej-prj-i3-2</code>. It covers the five changes in the <code>ej-prj-i4-*</code> branches, all of which act while a cluster is provisioned.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Commit</th>
+<th>Change</th>
+<th>Layer</th>
+<th>First in</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>925abd467</code></td>
+<td>Poll for the head node every 0.2 s</td>
+<td>Ray patch</td>
+<td><code>ej-prj-i4-1</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>d6fa30e94</code></td>
+<td>Start skylet without importing <code>sky</code></td>
+<td>Skylet</td>
+<td><code>ej-prj-i4-2</code> (<code>afd94a698</code>), <code>ej-prj-i4-4</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>8bfc6e4c6</code></td>
+<td>Install the SkyPilot wheel without the network</td>
+<td>Pod setup</td>
+<td><code>ej-prj-i4-3</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>1266cccd2</code></td>
+<td>Don't start the Ray dashboard</td>
+<td>Ray patches, <code>ray start</code></td>
+<td><code>ej-prj-i4-5</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>fa974f21e</code></td>
+<td>Retry Ray's local socket connects every 0.2 s</td>
+<td><code>ray start</code></td>
+<td><code>ej-prj-i4-5</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Branch state:</strong></p>
+<ul>
+<li>Every <code>ej-prj-i4-*</code> branch is pushed to <code>fork</code>. <code>ej-prj-i4-5</code> (<code>fa974f21e</code>) contains all five changes, on top of <code>ej-prj-i3-2</code> and master <code>796c5bcc8</code>.</li>
+<li>A one-line mypy fix for change 2 is in the working tree and not committed (§6).</li>
+<li>Nothing here is merged, and the bytecode image the benchmarks use isn't published.</li>
+</ul>
+<p>Ray file and line references are to Ray 2.56.1, the version SkyPilot pins (<code>sky/skylet/constants.py:58</code>).</p>
+<h2 id="1-summary">1. Summary <a class="header-anchor" href="#1-summary">#</a></h2>
+<p>With all five changes, a 6-node launch on kind drops against master <code>796c5bcc8</code>:</p>
+<pre><code>┌──────────────────────────────────┬─────────────────────┬─────────────────────┬─────────────────┬────────┐
+│ Median (range)                   │ Master              │ ej-prj-i4-5         │ Change          │ p      │
+├──────────────────────────────────┼─────────────────────┼─────────────────────┼─────────────────┼────────┤
+│ sky launch wall time             │ 45.67 s (43.3–55.3) │ 22.44 s (20.9–25.2) │ −23.23 s (−51%) │ 0.0002 │
+│ sky jobs launch client total     │ 74.95 s (70.8–83.4) │ 30.84 s (30.5–32.9) │ −44.11 s (−59%) │ 0.0002 │
+│ Phase D: provisioning → submit   │ 33.08 s             │ 10.43 s             │ −22.64 s        │ 0.0002 │
+│   Ray wait + skylet start        │ 16.84 s             │  1.06 s             │ −15.78 s        │ 0.0002 │
+│   Runtime setup                  │  7.98 s (2.5–24.3)  │  2.00 s (1.8–2.3)   │  −5.99 s        │ 0.0002 │
+└──────────────────────────────────┴─────────────────────┴─────────────────────┴─────────────────┴────────┘
+</code></pre>
+<p>That comparison includes every change since master (the <code>ej-prj-i2-*</code> and <code>ej-prj-i3-*</code> work too) and the bytecode image. Against <code>ej-prj-i3-2</code>, the <code>ej-prj-i4-*</code> changes take <code>sky jobs launch</code> from about 34 s to about 31 s and <code>sky launch</code> from about 27 s to about 22.5 s.</p>
+<ul>
+<li><strong>The Ray wait is nearly gone.</strong> Ray wait + skylet start was 4.2 s on <code>ej-prj-i3-2</code> and is 1.1 s now. Most of that comes from not starting the Ray dashboard (change 4), which every node's raylet waited for.</li>
+<li><strong>Runtime setup no longer stalls.</strong> Pods install the wheel offline (change 3), so a slow PyPI request on one pod no longer delays the launch by 5–10 s.</li>
+<li><strong>Two changes only count together with others.</strong> The lean skylet launcher (change 2) saves 2.7 s of skylet time, but the launch waited for Ray until change 4. The connect retry (change 5) makes Ray ready 0.46 s sooner, but Ray now finishes about when the provisioner starts waiting for it.</li>
+<li><strong>What sets the launch now is SkyPilot's own work</strong> (§9): file mounts and runtime setup before the Ray wait, and job setup after it.</li>
+<li><strong>The cost:</strong> Ray's dashboard, metrics export and Ray job and state APIs are gone on SkyPilot clusters (§7).</li>
+</ul>
+<h2 id="2-starting-point">2. Starting point <a class="header-anchor" href="#2-starting-point">#</a></h2>
+<p>On <code>ej-prj-i3-2</code>, phase D of a 6-node <code>sky jobs launch</code> was about 14.4 s, of which Ray wait + skylet start was 4.2 s. A trace of Ray's startup (<code>ray_api_trace_report.md</code>, <a href="sky_ray_time_workflow_i4_1_v2.svg"><code>sky_ray_time_workflow_i4_1_v2.svg</code></a>) showed where that went:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Where</th>
+<th>What</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Head, <code>ray start</code></td>
+<td>Python start and imports of the Ray CLI, then GCS (about 30 ms)</td>
+<td>about 1.1 s</td>
+</tr>
+<tr>
+<td>Head, <code>ray start</code></td>
+<td>Polling every 0.1 s until the dashboard publishes its address</td>
+<td>2.4–2.6 s</td>
+</tr>
+<tr>
+<td>Head and workers, raylet</td>
+<td>Waiting for the dashboard agent, which imports every dashboard module</td>
+<td>about 1 s</td>
+</tr>
+<tr>
+<td>Workers, <code>ray start</code></td>
+<td>Sleeping 2 s between checks for the head's node record</td>
+<td>0–2 s</td>
+</tr>
+<tr>
+<td>Provisioner, skylet start</td>
+<td><code>python -m sky.skylet.attempt_skylet</code>, which runs <code>sky/__init__.py</code></td>
+<td>2.6–3.0 s</td>
+</tr>
+<tr>
+<td>Provisioner, runtime setup</td>
+<td>Each pod's <code>uv pip install --dry-run</code>, over 100 PyPI requests</td>
+<td>1.6–24 s</td>
+</tr>
+</tbody>
+</table></div>
+<p>Two things that looked like candidates weren't:</p>
+<ul>
+<li><strong>The raylet's wait for the agents has no sleep to shorten.</strong> It polls the agents' port file every 50 ms in C++ (<code>port_persistence.h</code>). In 6 traced launches, no agent slept before writing its port. The time is the agents starting up.</li>
+<li><strong>The worker's read of the session name never blocked.</strong> Workers don't wait for the dashboard's address either: they wait for the head's node record, which the head registers only after the dashboard wait.</li>
+</ul>
+<h2 id="3-design">3. Design <a class="header-anchor" href="#3-design">#</a></h2>
+<h3 id="31-change-1-poll-for-the-head-node-every-02-s">3.1 Change 1: poll for the head node every 0.2 s <a class="header-anchor" href="#31-change-1-poll-for-the-head-node-every-02-s">#</a></h3>
+<p><strong>Mechanism.</strong> A worker's <code>ray start</code> reads the head's node record from GCS before it starts its raylet (<code>ray/_private/node.py:270</code>). <code>get_all_node_info_until_retrieved</code> sleeps 2 s between attempts (<code>ray/_private/utils.py:1260</code>). A worker that checks just before the head registers waits up to 2 s longer than it needs to.</p>
+<p><strong>Design.</strong> A new Ray patch, <code>sky/skylet/ray_patches/utils.py.patch</code>, changes the sleep to 0.2 s and the attempts to <code>num_retries * 10</code>, so the time before Ray gives up is unchanged. It's registered in <code>apply_patches._PATCHES</code>, so it's applied with the other Ray patches when a pod starts.</p>
+<p><strong>Why a patch.</strong> The sleep and attempt count are literals in Python, not Ray settings.</p>
+<h3 id="32-change-2-start-skylet-without-importing-sky">3.2 Change 2: start skylet without importing <code>sky</code> <a class="header-anchor" href="#32-change-2-start-skylet-without-importing-sky">#</a></h3>
+<p><strong>Mechanism.</strong> <code>start_skylet_on_head_node</code> runs <code>MAYBE_SKYLET_RESTART_CMD</code>, which was <code>python -m sky.skylet.attempt_skylet</code>. <code>-m</code> runs <code>sky/__init__.py</code> first, which imports about 2,170 modules and takes 2–3 s on a pod. <code>attempt_skylet.py</code> itself does a few milliseconds of work: it checks whether skylet is running at the right version and starts it if not.</p>
+<p><strong>Design.</strong></p>
+<ul>
+<li><strong><code>sky/skylet/launch_constants.py</code> (new)</strong> holds the constants <code>attempt_skylet.py</code> needs: the runtime directory, the Python and Ray command paths, and the environment variable prefix. It imports nothing from <code>sky</code>. <code>constants.py</code> re-exports each one, so no other code changes.</li>
+<li><strong><code>attempt_skylet.py</code></strong> loads <code>launch_constants.py</code> by file path, and has its own small copies of <code>get_runtime_dir_path</code> and <code>find_free_port</code>.</li>
+<li><strong><code>MAYBE_SKYLET_RESTART_CMD</code></strong> runs the script by path with <code>runpy.run_path</code>, found through <code>importlib.util.find_spec('sky')</code>, which locates a top-level package without running it. A cluster with an older wheel runs its older script the same way.</li>
+</ul>
+<p><strong>Rejected:</strong> stubbing <code>sky/__init__.py</code> so that <code>-m</code> imports less. A test of this failed on a circular import through <code>sky/exceptions.py</code> → <code>sky.backends</code>, and any stub would have to track <code>__init__.py</code>.</p>
+<h3 id="33-change-3-install-the-skypilot-wheel-without-the-network">3.3 Change 3: install the SkyPilot wheel without the network <a class="header-anchor" href="#33-change-3-install-the-skypilot-wheel-without-the-network">#</a></h3>
+<p><strong>Mechanism.</strong> Runtime setup waits for every pod. Each pod ran <code>uv pip install --dry-run 'skypilot[kubernetes,remote]'</code> to warm uv's cache, then installed the wheel. The dry run sent over 100 revalidation requests to PyPI, even when the image already had everything. One request hanging until uv's 10 s connect timeout, on any pod, delayed the launch. This happened in about a third of launches in some sessions. Changing DNS settings and resetting the DNS server didn't fix it.</p>
+<p><strong>Design.</strong></p>
+<ul>
+<li><strong><code>sky/skylet/constants.py</code>:</strong> install the wheel with <code>uv pip install --offline</code> first, and fall back to the normal install if what's installed and cached can't satisfy it.</li>
+<li><strong><code>kubernetes-ray.yml.j2</code>:</strong> run the dry run only when the image has no uv cache (<code>~/.cache/uv/archive-v0</code> empty). Images without a cache behave as before.</li>
+</ul>
+<p><strong>Scope.</strong> The wheel command is shared by every cloud, but the dry run skip is Kubernetes only. Neither has run on a VM cloud.</p>
+<h3 id="34-change-4-dont-start-the-ray-dashboard">3.4 Change 4: don't start the Ray dashboard <a class="header-anchor" href="#34-change-4-dont-start-the-ray-dashboard">#</a></h3>
+<p><strong>Mechanism.</strong> On the head, <code>ray start</code> starts the dashboard, then polls every 0.1 s (<code>ray/_private/services.py:1422</code>) until the dashboard publishes its address (<code>ray/dashboard/head.py:487</code>). That happens after the dashboard loads its modules and starts its subprocess modules. Only then does <code>ray start</code> start the raylet. On every node, the raylet's <code>NodeManager</code> blocks until the dashboard agent and the runtime env agent write their ports (<code>node_manager.cc:286-287</code>). The dashboard agent imports every module under <code>ray.dashboard.modules</code> first.</p>
+<p>The worker raylets wait for the head too, indirectly: a worker's <code>ray start</code> waits for the head's node record (§3.1), which comes after the head's dashboard wait.</p>
+<p><strong>Design.</strong> SkyPilot's head and worker <code>ray start</code> commands set <code>SKYPILOT_RAY_NO_DASHBOARD=1</code>, which two new Ray patches read:</p>
+<ul>
+<li><strong><code>services.py.patch</code>:</strong> <code>start_api_server</code> returns <code>None, None</code> at once, without starting the dashboard. <code>start_raylet</code> starts the dashboard agent with <code>--minimal</code>.</li>
+<li><strong><code>agent.py.patch</code>:</strong> the agent loads no modules.</li>
+</ul>
+<p>The raylet still starts both agents, so its wait is the agents' Python start and imports, about 0.6–0.7 s each.</p>
+<p><strong>Rejected:</strong></p>
+<ul>
+<li><strong><code>--include-dashboard=false</code>:</strong> Ray still starts a dashboard process for usage stats (<code>--modules-to-load=UsageStatsHead --disable-frontend</code>), and the poll still runs. Tested alone, it saved about 1 s in Ray and nothing in the launch.</li>
+<li><strong><code>--minimal</code> alone:</strong> the agent still walks the dashboard modules.</li>
+<li><strong>Making the raylet not wait for the agents:</strong> that's in C++, and the agents run in parallel, so it would save at most about 0.7 s.</li>
+</ul>
+<p><strong>No opt-out.</strong> The variable is set in SkyPilot's commands, so a user can't keep the dashboard. Adding a config option for it is open (§9).</p>
+<h3 id="35-change-5-retry-rays-local-socket-connects-every-02-s">3.5 Change 5: retry Ray's local socket connects every 0.2 s <a class="header-anchor" href="#35-change-5-retry-rays-local-socket-connects-every-02-s">#</a></h3>
+<p><strong>Mechanism.</strong> Each raylet starts its plasma store on its own thread (<code>object_manager.cc:49</code>) and gives it 500 µs (<code>:57</code>). The main thread then builds the <code>ObjectManager</code>, which connects to the store's socket (<code>:143</code>). The store thread first maps 500 MB of shared memory (<code>store_runner.cc:109</code>) and only then binds the socket (<code>store.cc:80</code>), so the connect often comes first and fails. <code>ConnectSocketRetry</code> then sleeps <code>raylet_client_connect_timeout_milliseconds</code>, 1000 ms by default, before retrying (<code>client_connection.cc:87</code>). Ray logs nothing for the first failure, but <code>raylet.out</code> shows an exact 1.00 s gap between &quot;Starting object store&quot; and &quot;ObjectManager server started&quot;.</p>
+<p>In 6 traced launches, this hit 13 of 36 raylets, and the last worker to register was always one of them. With the dashboard on, the agent wait hid it (9 of 36 raylets in an earlier trace).</p>
+<p><strong>Design.</strong> One constant, <code>_RAY_CONNECT_RETRY_ENV</code> in <code>sky/provision/instance_setup.py</code>, added to the head and worker <code>ray start</code> commands:</p>
+<pre><code>RAY_raylet_client_connect_timeout_milliseconds=200 RAY_raylet_client_num_connect_attempts=50
+</code></pre>
+<ul>
+<li>Ray reads every <code>RAY_CONFIG</code> value from the environment variable <code>RAY_&lt;name&gt;</code> when the process starts (<code>ray_config.h:74</code>). <code>ray start</code> passes its environment to the raylet, and the raylet to its Ray workers.</li>
+<li><strong>Why the attempt count too.</strong> The plasma connect passes no attempt count (<code>client.cc:663</code> ignores the 300 that <code>Connect</code> receives), so it uses the default of 10. Ray workers connecting to the raylet use the same pair (<code>raylet_ipc_client.cc:83</code>, <code>core_worker_process.cc:929, 957</code>). With 200 ms alone, they'd give up after about 2 s instead of 10. 50 attempts keeps 10 s.</li>
+<li>Ray's own Docker tests set the same pair, to 100 ms (<code>python/ray/tests/conftest_docker.py:156</code>).</li>
+</ul>
+<p><strong>Rejected:</strong></p>
+<ul>
+<li><strong><code>--system-config</code> on the head:</strong> it sends settings to all nodes through GCS, but it's head-only and it hasn't been checked whether a worker's raylet reads it before the plasma connect.</li>
+<li><strong>A C++ fix</strong> (wait until the store listens): the right fix, but SkyPilot's patches only change Ray's Python files.</li>
+</ul>
+<h2 id="4-which-phase-each-change-affects">4. Which phase each change affects <a class="header-anchor" href="#4-which-phase-each-change-affects">#</a></h2>
+<p>All five act in phase D of <code>sky jobs launch</code> (provisioning → job submitted), and in the provisioning part of <code>sky launch</code>.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Change</th>
+<th>Stage of phase D</th>
+<th>Head or workers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. Head-node poll</td>
+<td>Ray wait</td>
+<td>Workers</td>
+</tr>
+<tr>
+<td>2. Lean skylet launcher</td>
+<td>Skylet start, alongside the Ray wait</td>
+<td>Head</td>
+</tr>
+<tr>
+<td>3. Offline wheel install</td>
+<td><code>setup_runtime_on_cluster</code></td>
+<td>All pods</td>
+</tr>
+<tr>
+<td>4. No dashboard</td>
+<td>Ray wait</td>
+<td>Head and workers</td>
+</tr>
+<tr>
+<td>5. Connect retry</td>
+<td>Ray wait</td>
+<td>All raylets</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>The Ray wait and skylet start run together</strong> (<code>_run_alongside</code> in <code>provisioner.py</code>), so the stage takes the longer of the two. That's why change 2 didn't help until change 4 made Ray's part shorter than skylet's old 3 s.</p>
+<h2 id="5-failure-handling">5. Failure handling <a class="header-anchor" href="#5-failure-handling">#</a></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Change</th>
+<th>If it doesn't apply</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>The patch fails to apply</td>
+<td><code>apply_patches.py</code> fails the pod's setup, as for the other Ray patches</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>find_spec('sky')</code> finds nothing</td>
+<td>The skylet start command fails, as <code>-m</code> would on a missing package</td>
+</tr>
+<tr>
+<td>3</td>
+<td>The offline install can't resolve</td>
+<td>Falls back to the normal install; if that fails too, setup fails as before</td>
+</tr>
+<tr>
+<td>3</td>
+<td>The image has no uv cache</td>
+<td>Runs the dry run, as before</td>
+</tr>
+<tr>
+<td>4</td>
+<td>The variable isn't set (another tool's <code>ray start</code>)</td>
+<td>Ray starts the dashboard as normal</td>
+</tr>
+<tr>
+<td>5</td>
+<td>The race is lost every time on a slow node</td>
+<td>Ray retries for about 10 s, as before, then fails the raylet</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="6-compatibility">6. Compatibility <a class="header-anchor" href="#6-compatibility">#</a></h2>
+<ul>
+<li><strong>Existing clusters:</strong> changes 1, 4 and 5 apply only when Ray starts on a pod with the new patches and commands. An existing cluster keeps its dashboard until Ray restarts.</li>
+<li><strong>Older wheels:</strong> change 2's command runs whatever <code>attempt_skylet.py</code> the cluster's wheel has, by path, so an older wheel still works.</li>
+<li><strong>Other clouds:</strong> changes 1, 2, 4 and 5 are in the shared <code>ray start</code> and skylet commands, and change 3's wheel command is shared too. None has run on a VM cloud.</li>
+<li><strong>API:</strong> no API, schema or skylet version change.</li>
+<li><strong>mypy:</strong> change 2 adds 3 errors, all <code>Cannot determine type of &quot;SKYPILOT_ENV_VAR_PREFIX&quot;</code> in <code>sky/skypilot_config.py</code>. mypy can't infer the re-export's type through the import cycle. Annotating it in <code>constants.py</code> (<code>SKYPILOT_ENV_VAR_PREFIX: str = ...</code>) fixes it, and is in the working tree.</li>
+</ul>
+<h2 id="7-risks">7. Risks <a class="header-anchor" href="#7-risks">#</a></h2>
+<ul>
+<li><strong>Lost Ray features (change 4):</strong> Ray's dashboard UI (port 8266, which <code>docs/source/reference/architecture/internals.rst:63</code> mentions), metrics export, and Ray's job and state APIs (<code>ray job</code>, <code>ray list</code>, <code>ray summary</code>). SkyPilot doesn't use them, as far as found. Users who port-forward to the dashboard lose it, with no opt-out.</li>
+<li><strong>Ray upgrades (changes 1 and 4):</strong> the patches are diffs against Ray 2.56.1's files and need rechecking on each Ray upgrade.</li>
+<li><strong>Slow nodes (change 5):</strong> the time before Ray gives up stays about 10 s, but the attempts are 5 times as frequent.</li>
+<li><strong>Offline install (change 3):</strong> if the offline install succeeds with an older cached dependency than the network install would pick, the pod could get different versions. The fallback only covers an install that fails.</li>
+<li><strong>Lean launcher (change 2):</strong> <code>launch_constants.py</code> must keep matching <code>constants.py</code>. A unit test checks this.</li>
+</ul>
+<h2 id="8-results">8. Results <a class="header-anchor" href="#8-results">#</a></h2>
+<p>All on one kind node with 12 cores, a one-line <code>echo</code> on 6 nodes, the bytecode image with <code>IfNotPresent</code>, and managed jobs in consolidation mode. p-values are two-sided permutation tests on means.</p>
+<h3 id="81-each-change">8.1 Each change <a class="header-anchor" href="#81-each-change">#</a></h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Change</th>
+<th>A/B</th>
+<th>Measure</th>
+<th>Before</th>
+<th>After</th>
+<th>p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>d771518f1</code> vs <code>925abd467</code>, 8 runs per arm</td>
+<td><code>sky launch</code> wall time</td>
+<td>26.81 s</td>
+<td>25.88 s</td>
+<td>0.0048</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td><code>sky jobs launch</code> total</td>
+<td>35.67 s</td>
+<td>33.89 s</td>
+<td>0.18</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>ej-prj-i4-3</code> vs <code>-i4-4</code>, 16 per side</td>
+<td>Skylet start on its own</td>
+<td>3.06 s</td>
+<td>0.35 s</td>
+<td>&lt; 0.0001</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td><code>sky jobs launch</code> total</td>
+<td>34.43 s</td>
+<td>34.24 s</td>
+<td>0.28</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>925abd467</code> without vs with, 16 / 8 per side</td>
+<td><code>sky launch</code> runtime setup</td>
+<td>3.05 s (1.6–12.0)</td>
+<td>1.64 s (1.5–2.3)</td>
+<td>&lt; 0.0001</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td><code>sky launch</code> wall time</td>
+<td>26.58 s</td>
+<td>25.95 s</td>
+<td>0.0073</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>Setup over 5 s</td>
+<td>3 of 24 runs</td>
+<td>0 of 24</td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>d6fa30e94</code> without vs with, 16 per side</td>
+<td><code>sky jobs launch</code> total</td>
+<td>34.33 s</td>
+<td>30.76 s</td>
+<td>&lt; 0.0001</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td><code>sky launch</code> wall time</td>
+<td>26.10 s</td>
+<td>22.98 s</td>
+<td>&lt; 0.0001</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>GCS → last worker registered</td>
+<td>5.99 s</td>
+<td>3.38 s</td>
+<td>&lt; 0.0001</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Traces, 6 launches each, separate sessions</td>
+<td>GCS → last worker registered</td>
+<td>3.48 s</td>
+<td>3.02 s</td>
+<td>not tested</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>Alive-nodes wait</td>
+<td>1.83 s</td>
+<td>0.50 s</td>
+<td>not tested</td>
+</tr>
+<tr>
+<td></td>
+<td>Master benchmarks, branch sides, separate sessions</td>
+<td>Phase D</td>
+<td>11.10 s</td>
+<td>10.43 s</td>
+<td>0.032</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td><code>sky jobs launch</code> total</td>
+<td>31.20 s</td>
+<td>30.84 s</td>
+<td>0.55</td>
+</tr>
+</tbody>
+</table></div>
+<p>Results: <code>bench_results/20261104-lean-launcher-ab/</code>, <code>20261105-i4-3-vs-i4-4/</code>, <code>20261105-uv-offline/</code>, <code>20261105-no-dashboard-ab/</code>, <code>20261105-ray-timeline-v3/</code> and <code>-v4/</code>, <code>20261105-i4-5-vs-master/</code> and <code>20261105-i4-5b-vs-master/</code>.</p>
+<p><strong>Change 5 has no same-session A/B.</strong> Its mechanism is confirmed (6 of 18 raylets lost the race and recovered after 0.17–0.22 s instead of 1.00 s, in <code>20261105-plasma-retry-check/</code>), but its effect on launch totals isn't measured.</p>
+<h3 id="82-all-changes-against-master">8.2 All changes against master <a class="header-anchor" href="#82-all-changes-against-master">#</a></h3>
+<p>The table in §1. Full report: <code>report_i4_5b_vs_master.md</code>. Every branch run beat every master run, on both benchmarks.</p>
+<h3 id="83-where-the-time-goes-now">8.3 Where the time goes now <a class="header-anchor" href="#83-where-the-time-goes-now">#</a></h3>
+<p>From the v4 trace (<a href="sky_ray_time_workflow_i4_5_v4.svg"><code>sky_ray_time_workflow_i4_5_v4.svg</code></a>), one <code>sky launch</code> of 23.5 s:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Seconds</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0 – 8</td>
+<td>Client, optimizer, pod creation, SSH (not covered by these changes)</td>
+</tr>
+<tr>
+<td>8.1 – 11.6</td>
+<td>File mounts (1.2 s) and runtime setup (2.4 s)</td>
+</tr>
+<tr>
+<td>9.1 – 12.0</td>
+<td>Ray: head GCS at 9.1 s, last worker registered at 12.0 s</td>
+</tr>
+<tr>
+<td>11.9 – 12.4</td>
+<td>Alive-nodes wait (0.5 s)</td>
+</tr>
+<tr>
+<td>12.4 – 15.9</td>
+<td>SkyPilot's job setup on the head (3.5 s)</td>
+</tr>
+<tr>
+<td>15.9 – 21.3</td>
+<td>Driver: imports (1.35 s), placement group and Ray workers (1.1 s), tasks (1.9 s), exit (1.1 s)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Ray now finishes starting at about the time the provisioner starts waiting for it.</p>
+<h3 id="84-tests">8.4 Tests <a class="header-anchor" href="#84-tests">#</a></h3>
+<ul>
+<li><strong>New unit tests:</strong> <code>test_wheel_install_offline.py</code> (4), <code>test_ray_start_env.py</code> (4), and 3 new tests in <code>test_attempt_skylet.py</code>. <code>test_ray_patches_payload.py</code> checks that every patch is registered and shipped.</li>
+<li><strong>On <code>fa974f21e</code>:</strong> <code>tests/unit_tests/test_sky/provision/</code>, <code>tests/unit_tests/test_sky/skylet/</code> and <code>test_kubernetes_ray_template_snapshot.py</code>, 749 passed. yapf and isort are clean, pylint rates the changed files 10/10, and mypy has the 3 errors in §6.</li>
+<li><strong>Manual, on kind:</strong> with changes 4 and 5, no dashboard ran and port 8266 was closed. <code>ray status</code>, <code>sky exec</code> on 6 nodes, <code>sky queue</code> and <code>sky logs</code> worked, and a job that exits 3 was marked FAILED.</li>
+<li><strong>Not run:</strong> smoke tests, backward compatibility tests, the full unit suite, VM clouds, managed job recovery after preemption.</li>
+</ul>
+<h2 id="9-remaining-work-by-expected-gain">9. Remaining work, by expected gain <a class="header-anchor" href="#9-remaining-work-by-expected-gain">#</a></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Where</th>
+<th>Expected gain</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SkyPilot's job setup on the head</td>
+<td><code>_add_job</code> and the queue-job command, <code>cloud_vm_ray_backend.py</code></td>
+<td>Up to about 2.5 s</td>
+<td>Two <code>python -c</code> commands on the head, each about 1.2 s, mostly <code>import sky</code>. The lean launcher approach (change 2) could apply.</td>
+</tr>
+<tr>
+<td>Driver imports</td>
+<td><code>task_codegen.py</code>, <code>from sky.skylet import job_lib</code></td>
+<td>Up to about 1 s</td>
+<td>The driver uses five SkyPilot modules but imports the whole backend through <code>sky/__init__.py</code>.</td>
+</tr>
+<tr>
+<td>File mounts and runtime setup</td>
+<td><code>provisioner.py</code></td>
+<td>Unknown</td>
+<td>Now ahead of the Ray wait. File mounts 1.2 s, runtime setup 1.6–2.4 s.</td>
+</tr>
+<tr>
+<td>A same-session A/B of change 5</td>
+<td></td>
+<td>Measures 0–0.8 s</td>
+<td>Settles whether it reaches the totals.</td>
+</tr>
+<tr>
+<td>Dashboard opt-out</td>
+<td><code>instance_setup.py</code></td>
+<td>None</td>
+<td>A config option for users who need Ray's dashboard.</td>
+</tr>
+<tr>
+<td>Runtime env agent start</td>
+<td>Ray</td>
+<td>Up to about 0.7 s</td>
+<td>The raylet waits for it; it's Python start and imports.</td>
+</tr>
+<tr>
+<td>Phase C's <code>aws configure list</code></td>
+<td></td>
+<td>About 2.4 s with <code>aws</code> on <code>PATH</code></td>
+<td>Separate from these changes. <code>aws.remote_identity: NO_UPLOAD</code> removes it.</td>
+</tr>
+<tr>
+<td>Publish the bytecode image</td>
+<td><code>Dockerfile_k8s</code></td>
+<td>Needed for users to see any of this</td>
+<td>The benchmarks use a local image.</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="10-reproducing">10. Reproducing <a class="header-anchor" href="#10-reproducing">#</a></h2>
+<p>See <a href="README_i4.html"><code>README_i4.md</code></a>. In short: build and load the bytecode image, then run <code>bench_results/20261105-i4-5b-vs-master/run.sh</code> for both benchmarks against master. For one change, compare it with the commit before it, using the bytecode image in both arms. To trace Ray's startup, use the trace image and <code>bench_results/20261105-ray-timeline-v4/collect.sh</code>.</p>
+<p><strong>Other docs:</strong></p>
+<ul>
+<li><a href="pr_descriptions_i4.html"><code>pr_description_i4.md</code></a>: PR text for each change.</li>
+<li><code>report_i4_5b_vs_master.md</code>: the latest full benchmark against master.</li>
+<li><code>ray_api_trace_report.md</code>: how Ray starts up, traced.</li>
+<li><a href="sky_ray_time_workflow_i4_5_v3.svg"><code>sky_ray_time_workflow_i4_5_v3.svg</code></a> and <code>_v4.svg</code>: Ray's startup timeline before and after change 5.</li>
+</ul>
+
+</main>
+
+</body>
+</html>
