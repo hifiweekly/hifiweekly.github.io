@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kernel Atlas: Start Here</title>
+<meta name="description" content="New to GPU kernels or LLM inference? Follow one token through Gemma 3 12B, kernel by kernel, then pick a reading path through the atlas.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="atlas.css">
+<style>
+/* ---------- start.html only; everything else comes from atlas.css ---------- */
+.wrap { max-width: 1200px; }
+.hero h1 { font: 600 clamp(30px, 5vw, 44px)/1.1 var(--font-mono); letter-spacing: -0.02em; }
+.hero h1::after { content: "_"; color: var(--accent); }
+.hero .crumbs a { color: var(--muted); }
+.lede { font-size: 17px; line-height: 1.55; }
+.paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.path { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--fg); }
+.path:hover { border-color: var(--accent); }
+.path .who { font: 500 12px var(--font-mono); color: var(--accent); letter-spacing: .04em; }
+.path b { font: 600 15px var(--font-mono); }
+.path span { font-size: 13.5px; color: var(--muted); }
+
+/* journey */
+.jgrid { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 18px; align-items: start; }
+.jmap { position: sticky; top: 74px; display: flex; flex-direction: column; gap: 10px; }
+.jgroup { display: flex; flex-direction: column; gap: 4px; }
+.jgroup > .gl { font: 11px var(--font-mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; padding: 2px 0; }
+.jgroup.loop { border-left: 2px dashed var(--line2); padding-left: 8px; margin-left: 2px; }
+.jgroup.loop > .gl { color: var(--accent); text-transform: none; letter-spacing: 0; }
+.ji { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 0 6px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); font-family: var(--font-mono); }
+.ji .n { font-size: 10.5px; color: var(--muted); grid-row: span 2; padding-top: 2px; }
+.ji .t { font-size: 12.5px; font-weight: 500; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ji .kk { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ji.mm { background: linear-gradient(var(--mm), var(--mm)), var(--panel); border-color: color-mix(in srgb, var(--accent) 40%, var(--line2)); }
+.ji.on { outline: 2px solid var(--fg); outline-offset: -1px; }
+.ji.done .n { color: var(--accent); }
+.ji:focus-visible { outline: 2px solid var(--sync); outline-offset: 2px; }
+.jbar { position: sticky; top: 0; z-index: 6; background: var(--bg); border-bottom: 1px solid var(--line); padding: 10px 0; display: flex; flex-direction: column; gap: 8px; }
+.jbar .row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.seqline { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font: 12.5px var(--font-mono); }
+.tok { padding: 2px 7px; border: 1px solid var(--line2); border-radius: 4px; background: var(--panel); white-space: pre; }
+.tok.me { border-color: var(--accent); color: var(--accent); }
+.tok.gen { border-style: dashed; }
+.phase { font: 500 11.5px var(--font-mono); padding: 3px 8px; border-radius: 4px; background: var(--hl); color: var(--fg); }
+.layers { display: grid; grid-template-columns: repeat(48, minmax(0, 1fr)); gap: 2px; flex: 1 1 320px; min-width: 240px; }
+.layers button { all: unset; cursor: pointer; height: 16px; border-radius: 2px; border: 1px solid var(--line2); background: transparent; }
+.layers button.g { background: color-mix(in srgb, var(--accent) 55%, transparent); border-color: var(--accent); }
+.layers button.on { outline: 2px solid var(--fg); outline-offset: 1px; }
+.layers button.past { background: color-mix(in srgb, var(--x) 30%, transparent); }
+.layers button.g.past { background: color-mix(in srgb, var(--accent) 80%, transparent); }
+.layers button:focus-visible { outline: 2px solid var(--sync); }
+.linfo { font: 12px var(--font-mono); color: var(--muted); min-width: 230px; }
+.linfo b { color: var(--fg); font-weight: 500; }
+.stage { display: flex; flex-direction: column; gap: 14px; }
+.stage h3.st { font: 600 20px/1.25 var(--font-mono); }
+.stage .plain { font-size: 15.5px; max-width: 70ch; }
+.stage .plain em { color: var(--accent); font-style: normal; }
+.res { display: flex; flex-direction: column; gap: 6px; }
+.view { min-height: 220px; display: flex; flex-direction: column; gap: 10px; }
+.view svg { display: block; width: 100%; height: auto; overflow: visible; }
+.gpu { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.klinks { display: flex; flex-wrap: wrap; gap: 6px; }
+.klink { font: 500 12.5px var(--font-mono); padding: 4px 9px; border-radius: 5px; border: 1px solid var(--accent); color: var(--accent); text-decoration: none; }
+.klink.np { border-style: dashed; border-color: var(--line2); color: var(--muted); }
+.klink.mm { background: var(--mm); }
+.inline-ctl { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font: 12.5px var(--font-mono); color: var(--muted); }
+.inline-ctl input[type=range] { width: 160px; accent-color: var(--accent); }
+.inline-ctl b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
+.bigbtn { font: 600 13.5px var(--font-mono); background: var(--accent); color: var(--accent-ink); border-color: var(--accent); padding: 7px 14px; }
+.bigbtn:hover { filter: brightness(1.08); border-color: var(--accent); }
+.bigbtn:disabled { opacity: .45; cursor: default; }
+.cost { display: flex; flex-direction: column; gap: 8px; }
+.cbar { display: flex; height: 18px; border-radius: 3px; overflow: hidden; border: 1px solid var(--line2); }
+.cbar div { height: 100%; }
+.why { border-left: 3px solid var(--accent); padding: 2px 0 2px 12px; font-size: 14px; color: var(--fg); max-width: 72ch; }
+.why b { font-family: var(--font-mono); font-weight: 500; color: var(--accent); }
+.hint { font: 12px var(--font-mono); color: var(--muted); }
+.chipsel { display: inline-flex; gap: 4px; }
+.chipsel button { font: 12px var(--font-mono); padding: 3px 9px; }
+
+/* gpu primer */
+.tgrid { display: grid; gap: 2px; }
+.tgrid div { aspect-ratio: 1; border-radius: 2px; background: var(--zero); cursor: pointer; }
+.tgrid div.w { background: color-mix(in srgb, var(--sync) 45%, var(--zero)); }
+.tgrid div.sel { background: var(--accent); }
+.mem { width: 100%; font-size: 13px; }
+.mem td, .mem th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.mem th { font: 400 11.5px var(--font-mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.mem td:first-child { font-family: var(--font-mono); white-space: nowrap; }
+.ptxline { font: 15px/1.9 var(--font-mono); overflow-x: auto; white-space: nowrap; padding: 10px 14px; background: var(--bg); border-radius: 6px; }
+.ptxline span { padding: 2px 0; border-radius: 3px; cursor: help; border-bottom: 1px dotted var(--muted); }
+.ptxline span:hover, .ptxline span.on { background: var(--hl); }
+.ptxpick { display: flex; flex-wrap: wrap; gap: 6px; }
+.ptxpick button { font: 12px var(--font-mono); }
+
+/* glossary */
+.gloss { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.gloss div { padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: 13.5px; display: flex; flex-direction: column; gap: 3px; }
+.gloss b { font: 600 13px var(--font-mono); color: var(--accent); }
+.gloss a { font: 12px var(--font-mono); }
+input.search { font: 13.5px var(--font-mono); color: var(--fg); background: var(--panel); border: 1px solid var(--line2); border-radius: 6px; padding: 7px 10px; width: min(360px, 100%); }
+.track .tl { font: 12.5px var(--font-mono); color: var(--muted); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.track .tl b { color: var(--fg); }
+.tracks { display: flex; flex-direction: column; gap: 22px; }
+.track { display: flex; flex-direction: column; gap: 8px; }
+
+@media (max-width: 900px) {
+  .jgrid { grid-template-columns: minmax(0, 1fr); }
+  .jmap { position: static; flex-direction: row; overflow-x: auto; gap: 8px; padding-bottom: 6px; }
+  .jgroup { flex-direction: row; flex: 0 0 auto; align-items: flex-start; }
+  .jgroup.loop { border-left: 0; border-top: 2px dashed var(--line2); padding: 4px 0 0; margin: 0; }
+  .jgroup > .gl { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 10px; }
+  .ji { width: 140px; }
+  .jbar .row:first-child .seqline { order: 3; width: 100%; }
+  .gpu { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 620px) { .linfo { min-width: 0; } .stage h3.st { font-size: 17px; } }
+</style>
+</head>
+<body>
+<div class="hero">
+  <div class="in">
+    <nav class="crumbs"><a href="index.html">kernel_atlas</a><span class="muted">/</span><span>start_here</span></nav>
+    <h1>start_here</h1>
+    <p class="lede">The kernel pages show exactly how a GPU runs each step of a language model. This page gives you the big picture first. You'll follow one word through Gemma 3 12B, from text to the next word, and see which kernel does each job and why. Then pick a reading path.</p>
+    <p class="muted" style="font-size:14px">You need no CUDA and no machine-learning background. Matrix–vector multiplication and the idea of an array are enough. Each section takes about five minutes.</p>
+    <div class="paths">
+      <a class="path" href="#journey"><span class="who">NEW TO BOTH</span><b>Follow one token →</b><span>See what a model does to a word, one step at a time, with each step's kernel.</span></a>
+      <a class="path" href="#gpu"><span class="who">KNOW TRANSFORMERS, NOT GPUS</span><b>GPU in five minutes →</b><span>Threads, warps, blocks and memory, then how to read a line of PTX.</span></a>
+      <a class="path" href="#paths"><span class="who">KNOW CUDA, NOT LLMS</span><b>Reading paths →</b><span>Three ordered routes through the kernel pages, simplest first.</span></a>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" style="margin-top:36px">
+
+<!-- ======================= 01 one token's journey ======================= -->
+<section id="journey" aria-labelledby="h-j">
+  <div class="sh"><span class="no">01</span><h2 id="h-j">one_tokens_journey</h2>
+    <p>Gemma 3 12B is asked to continue <i>"The capital of France is"</i>. Step through what happens to the last word, <code>" is"</code>, until the model picks the next one. Use ← → or the buttons, click any step on the left, or click a layer in the strip. The numbers are computed in your browser on generated data, as on every kernel page. Token ids and logits are illustrative.</p></div>
+
+  <div class="jbar" id="jbar">
+    <div class="row">
+      <div class="btns">
+        <button id="jprev" aria-label="Previous step">◀</button>
+        <button id="jplay" aria-label="Play">▶ play</button>
+        <button id="jnext" aria-label="Next step">▶</button>
+      </div>
+      <span class="phase" id="jphase"></span>
+      <div class="seqline" id="jseq" aria-label="Token sequence"></div>
+    </div>
+    <div class="row">
+      <div class="layers" id="jlayers" role="group" aria-label="48 layers: click to step inside one"></div>
+      <div class="linfo" id="jlinfo"></div>
+      <label class="inline-ctl"><input type="checkbox" id="jwalk"> walk every layer</label>
+    </div>
+  </div>
+
+  <div class="jgrid">
+    <nav class="jmap" id="jmap" aria-label="Steps of the journey"></nav>
+    <div class="stage" aria-live="polite">
+      <div class="eyebrow" id="jeyebrow"></div>
+      <h3 class="st" id="jtitle"></h3>
+      <p class="plain" id="jplain"></p>
+      <div class="panel res">
+        <div class="cvlabel"><b class="x">residual stream · the token's 3,840 numbers</b><span id="jresinfo"></span></div>
+        <canvas id="jres" height="60" aria-label="The token's hidden vector, 3840 cells: teal positive, pink negative"></canvas>
+        <div class="status" id="jstatus" style="min-height:1.4em">Hover over the strip to read any of the 3,840 values. They carry everything the model knows about this token so far.</div>
+      </div>
+      <div class="panel view" id="jview"></div>
+      <div class="gpu">
+        <div class="panel">
+          <div class="cvlabel"><b class="s">on the GPU</b><span id="jgpuhint"></span></div>
+          <div class="klinks" id="jk"></div>
+          <dl class="kv" id="jkv"></dl>
+        </div>
+        <div class="panel cost">
+          <div class="cvlabel"><b class="w">what one token costs</b><span>decode, memory read per token</span></div>
+          <div class="cbar" id="jcbar"></div>
+          <div class="legend" id="jclegend"></div>
+          <div class="inline-ctl">
+            <label>context <input type="range" id="jctx" min="0" max="100" value="18"> <b id="jctxv"></b></label>
+            <label>GPU memory bandwidth <select id="jbw"><option value="0.5">0.5 TB/s</option><option value="1" selected>1 TB/s</option><option value="3.35">3.35 TB/s</option></select></label>
+          </div>
+          <div class="status" id="jcost" style="min-height:0"></div>
+        </div>
+      </div>
+      <p class="why" id="jwhy"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 02 gpu in five minutes ======================= -->
+<section id="gpu" aria-labelledby="h-g">
+  <div class="sh"><span class="no">02</span><h2 id="h-g">gpu_in_five_minutes</h2>
+    <p>Every kernel page draws threads as a grid of warps × lanes. Here is what that grid means.</p></div>
+  <div class="two">
+    <div class="panel">
+      <h3>A block of threads</h3>
+      <p style="font-size:14px">A kernel is one function that thousands of threads run at once, each on different data. Threads come in <b>warps</b> of 32 that execute in lockstep. Warps are grouped into <b>blocks</b> that share fast on-chip memory, and the <b>grid</b> is all the blocks of one launch. Click a thread.</p>
+      <div class="inline-ctl">
+        <label>blockDim <span class="chipsel" id="gbd"><button data-v="128">128</button><button data-v="256" aria-pressed="true">256</button><button data-v="1024">1024</button></span></label>
+        <label>blockIdx.x <input type="range" id="gbi" min="0" max="14" value="0"> <b id="gbiv">0</b></label>
+      </div>
+      <div class="tgrid" id="gt" style="grid-template-columns:repeat(32,minmax(0,1fr))"></div>
+      <dl class="kv" id="gkv"></dl>
+      <p class="hint">Rows are warps, columns are lanes, the same layout as the canvases on <a href="rmsnorm.html">rmsnorm</a> and <a href="mv_q8.html">mv_q8</a>.</p>
+    </div>
+    <div class="panel">
+      <h3>Where data lives</h3>
+      <table class="mem">
+        <thead><tr><th>memory</th><th>who sees it</th><th>why kernels care</th></tr></thead>
+        <tbody>
+          <tr><td>registers</td><td>one thread</td><td>Fastest. Each thread's running sums and loaded values. <code>%f2</code> in PTX is a register.</td></tr>
+          <tr><td>warp shuffle</td><td>32 lanes of a warp</td><td>Lanes read each other's registers with <code>shfl.sync</code>, with no memory involved. This is how most reductions start.</td></tr>
+          <tr><td>shared</td><td>one block</td><td>Small and on-chip. Warps pass partial results through it and wait for each other at <code>bar.sync</code>.</td></tr>
+          <tr><td>global</td><td>every thread</td><td>The GPU's main memory (gigabytes). Weights and the KV cache live here. Reading it is the bottleneck in decode, so access patterns matter: <b>coalesced</b> loads let a warp's 32 reads arrive as one transaction.</td></tr>
+        </tbody>
+      </table>
+      <h3 style="margin-top:6px">Reading one line of PTX</h3>
+      <p style="font-size:14px">PTX is NVIDIA's assembly-like virtual instruction set, one step below CUDA C++. The driver compiles it to the GPU's machine code. Pick an instruction, then hover its parts.</p>
+      <div class="ptxpick" id="pp"></div>
+      <div class="ptxline" id="pl"></div>
+      <div class="status" id="pd" style="min-height:2.8em"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 03 reading paths ======================= -->
+<section id="paths" aria-labelledby="h-p">
+  <div class="sh"><span class="no">03</span><h2 id="h-p">reading_paths</h2>
+    <p>The kernel index groups pages by job. These routes order them by idea, so each page adds one new technique to what you already know.</p></div>
+  <div class="tracks" id="tracks"></div>
+</section>
+
+<!-- ======================= 04 glossary ======================= -->
+<section id="glossary" aria-labelledby="h-gl">
+  <div class="sh"><span class="no">04</span><h2 id="h-gl">glossary</h2>
+    <p>Terms the kernel pages use without stopping to explain.</p></div>
+  <input class="search" id="gs" type="search" placeholder="filter: rope, warp, q8…" aria-label="Filter glossary">
+  <div class="gloss" id="gl"></div>
+</section>
+
+<footer><span>Next: the <a href="index.html#h-order">launch_order</a> rails show every engine's layer the same way this page shows Gemma 3's, and the <a href="gemma3.html">Gemma 3 model page</a> has the full graph.</span><span>Model figures: Gemma 3 12B, decode, Q8_0 attention and Q5_0 feed-forward weights, f16 KV cache.</span></footer>
+</div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const tokShow = s => esc(s.replace(/\n/g, '\\n'));
+
+/* ---------- when previewed outside the site, send kernel links to the live atlas ---------- */
+const LIVE = 'https://hifiweekly.github.io/kernel_atlas/';
+const onSite = /hifiweekly\.github\.io$/.test(location.hostname) || location.protocol === 'file:' || location.hostname === 'localhost';
+function fixLinks(root) { if (onSite) return; root.querySelectorAll('a[href$=".html"], a[href*=".html#"]').forEach(a => { const h = a.getAttribute('href'); if (!/^https?:/.test(h)) { a.href = LIVE + h; a.target = '_blank'; a.rel = 'noopener'; } }); }
+
+/* ---------- Gemma 3 12B shape ---------- */
+const D = 3840, L = 48, HQ = 16, HKV = 8, HD = 256, FF = 15360, V = 262144, WIN = 1024;
+const isGlobal = l => (l + 1) % 6 === 0;
+const Q8 = 34 / 32, Q5 = 22 / 32;
+const B = {
+  qkv: D * (HQ + 2 * HKV) * HD * Q8, o: HQ * HD * D * Q8, gu: D * 2 * FF * Q5, down: FF * D * Q5,
+  head: V * D * Q8, norms: 4 * D * 4, kvPerPos: HKV * HD * 2 * 2,
+};
+
+/* ---------- deterministic data ---------- */
+function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function gauss(r) { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+function vec(seed, n, s = 1) { const r = rng(seed), v = new Float32Array(n); for (let i = 0; i < n; i++) v[i] = gauss(r) * s; return v; }
+function hash(str) { let h = 2166136261; for (const c of str) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; }
+const OUT = [17, 1403, 2600]; // a few dimensions that grow large with depth, as real residual streams do
+function rmsOf(v) { let s = 0; for (const x of v) s += x * x; return Math.sqrt(s / v.length); }
+function rmsnorm(v, seed) { const w = vec(seed, v.length, 0.12), r = rmsOf(v), o = new Float32Array(v.length); for (let i = 0; i < v.length; i++) o[i] = v[i] / Math.sqrt(r * r + 1e-6) * (1 + w[i]); return o; }
+const cache = new Map();
+function residual(tok, pos, layer, part) {
+  // part 0: entering the layer, 1: after attention is added, 2: after the feed-forward is added
+  const key = tok + '|' + pos + '|' + layer + '|' + part;
+  if (cache.has(key)) return cache.get(key);
+  const r = vec(hash(tok) ^ 0x51, D, 0.9);
+  const add = (l, k) => { const d = vec(hash(tok) + pos * 977 + l * 131 + k * 7, D, 0.22 + 0.018 * l); for (let i = 0; i < D; i++) r[i] += d[i]; OUT.forEach((i, j) => r[i] += (k ? 0.9 : 0.5) * (j === 1 ? -1 : 1) * (1 + l / 12)); };
+  for (let l = 0; l < layer; l++) { add(l, 0); add(l, 1); }
+  if (part >= 1) add(layer, 0);
+  if (part >= 2) add(layer, 1);
+  cache.set(key, r); return r;
+}
+const gelu = x => 0.5 * x * (1 + Math.tanh(0.7978845608 * (x + 0.044715 * x * x * x)));
+const softmax = (a, t = 1) => { const m = Math.max(...a); const e = a.map(x => Math.exp((x - m) / t)); const s = e.reduce((p, q) => p + q, 0); return e.map(x => x / s); };
+const fmtB = b => b >= 1e9 ? (b / 1e9).toFixed(2) + ' GB' : b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : b >= 1e3 ? (b / 1e3).toFixed(1) + ' KB' : b.toFixed(0) + ' B';
+
+/* ---------- the sequence ---------- */
+const PROMPT = ['<bos>', 'The', ' capital', ' of', ' France', ' is'];
+const CANDS = [
+  [[' Paris', 19.0], [' the', 14.2], [' a', 13.1], [' located', 12.0], [' known', 11.6], [' Lyon', 10.4], [' also', 10.1], [' home', 9.7], [' not', 9.3], [' one', 9.0]],
+  [['.', 17.5], [',', 16.9], [' and', 14.8], ['!', 11.9], [' (', 11.2], [';', 10.0], [' which', 9.8], [' —', 9.4], [':', 9.0], ['\n', 8.7]],
+  [[' It', 15.8], [' The', 15.1], ['\n', 14.6], [' Paris', 13.2], [' This', 12.4], [' Its', 11.9], [' France', 11.0], [' In', 10.6], [' A', 10.2], [' What', 9.8]],
+  [[' is', 17.2], [' has', 15.0], [' was', 14.1], ["'s", 13.7], [' lies', 12.3], [' sits', 11.6], [' became', 11.1], [' also', 10.9], [' hosts', 10.2], [' stands', 9.9]],
+  [[' known', 15.4], [' also', 15.0], [' located', 14.4], [' the', 14.2], [' famous', 13.5], [' a', 13.3], [' home', 12.6], [' one', 12.1], [' situated', 11.0], [' called', 10.6]],
+  [[' for', 18.1], [' as', 16.3], [' worldwide', 12.2], [' around', 11.7], [' internationally', 11.3], [' to', 11.0], [' by', 10.4], [',', 10.1], [' throughout', 9.7], [' among', 9.2]],
+];
+
+const S = { i: 0, layer: 0, seq: PROMPT.slice(), gen: 0, temp: 0.8, mode: 'greedy', drawn: null, head: 0, pair: 3, qblock: 0, ctxIdx: 18, bw: 1, playing: null };
+const pos = () => S.seq.length - 1;
+const me = () => S.seq[pos()];
+const prefill = () => S.gen === 0;
+const ctxLen = () => Math.max(S.seq.length, Math.min(131072, Math.round(Math.pow(10, 0.6 + 4.6 * S.ctxIdx / 100))));
+
+/* ---------- small drawing helpers ---------- */
+function barsSVG(vals, { h = 70, color = 'var(--x)', neg = 'var(--y)', label = '', max = null, w = 760, mark = -1 } = {}) {
+  const n = vals.length, m = max ?? Math.max(1e-9, ...vals.map(Math.abs)), bw = w / n, mid = h / 2;
+  let s = `<svg viewBox="0 0 ${w} ${h + 14}" role="img" aria-label="${esc(label)}">`;
+  s += `<line x1="0" x2="${w}" y1="${mid}" y2="${mid}" style="stroke:var(--line2)"/>`;
+  vals.forEach((v, i) => { const y = Math.min(1, Math.abs(v) / m) * (mid - 2); s += `<rect x="${(i * bw).toFixed(2)}" y="${(v >= 0 ? mid - y : mid).toFixed(2)}" width="${Math.max(0.6, bw - 0.6).toFixed(2)}" height="${Math.max(0.5, y).toFixed(2)}" style="fill:${i === mark ? 'var(--accent)' : v >= 0 ? color : neg}"/>`; });
+  if (label) s += `<text x="0" y="${h + 12}" font-size="11" style="fill:var(--muted)">${esc(label)}</text>`;
+  return s + '</svg>';
+}
+const sample = (v, n, off = 0) => Array.from({ length: n }, (_, i) => v[off + i]);
+function strip(v, n = 192) { const k = Math.floor(v.length / n), o = []; for (let i = 0; i < n; i++) { let best = 0; for (let j = 0; j < k; j++) { const x = v[i * k + j]; if (Math.abs(x) > Math.abs(best)) best = x; } o.push(best); } return o; }
+
+/* ---------- the residual canvas ---------- */
+const rc = $('jres'); let curRes = null, resHover = -1;
+const RC = 160, RR = 24; // 3840 = 24 rows × 160
+function drawRes() {
+  const dpr = devicePixelRatio || 1, W = rc.clientWidth, cw = W / RC, ch = Math.max(3, Math.min(4.5, cw * 0.8)), H = ch * RR;
+  rc.width = W * dpr; rc.height = H * dpr; rc.style.height = H + 'px';
+  const g = rc.getContext('2d'); g.scale(dpr, dpr); g.fillStyle = css('--bg'); g.fillRect(0, 0, W, H);
+  if (!curRes) return;
+  const cx = css('--x'), cy = css('--y'), sc = 2.4 * rmsOf(curRes);
+  for (let i = 0; i < D; i++) {
+    const v = curRes[i], a = Math.min(1, Math.abs(v) / sc);
+    g.globalAlpha = 0.12 + 0.88 * a; g.fillStyle = v >= 0 ? cx : cy;
+    g.fillRect((i % RC) * cw, Math.floor(i / RC) * ch, Math.max(1, cw - 0.4), ch - 0.4);
+  }
+  g.globalAlpha = 1;
+  if (resHover >= 0) { g.strokeStyle = css('--fg'); g.lineWidth = 1.5; g.strokeRect((resHover % RC) * cw, Math.floor(resHover / RC) * ch, cw, ch); }
+}
+rc.addEventListener('mousemove', e => {
+  const r = rc.getBoundingClientRect(), c = Math.floor((e.clientX - r.left) / (r.width / RC)), w = Math.floor((e.clientY - r.top) / (r.height / RR));
+  const i = w * RC + c; if (i < 0 || i >= D || !curRes) return;
+  resHover = i; $('jstatus').textContent = `dimension ${i} = ${curRes[i].toFixed(4)}` + (OUT.includes(i) ? ' · one of a few dimensions that grow large with depth (real models show this too)' : ''); drawRes();
+});
+rc.addEventListener('mouseleave', () => { resHover = -1; drawRes(); });
+
+/* ---------- stages ---------- */
+const K = (k, o = {}) => ({ k, page: o.page !== false, mm: !!o.mm, note: o.note || '' });
+const STAGES = [
+  { id: 'tok', g: 'pre', t: 'text → tokens', kk: 'tokenizer (CPU)',
+    title: () => prefill() ? 'Text is cut into tokens' : `The new token is already an id`,
+    plain: () => prefill()
+      ? `The model never sees letters. A tokenizer on the CPU splits the prompt into pieces from a fixed vocabulary of 262k entries and replaces each piece with its number. Gemma also adds a start marker, <code>&lt;bos&gt;</code>. Here the prompt becomes ${PROMPT.length} tokens. We'll follow the last one, <em>"${tokShow(me())}"</em>, because its output decides the next word.`
+      : `In decode, the token the model just picked is fed straight back in. No tokenizer is needed because it was chosen as an id. From here on, only <em>"${tokShow(me())}"</em> goes through the layers. Earlier tokens are remembered in the KV cache.`,
+    ks: () => [], kv: () => [['runs on', 'host CPU'], ['vocabulary', '262,144 pieces'], ['tokens in', prefill() ? `${S.seq.length} (all at once: prefill)` : '1 (decode)']],
+    why: 'Prefill vs decode. The prompt\'s tokens go through every layer together in one pass (prefill). After that the model makes one token per pass (decode). Prefill is limited by arithmetic, decode by memory reads. That one difference is why each matrix kernel has an mv_ (decode) and a gemm_ (prefill) version.',
+    res: () => null, view: vTokens },
+  { id: 'emb', g: 'pre', t: 'embedding lookup', kk: 'table row copy',
+    title: () => 'The id picks a row of the embedding table',
+    plain: () => `The embedding table has one row of 3,840 numbers per vocabulary entry. Token id → row. That row, scaled by √3840 ≈ 62, becomes the token's <em>residual stream</em>: the vector every layer reads from and adds to. The strip above shows it.`,
+    ks: () => [], kv: () => [['table', '262,144 × 3,840'], ['read per token', '1 row'], ['shared with', 'the output head (tied weights)']],
+    why: 'The same table is reused at the very end. The output head scores the final vector against every row, so the table that turned the id into a vector also turns the final vector back into a word.',
+    res: () => residual(me(), pos(), 0, 0), view: vEmbed },
+  { id: 'norm0', g: 'pre', t: 'first norm', kk: 'rmsnorm',
+    title: () => 'Normalize before layer 0',
+    plain: () => `Layers expect inputs of a steady size, so each sublayer first rescales the vector to a root-mean-square of 1 and applies a learned weight per dimension (RMSNorm). Gemma 3 runs a standalone <code>rmsnorm</code> only here. Every later norm is fused into <code>add_rmsnorm</code>.`,
+    ks: () => [K('rmsnorm')], kv: () => [['launch', 'grid (tokens) · 1024 threads'], ['threads per value', '3,840 values ÷ 1,024 threads ≈ 4 passes'], ['reads', fmtB(D * 4 * 2) + ' (x and w)']],
+    why: 'Why it\'s a good first kernel: all 1,024 threads of a block must agree on one number, the sum of squares. You\'ll see the reduction pattern that recurs everywhere: a strided loop, a warp butterfly, then shared memory.',
+    res: () => residual(me(), pos(), 0, 0), view: vNorm0 },
+  { id: 'qkv', g: 'layer', t: 'q, k, v', kk: () => prefill() ? 'gemm_q8 ×3' : 'mv_q8 ×3', mm: true,
+    title: () => 'Three projections: query, key, value',
+    plain: () => `Attention needs three views of the token. The <em>query</em> asks "what am I looking for?", the <em>key</em> answers "what do I contain?", and the <em>value</em> carries "what I'll pass on". Each is a matrix × vector product with 8-bit weights. Queries get 16 heads of 256 numbers, keys and values only 8 heads each. Two query heads share one key/value head (grouped-query attention), which halves the KV cache.`,
+    ks: () => prefill() ? [K('gemm_q8', { mm: true }), K('qkv', { note: 'shapes' })] : [K('mv_q8', { mm: true }), K('qkv', { note: 'shapes' })],
+    kv: () => [['weights', 'Q8_0: 32 int8 + 1 f16 scale per block'], ['shape', '3,840 → 4,096 (q) + 2,048 (k) + 2,048 (v)'], ['launch', prefill() ? 'grid (rows / 64, ⌈T / 32⌉) · 256 threads' : 'grid ⌈rows / 8⌉ · 256 threads, one warp per output row'], ['reads', fmtB(B.qkv) + ' of weights']],
+    why: 'Most of the time goes into matrix products. In decode the GPU reads every weight once to do just one multiply-add with it, so the speed limit is memory bandwidth, not arithmetic. Watch the cost bar: tinted steps are matrix products.',
+    res: () => residual(me(), pos(), S.layer, 0), view: vQKV },
+  { id: 'rope', g: 'layer', t: 'norm + rotate', kk: 'qk_norm_rope',
+    title: () => 'Normalize each head, rotate by position, write the cache',
+    plain: () => `Attention has no built-in sense of order. Rotary embedding (RoPE) adds it by rotating pairs of numbers in q and k by an angle that grows with the token's position, so the dot product of two tokens depends on how far apart they are. Gemma 3 normalizes each head first. Then this token's k and v are stored in the <em>KV cache</em> so later tokens can look back at it.`,
+    ks: () => [K('qk_norm_rope')], kv: () => [['launch', 'grid (32 heads, tokens) · 32 threads'], ['RoPE base', isGlobal(S.layer) ? '1,000,000 (global layer)' : '10,000 (local layer)'], ['cache write', `${fmtB(B.kvPerPos)} per token per layer, f16`], ['position', String(pos())]],
+    why: 'Local and global layers use different rotation speeds. Slow rotations (the global layers\' large base) still tell positions apart thousands of tokens away. Fast ones give sharp local order.',
+    res: () => residual(me(), pos(), S.layer, 0), view: vRope },
+  { id: 'att', g: 'layer', t: 'attention', kk: 'attention',
+    title: () => isGlobal(S.layer) ? 'Look back at every earlier token' : 'Look back, within a 1,024-token window',
+    plain: () => `The query is compared with the key of every earlier token (and itself). Softmax turns the scores into weights that sum to 1, and the output is the weighted mix of their values. This is where <em>"${tokShow(me())}"</em> picks up information from <em>"France"</em>. Layer ${S.layer} is ${isGlobal(S.layer) ? '<em>global</em>: it sees the whole context' : '<em>local</em>: it sees only the last 1,024 tokens'}. Five of every six layers are local, which keeps the cache reads small.`,
+    ks: () => [K('attention')], kv: () => [['launch', 'grid (16 q heads, tokens) · 256 threads'], ['softmax', 'online, one pass, no stored scores'], ['keys read now', `${Math.min(ctxLen(), isGlobal(S.layer) ? ctxLen() : WIN).toLocaleString()} of ${ctxLen().toLocaleString()}`], ['cache read', fmtB(Math.min(ctxLen(), isGlobal(S.layer) ? 1e12 : WIN) * B.kvPerPos)]],
+    why: 'Attention is the only step whose cost grows with context length. Drag the context slider: global layers\' cache reads keep growing while local layers stop at 1,024 tokens.',
+    res: () => residual(me(), pos(), S.layer, 0), view: vAtt },
+  { id: 'o', g: 'layer', t: 'output proj.', kk: () => prefill() ? 'gemm_q8' : 'mv_q8', mm: true,
+    title: () => 'Merge the 16 heads back to 3,840',
+    plain: () => `The 16 head outputs (16 × 256 = 4,096 numbers) are concatenated and multiplied by one more 8-bit matrix to get back to the residual width.`,
+    ks: () => [K(prefill() ? 'gemm_q8' : 'mv_q8', { mm: true })], kv: () => [['shape', '4,096 → 3,840'], ['reads', fmtB(B.o) + ' of weights']],
+    why: 'Same kernel as q, k and v, with a different matrix. Learn mv_q8 once and you\'ve covered 4 of the 7 matrix products in a Gemma 3 layer.',
+    res: () => residual(me(), pos(), S.layer, 0), view: vO },
+  { id: 'add1', g: 'layer', t: 'add + norm', kk: 'add_rmsnorm',
+    title: () => 'Add attention\'s result into the residual stream',
+    plain: () => `Layers never overwrite the residual stream. They <em>add</em> to it. Gemma 3 normalizes the attention output (post-norm), adds it to the stream, and immediately normalizes the result for the feed-forward block (pre-norm). That's three jobs in one launch. Compare the strip above with the previous step.`,
+    ks: () => [K('add_rmsnorm')], kv: () => [['launch', 'grid (tokens) · 1024 threads'], ['passes', '3 passes, 2 reductions'], ['saves', 'two extra launches and their memory round trips']],
+    why: 'Fusing. Small kernels spend most of their time reading and writing memory. Doing three jobs on data already in registers avoids writing it out and reading it back.',
+    res: () => residual(me(), pos(), S.layer, 1), view: vAdd(0) },
+  { id: 'quant', g: 'layer', t: 'quantize', kk: 'quant_q8',
+    title: () => 'Squeeze the activations into 8-bit integers',
+    plain: () => `The feed-forward weights are stored in 5 bits. To multiply them with integer dot-product instructions, the activation vector is converted to int8 as well: blocks of 32 numbers, each with one shared scale. Pick a block to see the rounding error.`,
+    ks: () => [K('quant_q8')], kv: () => [['launch', '≤ 448 blocks · 256 threads'], ['block', '32 values → 32 int8 + 1 scale'], ['why', 'enables dp4a: 4 int8 multiply-adds per instruction']],
+    why: 'Quantization trades a little precision for a lot of bandwidth. Each weight is read from memory for every token, so 5 bits instead of 16 means about 3× less to read.',
+    res: () => residual(me(), pos(), S.layer, 1), view: vQuant },
+  { id: 'gu', g: 'layer', t: 'gate ‖ up', kk: () => prefill() ? 'gemm_q5' : 'mv_q5', mm: true,
+    title: () => 'Expand to 15,360 dimensions, twice',
+    plain: () => `The feed-forward block is where most of the model's stored knowledge lives. It projects the 3,840 numbers up to 15,360 twice, once as a <em>gate</em> and once as an <em>up</em> projection, stacked into one matrix so a single launch does both. This is the largest read in the layer.`,
+    ks: () => prefill() ? [K('gemm_q5', { mm: true, page: false }), K('gate_up', { note: 'layout' })] : [K('mv_q5', { mm: true }), K('gate_up', { note: 'layout' })],
+    kv: () => [['weights', 'Q5_0: 5-bit, block of 32 + f16 scale'], ['shape', '3,840 → 2 × 15,360'], ['reads', fmtB(B.gu) + ' of weights'], ['share of layer', Math.round(100 * B.gu / (B.qkv + B.o + B.gu + B.down)) + '% of weight bytes']],
+    why: 'The gate and up projections are stacked so the input vector is read once and the launch is large enough to keep every streaming multiprocessor busy.',
+    res: () => residual(me(), pos(), S.layer, 1), view: vGU },
+  { id: 'geglu', g: 'layer', t: 'GELU gate', kk: 'geglu',
+    title: () => 'gate → GELU, times up',
+    plain: () => `A non-linearity is what lets the network compute more than one big matrix product. GELU passes positive values almost unchanged and squashes negative ones toward 0. The result multiplies the up half element by element, so the gate decides how much of each of the 15,360 features gets through.`,
+    ks: () => [K('geglu')], kv: () => [['launch', '≤ 448 blocks · 256 threads · grid-stride'], ['per element', 'tanh from one ex2 instruction'], ['work', '15,360 independent elements']],
+    why: 'Element-wise kernels like this are the simplest on the site. Every thread does the same arithmetic on its own elements and never talks to another thread. It\'s a good place to learn grid-stride loops.',
+    res: () => residual(me(), pos(), S.layer, 1), view: vGeglu },
+  { id: 'down', g: 'layer', t: 'down', kk: () => prefill() ? 'quant_q8 → gemm_q5' : 'quant_q8 → mv_q5', mm: true,
+    title: () => 'Project back down to 3,840',
+    plain: () => `The 15,360 gated features are quantized to int8 again and projected back to the residual width with the down matrix.`,
+    ks: () => prefill() ? [K('quant_q8'), K('gemm_q5', { mm: true, page: false })] : [K('quant_q8'), K('mv_q5', { mm: true })],
+    kv: () => [['shape', '15,360 → 3,840'], ['reads', fmtB(B.down) + ' of weights']],
+    why: 'Up, gate and down together read about 70% of each layer\'s weight bytes. If you want to make decode faster, these kernels are where to start.',
+    res: () => residual(me(), pos(), S.layer, 1), view: vDown },
+  { id: 'add2', g: 'layer', t: 'add + norm', kk: 'add_rmsnorm',
+    title: () => S.layer < L - 1 ? `Add, normalize, hand over to layer ${S.layer + 1}` : 'Add, normalize: the last layer is done',
+    plain: () => `Same fused kernel as before: post-norm the feed-forward output, add it to the stream, and pre-norm for the next layer's attention. Then the whole sequence of steps repeats, ${L} times in all. ${S.layer < L - 1 ? `Click layer ${S.layer + 1} in the strip, tick <em>walk every layer</em>, or press → to skip to the end.` : ''}`,
+    ks: () => [K('add_rmsnorm')], kv: () => [['layer', `${S.layer} of ${L - 1}`], ['next', S.layer < L - 1 ? `layer ${S.layer + 1} (${isGlobal(S.layer + 1) ? 'global' : 'local'})` : 'output head']],
+    why: 'The residual stream is the model\'s working memory. Each layer reads a normalized copy and writes back a small correction. Hover the strip at dimensions 17, 1,403 or 2,600 to watch a few values grow large over depth.',
+    res: () => residual(me(), pos(), S.layer, 2), view: vAdd(1) },
+  { id: 'head', g: 'post', t: 'output head', kk: 'mv_q8', mm: true,
+    title: () => 'Score every word in the vocabulary',
+    plain: () => `After layer 47, the final vector is compared with all 262,144 rows of the embedding table. This is a single matrix × vector product with 262,144 outputs, called <em>logits</em>: one score per possible next token. It's the largest single matrix in the model.`,
+    ks: () => [K('mv_q8', { mm: true })], kv: () => [['shape', '3,840 → 262,144'], ['reads', fmtB(B.head) + ' of weights'], ['same weights as', 'the embedding table']],
+    why: 'This one matrix is about a ninth of all the bytes read per token, and only the last token of a prompt needs it.',
+    res: () => residual(me(), pos(), L - 1, 2), view: vHead },
+  { id: 'pick', g: 'post', t: 'pick a token', kk: () => S.mode === 'greedy' ? 'argmax' : 'compact_logits → sample',
+    title: () => 'Turn scores into one choice',
+    plain: () => `<em>Greedy</em> decoding takes the highest logit (<code>argmax</code>). <em>Sampling</em> divides the logits by a temperature, applies softmax, and draws at random. Low temperatures are nearly greedy and high ones are adventurous. Sorting 262k numbers on the CPU would be slow, so <code>compact_logits</code> first keeps only candidates near the maximum.`,
+    ks: () => S.mode === 'greedy' ? [K('argmax')] : [K('compact_logits'), K('sample_logits', { page: false })],
+    kv: () => S.mode === 'greedy' ? [['launch', '1 block · 1024 threads'], ['ties', 'resolved to the smaller index (deterministic)']] : [['launch', '≤ 448 blocks · 256 threads'], ['then', 'host sorts the survivors, applies top-k / top-p, draws']],
+    why: 'Even a "pick the max" kernel needs care. 262,144 values are reduced at thread, warp and block level, and ties must break the same way every run so outputs are reproducible.',
+    res: () => residual(me(), pos(), L - 1, 2), view: vPick },
+  { id: 'app', g: 'post', t: 'append, repeat', kk: 'next decode step',
+    title: () => 'Append the token and go again',
+    plain: () => `The chosen token joins the text and becomes the input to the next pass. That pass is a <em>decode</em> step: one token, every matrix now a matrix × vector product, and attention reading the earlier tokens' keys and values from the cache instead of recomputing them.`,
+    ks: () => [], kv: () => [['KV cache now', `${S.seq.length} positions × 48 layers`], ['per position', fmtB(B.kvPerPos * L) + ' across all layers'], ['next phase', 'decode (mv_* kernels)']],
+    why: 'Each decode step re-reads all ~9 GB of weights to produce a single token. That\'s why serving systems batch many users\' tokens together: the same weight read then feeds many dot products, turning mv_ back into gemm_.',
+    res: () => residual(me(), pos(), L - 1, 2), view: vApp },
+];
+
+/* ---------- stage views ---------- */
+function vTokens(el) {
+  const ids = S.seq.map((t, i) => t === '<bos>' ? 2 : 1000 + (hash(t) % 250000));
+  el.innerHTML = `<div class="cvlabel"><b>${prefill() ? 'prompt → tokens' : 'sequence so far'}</b><span>ids illustrative except &lt;bos&gt; = 2</span></div>
+  <div class="seqline" style="gap:8px;font-size:14px">${S.seq.map((t, i) => `<span style="display:inline-flex;flex-direction:column;align-items:center;gap:3px"><span class="tok ${i === pos() ? 'me' : ''}">${tokShow(t)}</span><span class="hint">${ids[i]}</span><span class="hint">pos ${i}</span></span>`).join('')}</div>
+  <p class="hint">${prefill() ? 'All six tokens go through the 48 layers together in this first pass, with matrix × matrix products (gemm_*). Only the last token\'s final vector is used to pick the next word.' : 'Only the newest token goes through the layers. The others are already in the KV cache.'}</p>`;
+}
+function vEmbed(el) {
+  const row = 1000 + (hash(me()) % 250000), r = residual(me(), pos(), 0, 0);
+  const tbl = Array.from({ length: 9 }, (_, i) => i === 4 ? `<tr class="on"><th>${row.toLocaleString()}</th><td>${Array.from(r.slice(0, 6)).map(v => (v / 62).toFixed(3)).join(' ')} …</td></tr>` : `<tr><th style="opacity:.5">${(row - 4 + i).toLocaleString()}</th><td style="opacity:.35">${Array.from(vec(row + i, 6, 0.02)).map(v => v.toFixed(3)).join(' ')} …</td></tr>`).join('');
+  el.innerHTML = `<div class="cvlabel"><b>embedding table · 262,144 rows × 3,840</b><span>row → residual stream (× √3840)</span></div>
+  <div class="tablewrap"><table class="nums" style="width:100%"><tbody>${tbl}</tbody></table></div>
+  ${barsSVG(strip(r), { label: 'the selected row after scaling, 3,840 dims shown as 192 bars (largest per group)' })}`;
+}
+function vNorm0(el) {
+  const r = residual(me(), pos(), 0, 0), n = rmsnorm(r, 9001);
+  el.innerHTML = `<div class="cvlabel"><b class="x">before: RMS ${rmsOf(r).toFixed(3)}</b><b class="y">after: RMS ${rmsOf(n).toFixed(3)}</b></div>
+  ${barsSVG(sample(r, 128), { label: 'x, first 128 dims', h: 56 })}${barsSVG(sample(n, 128), { label: 'rmsnorm(x) · w, first 128 dims', h: 56, color: 'var(--sync)' })}
+  <div class="formula">y[i] = x[i] · 1/√(Σx²/n + ε) · w[i]</div>`;
+}
+function headBlocks(x0, y, n, w, cls, seed, label) {
+  const v = vec(seed, n, 1); let s = `<text x="${x0}" y="${y - 6}" font-size="11" style="fill:var(--muted)">${label}</text>`;
+  for (let h = 0; h < n; h++) s += `<rect data-h="${cls}${h}" x="${x0 + h * (w + 3)}" y="${y}" width="${w}" height="26" rx="3" style="fill:${cls === 'q' ? 'var(--x)' : cls === 'k' ? 'var(--w)' : 'var(--y)'};opacity:${(0.35 + 0.5 * Math.min(1, Math.abs(v[h]))).toFixed(2)}"/>`;
+  return s;
+}
+function vQKV(el) {
+  const hl = S.head, kvh = hl >> 1, qw = 38, kw = 38, x0 = 10;
+  let s = `<svg viewBox="0 0 760 210" role="img" aria-label="16 query heads, 8 key heads, 8 value heads; each pair of query heads shares one key-value head">`;
+  s += `<rect x="10" y="12" width="740" height="16" rx="3" style="fill:var(--sync);opacity:.35"/><text x="14" y="24" font-size="11" style="fill:var(--fg)">normalized x · 3,840</text>`;
+  s += headBlocks(x0, 70, 16, qw, 'q', 11 + S.layer, 'q · 16 heads × 256');
+  s += headBlocks(x0, 150, 8, kw, 'k', 12 + S.layer, 'k · 8 heads × 256');
+  s += headBlocks(x0 + 8 * (kw + 3) + 30, 150, 8, kw, 'v', 13 + S.layer, 'v · 8 heads × 256');
+  for (let h = 0; h < 16; h++) { const kx = x0 + (h >> 1) * (kw + 3) + kw / 2, qx = x0 + h * (qw + 3) + qw / 2, on = (h >> 1) === kvh; s += `<line x1="${qx}" y1="96" x2="${kx}" y2="150" style="stroke:${on ? 'var(--accent)' : 'var(--line2)'};stroke-width:${on ? 2 : 1}"/>`; }
+  s += `<rect x="${x0 + hl * (qw + 3) - 2}" y="68" width="${qw + 4}" height="30" rx="4" style="fill:none;stroke:var(--fg);stroke-width:2"/>`;
+  [0, 1].forEach(j => s += `<rect x="${x0 + j * (8 * (kw + 3) + 30) + kvh * (kw + 3) - 2}" y="148" width="${kw + 4}" height="30" rx="4" style="fill:none;stroke:var(--accent);stroke-width:2"/>`);
+  s += `<line x1="380" y1="28" x2="380" y2="50" style="stroke:var(--line2)"/></svg>`;
+  el.innerHTML = `<div class="cvlabel"><b>grouped-query attention</b><span>click a query head</span></div>${s}<div class="hint">query head ${hl} → key/value head ${kvh}. Query heads ${kvh * 2} and ${kvh * 2 + 1} read the same cached keys and values.</div>`;
+  el.querySelectorAll('rect[data-h^=q]').forEach(r => { r.style.cursor = 'pointer'; r.addEventListener('click', () => { S.head = +r.dataset.h.slice(1); render(); }); });
+}
+function vRope(el) {
+  const base = isGlobal(S.layer) ? 1e6 : 1e4, i = S.pair, f = Math.pow(base, -2 * i / HD), p = pos(), th = p * f;
+  const cx = 130, cy = 110, R = 82, a0 = 0.5;
+  let s = `<svg viewBox="0 0 760 220" role="img" aria-label="Rotation of one pair of query dimensions by the position angle">`;
+  s += `<circle cx="${cx}" cy="${cy}" r="${R}" style="fill:none;stroke:var(--line2)"/>`;
+  for (let q = 0; q <= Math.max(p, 1); q++) { const a = a0 + q * f; s += `<circle cx="${cx + R * Math.cos(a)}" cy="${cy - R * Math.sin(a)}" r="3" style="fill:${q === p ? 'var(--accent)' : 'var(--muted)'};opacity:${q === p ? 1 : .5}"/><text x="${cx + (R + 12) * Math.cos(a) - 4}" y="${cy - (R + 12) * Math.sin(a) + 4}" font-size="9" style="fill:var(--muted)">${q <= 6 ? q : ''}</text>`; }
+  s += `<line x1="${cx}" y1="${cy}" x2="${cx + R * Math.cos(a0)}" y2="${cy - R * Math.sin(a0)}" style="stroke:var(--muted);stroke-width:1.5;stroke-dasharray:3 3"/>`;
+  s += `<line x1="${cx}" y1="${cy}" x2="${cx + R * Math.cos(a0 + th)}" y2="${cy - R * Math.sin(a0 + th)}" style="stroke:var(--accent);stroke-width:2.5"/>`;
+  // frequency ladder
+  s += `<text x="280" y="20" font-size="11" style="fill:var(--muted)">rotation per position step, all 128 pairs (log scale)</text>`;
+  for (let j = 0; j < 128; j++) { const fj = Math.pow(base, -2 * j / HD), h = Math.max(1, 150 * (Math.log10(fj) + 6.2) / 6.2); s += `<rect x="${280 + j * 3.6}" y="${190 - h}" width="2.6" height="${h}" style="fill:${j === i ? 'var(--accent)' : 'var(--sync)'};opacity:${j === i ? 1 : .45}"/>`; }
+  s += `<text x="280" y="206" font-size="10" style="fill:var(--muted)">pair 0: fast</text><text x="650" y="206" font-size="10" style="fill:var(--muted)">pair 127: slow</text></svg>`;
+  el.innerHTML = `<div class="cvlabel"><b>pair (${i}, ${i + 128}) of one query head</b><span>dots: where tokens at positions 0…${p} point</span></div>${s}
+  <div class="inline-ctl"><label>pair <input type="range" id="rp" min="0" max="127" value="${i}"> <b>${i}</b></label><span>angle per step <b>${f.toExponential(2)}</b> rad</span><span>at position ${p}: <b>${(th % (2 * Math.PI)).toFixed(3)}</b> rad</span></div>`;
+  $('rp').addEventListener('input', e => { S.pair = +e.target.value; render(); });
+}
+function vAtt(el) {
+  const p = pos(), g = isGlobal(S.layer), r = rng(hash(me()) + S.layer * 31 + S.head * 7);
+  const fr = S.seq.indexOf(' France');
+  const sc = S.seq.map((t, j) => (j === 0 ? 2.6 : 0) + (j === fr ? (S.layer > 8 ? 2.2 + S.layer / 30 : 0.4) : 0) + (j === p ? 0.9 : 0) + (j === p - 1 ? 0.6 : 0) + gauss(r) * 0.6);
+  const w = softmax(sc);
+  const rows = S.seq.map((t, j) => `<tr${j === p ? ' class="on"' : ''}><th style="text-align:left;white-space:pre">${tokShow(t)}</th><td style="width:100%"><div style="height:12px;width:${(w[j] * 100).toFixed(1)}%;background:var(--y);border-radius:2px;min-width:1px"></div></td><td>${(w[j] * 100).toFixed(1)}%</td><td class="hint">${sc[j].toFixed(2)}</td></tr>`).join('');
+  const C = ctxLen(), vis = g ? C : Math.min(C, WIN);
+  el.innerHTML = `<div class="cvlabel"><b class="y">query head ${S.head} (shares kv head ${S.head >> 1}) · layer ${S.layer}</b><span>weight · score</span></div>
+  <div class="tablewrap"><table class="nums" style="width:100%"><tbody>${rows}</tbody></table></div>
+  <div class="inline-ctl"><span>head</span><input type="range" id="ah" min="0" max="15" value="${S.head}"><b>${S.head}</b><span>Most heads put a lot of weight on &lt;bos&gt; (an "attention sink"). Deeper layers lean on " France".</span></div>
+  <div class="cvlabel" style="margin-top:6px"><b>which positions this layer can see, at context ${C.toLocaleString()}</b><span>${vis.toLocaleString()} keys</span></div>
+  <svg viewBox="0 0 760 22" role="img" aria-label="visible window"><rect x="0" y="4" width="760" height="14" rx="3" style="fill:var(--zero)"/><rect x="${760 * (1 - vis / C)}" y="4" width="${760 * vis / C}" height="14" rx="3" style="fill:${g ? 'var(--accent)' : 'var(--x)'}"/></svg>`;
+  $('ah').addEventListener('input', e => { S.head = +e.target.value; render(); });
+}
+function vO(el) {
+  const a = vec(77 + S.layer, 4096, 1), o = vec(78 + S.layer, D, 0.5);
+  el.innerHTML = `${barsSVG(strip(a, 192), { label: '16 heads × 256 = 4,096 attention outputs', color: 'var(--y)' })}<div class="hint" style="text-align:center">× W_o (3,840 × 4,096, Q8_0) ↓</div>${barsSVG(strip(o), { label: '3,840 values, ready to add to the residual stream' })}`;
+}
+function vAdd(which) {
+  return el => {
+    const before = residual(me(), pos(), S.layer, which), after = residual(me(), pos(), S.layer, which + 1), d = after.map((v, i) => v - before[i]);
+    el.innerHTML = `<div class="cvlabel"><b>residual + normalized ${which ? 'feed-forward' : 'attention'} output</b><span>first 128 dims</span></div>
+    ${barsSVG(sample(before, 128), { label: `stream before · RMS ${rmsOf(before).toFixed(2)}`, h: 46 })}
+    ${barsSVG(sample(d, 128), { label: `+ post-norm(${which ? 'ffn' : 'attention'} output)`, h: 46, color: 'var(--w)', neg: 'var(--w)' })}
+    ${barsSVG(sample(after, 128), { label: `= stream after · RMS ${rmsOf(after).toFixed(2)}`, h: 46 })}
+    <div class="hint">…and in the same launch, rmsnorm(stream after) is written as the input to ${which ? (S.layer < L - 1 ? `layer ${S.layer + 1}'s attention` : 'the output head') : 'the feed-forward block'}.</div>`;
+  };
+}
+function vQuant(el) {
+  const x = rmsnorm(residual(me(), pos(), S.layer, 1), 500 + S.layer), b = S.qblock, blk = Array.from(x.slice(b * 32, b * 32 + 32));
+  const amax = Math.max(...blk.map(Math.abs)), d = amax / 127, q = blk.map(v => Math.round(v / d)), err = Math.max(...blk.map((v, i) => Math.abs(v - q[i] * d)));
+  el.innerHTML = `<div class="cvlabel"><b class="x">block ${b} of 120 · 32 floats</b><b class="w">scale d = max|x| / 127 = ${d.toFixed(5)}</b></div>
+  ${barsSVG(blk, { label: 'float32 input', h: 60, max: amax })}${barsSVG(q, { label: 'int8 = round(x / d)', h: 60, max: 127, color: 'var(--w)', neg: 'var(--w)' })}
+  <div class="tablewrap"><table class="nums"><tbody><tr><th>x</th>${blk.slice(0, 10).map(v => `<td>${v.toFixed(3)}</td>`).join('')}<td>…</td></tr><tr><th>int8</th>${q.slice(0, 10).map(v => `<td>${v}</td>`).join('')}<td>…</td></tr></tbody></table></div>
+  <div class="inline-ctl"><label>block <input type="range" id="qb" min="0" max="119" value="${b}"> <b>${b}</b></label><span>largest rounding error <b>${err.toFixed(5)}</b> (≤ d/2)</span><span>36 bytes instead of 128</span></div>`;
+  $('qb').addEventListener('input', e => { S.qblock = +e.target.value; render(); });
+}
+function vGU(el) {
+  const g = vec(300 + S.layer, FF, 1.1), u = vec(301 + S.layer, FF, 0.8);
+  el.innerHTML = `${barsSVG(strip(rmsnorm(residual(me(), pos(), S.layer, 1), 7)), { label: 'input · 3,840 (int8 after quant_q8)', h: 44, color: 'var(--sync)', neg: 'var(--sync)' })}
+  <div class="hint" style="text-align:center">× [W_gate ; W_up] (30,720 × 3,840, Q5_0) ↓</div>
+  ${barsSVG(strip(g, 240), { label: 'gate · 15,360', h: 52, color: 'var(--w)', neg: 'var(--w)' })}${barsSVG(strip(u, 240), { label: 'up · 15,360', h: 52 })}`;
+}
+function vGeglu(el) {
+  const g = vec(300 + S.layer, FF, 1.1), u = vec(301 + S.layer, FF, 0.8), W = 360, H = 180, X = x => (x + 4) / 8 * W, Y = y => H - (y + 1) / 5 * H;
+  let s = `<svg viewBox="0 0 760 ${H + 20}" role="img" aria-label="GELU curve with sample gate values"><line x1="0" x2="${W}" y1="${Y(0)}" y2="${Y(0)}" style="stroke:var(--line2)"/><line x1="${X(0)}" x2="${X(0)}" y1="0" y2="${H}" style="stroke:var(--line2)"/>`;
+  let path = ''; for (let k = 0; k <= 80; k++) { const x = -4 + 8 * k / 80; path += (k ? 'L' : 'M') + X(x).toFixed(1) + ' ' + Y(gelu(x)).toFixed(1); }
+  s += `<path d="${path}" style="fill:none;stroke:var(--w);stroke-width:2"/><path d="M${X(-1)} ${Y(-1)} L${X(4)} ${Y(4)}" style="stroke:var(--muted);stroke-dasharray:3 3"/>`;
+  for (let k = 0; k < 60; k++) { const x = Math.max(-4, Math.min(4, g[k * 97])); s += `<circle cx="${X(x)}" cy="${Y(gelu(x))}" r="2.6" style="fill:var(--accent)"/>`; }
+  s += `<text x="4" y="${H + 16}" font-size="11" style="fill:var(--muted)">GELU(gate), 60 sample elements · dashed: y = x</text>`;
+  const rows = [0, 1, 2, 3].map(k => { const i = k * 3001 + 17, a = gelu(g[i]); return `<tr><td>${i}</td><td>${g[i].toFixed(3)}</td><td>${a.toFixed(3)}</td><td>${u[i].toFixed(3)}</td><td>${(a * u[i]).toFixed(3)}</td></tr>`; }).join('');
+  s += `<foreignObject x="400" y="10" width="360" height="170"><div xmlns="http://www.w3.org/1999/xhtml"><table class="nums"><thead><tr><th>i</th><th>gate</th><th>gelu</th><th>up</th><th>h = gelu·up</th></tr></thead><tbody>${rows}</tbody></table></div></foreignObject></svg>`;
+  el.innerHTML = `<div class="cvlabel"><b class="w">h[i] = GELU(gate[i]) · up[i]</b><span>15,360 elements, each independent</span></div>${s}`;
+}
+function vDown(el) {
+  const h = vec(310 + S.layer, FF, 0.9), o = residual(me(), pos(), S.layer, 2).map((v, i) => v - residual(me(), pos(), S.layer, 1)[i]);
+  el.innerHTML = `${barsSVG(strip(h, 240), { label: 'h · 15,360 → quant_q8 → int8', h: 52, color: 'var(--w)', neg: 'var(--w)' })}<div class="hint" style="text-align:center">× W_down (3,840 × 15,360, Q5_0) ↓</div>${barsSVG(strip(o), { label: 'feed-forward output · 3,840', h: 52 })}`;
+}
+function logits() {
+  const top = CANDS[Math.min(S.gen, CANDS.length - 1)][0][1];
+  const c = CANDS[Math.min(S.gen, CANDS.length - 1)].map(([t, l]) => [t, +(top - (top - l) * 0.42).toFixed(2)]);
+  return c;
+}
+function vHead(el) {
+  const c = logits(), max = c[0][1];
+  el.innerHTML = `<div class="cvlabel"><b class="y">top 10 of 262,144 logits</b><span>raw scores, before temperature</span></div>
+  <div class="tablewrap"><table class="nums" style="width:100%"><tbody>${c.map(([t, l], j) => `<tr${j === 0 ? ' class="on"' : ''}><th style="text-align:left;white-space:pre">${tokShow(t)}</th><td style="width:100%"><div style="height:12px;width:${(100 * Math.max(0.02, (l - 5) / (max - 5))).toFixed(1)}%;background:var(--y);border-radius:2px"></div></td><td>${l.toFixed(1)}</td></tr>`).join('')}</tbody></table></div>
+  <p class="hint">The other 262,134 logits are lower, most of them far lower. A logit is a dot product: final vector · embedding row of that token.</p>`;
+}
+function vPick(el) {
+  const c = logits(), T = S.temp, p = softmax(c.map(x => x[1]), T), keep = c.filter(x => x[1] >= c[0][1] - T * Math.log(1e4)).length;
+  const chosen = S.mode === 'greedy' ? 0 : (S.drawn ?? 0);
+  el.innerHTML = `<div class="inline-ctl"><span class="chipsel" id="pm"><button data-m="greedy" aria-pressed="${S.mode === 'greedy'}">greedy · argmax</button><button data-m="sample" aria-pressed="${S.mode === 'sample'}">sample</button></span>
+    <label>temperature <input type="range" id="pt" min="5" max="200" value="${Math.round(T * 100)}" ${S.mode === 'greedy' ? 'disabled' : ''}> <b>${T.toFixed(2)}</b></label>
+    ${S.mode === 'sample' ? '<button id="pd2">draw again</button>' : ''}</div>
+  <div class="tablewrap"><table class="nums" style="width:100%"><tbody>${c.map(([t, l], j) => `<tr${j === chosen ? ' class="on"' : ''}><th style="text-align:left;white-space:pre">${tokShow(t)}${j === chosen ? ' ←' : ''}</th><td style="width:100%"><div style="height:12px;width:${(p[j] * 100).toFixed(1)}%;background:${j < keep ? 'var(--x)' : 'var(--zero)'};border-radius:2px;min-width:1px"></div></td><td>${(p[j] * 100).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div>
+  <p class="hint">${S.mode === 'greedy' ? 'argmax ignores temperature and always takes the top logit.' : `Teal bars survive an illustrative compact_logits cut (logit ≥ max − T·ln 10⁴): ${keep} of the top 10 here, a few hundred of the full vocabulary. See the compact_logits page for the kernel's exact rule.`}</p>
+  <button class="bigbtn" id="pgo">append "${tokShow(c[chosen][0])}" →</button>`;
+  el.querySelectorAll('#pm button').forEach(b => b.addEventListener('click', () => { S.mode = b.dataset.m; if (S.mode === 'sample') draw(); render(); }));
+  $('pt')?.addEventListener('input', e => { S.temp = +e.target.value / 100; draw(); render(); });
+  $('pd2')?.addEventListener('click', () => { draw(); render(); });
+  $('pgo').addEventListener('click', () => go(STAGES.length - 1));
+}
+function draw() { const c = logits(), p = softmax(c.map(x => x[1]), S.temp); let u = Math.random(), j = 0; while (j < p.length - 1 && (u -= p[j]) > 0) j++; S.drawn = j; }
+function vApp(el) {
+  const c = logits(), chosen = S.mode === 'greedy' ? 0 : (S.drawn ?? 0), next = c[chosen][0], N = S.seq.length + 1;
+  let s = `<svg viewBox="0 0 760 150" role="img" aria-label="KV cache: 48 layers by positions"><text x="0" y="12" font-size="11" style="fill:var(--muted)">KV cache · 48 layers (rows) × ${N} positions (columns)</text>`;
+  const cw = Math.min(40, 700 / N);
+  for (let l = 0; l < L; l++) for (let q = 0; q < N; q++) s += `<rect x="${40 + q * cw}" y="${20 + l * 2.5}" width="${cw - 2}" height="2" style="fill:${q === N - 1 ? 'var(--accent)' : isGlobal(l) ? 'var(--w)' : 'var(--x)'};opacity:${q === N - 1 ? .9 : .55}"/>`;
+  s += `<text x="0" y="146" font-size="10" style="fill:var(--muted)">new column: written by qk_norm_rope on the next pass</text></svg>`;
+  el.innerHTML = `<div class="seqline" style="font-size:14px">${S.seq.map(t => `<span class="tok">${tokShow(t)}</span>`).join('')}<span class="tok me gen">${tokShow(next)}</span></div>${s}
+  <div class="inline-ctl"><button class="bigbtn" id="agen" ${S.gen >= CANDS.length - 1 ? 'disabled' : ''}>generate the next token →</button><button id="areset">start over</button>${S.gen >= CANDS.length - 1 ? '<span>That\'s enough to see the loop.</span>' : ''}</div>`;
+  $('agen').addEventListener('click', () => { S.seq.push(next); S.gen++; S.drawn = null; cache.clear(); S.layer = 0; go(1); });
+  $('areset').addEventListener('click', () => { S.seq = PROMPT.slice(); S.gen = 0; S.drawn = null; S.layer = 0; cache.clear(); go(0); });
+}
+
+/* ---------- cost panel ---------- */
+function cost() {
+  const C = ctxLen(); let kv = 0; for (let l = 0; l < L; l++) kv += Math.min(C, isGlobal(l) ? C : WIN) * B.kvPerPos;
+  const mm = L * (B.qkv + B.o + B.gu + B.down) + B.head, other = L * (B.norms + 3 * D * 4 + 2 * FF * 4), tot = mm + kv + other;
+  const st = STAGES[S.i].id, cur = { qkv: B.qkv, o: B.o, gu: B.gu, down: B.down, head: B.head }[st];
+  $('jcbar').innerHTML = `<div style="width:${100 * mm / tot}%;background:var(--accent)" title="matrix products"></div><div style="width:${100 * kv / tot}%;background:var(--y)" title="KV cache"></div><div style="width:${Math.max(0.4, 100 * other / tot)}%;background:var(--sync)" title="other"></div>`;
+  $('jclegend').innerHTML = `<span><i class="sw" style="background:var(--accent)"></i>weights for matrix products ${fmtB(mm)} (${(100 * mm / tot).toFixed(1)}%)</span><span><i class="sw" style="background:var(--y)"></i>KV cache ${fmtB(kv)}</span><span><i class="sw" style="background:var(--sync)"></i>everything else ${fmtB(other)}</span>`;
+  $('jctxv').textContent = C.toLocaleString() + ' tokens';
+  $('jcost').innerHTML = `≈ <b style="color:var(--fg)">${fmtB(tot)}</b> per token → at least <b style="color:var(--fg)">${(tot / (S.bw * 1e12) * 1e3).toFixed(1)} ms</b> per token (${Math.floor(S.bw * 1e12 / tot)} tokens/s max) at ${S.bw} TB/s, ignoring everything but memory.` + (cur ? ` This step: ${fmtB(cur * (st === 'head' ? 1 : L))}${st === 'head' ? '' : ' across 48 layers'}.` : '');
+}
+
+/* ---------- chrome ---------- */
+const kname = s => typeof s.kk === 'function' ? s.kk() : s.kk;
+function buildMap() {
+  const groups = { pre: 'before the layers', layer: `inside layer ${S.layer} · ×48`, post: 'after the last layer' };
+  $('jmap').innerHTML = Object.entries(groups).map(([g, label]) => `<div class="jgroup ${g === 'layer' ? 'loop' : ''}"><div class="gl">${label}</div>${STAGES.map((s, i) => s.g !== g ? '' : `<button class="ji ${s.mm ? 'mm' : ''} ${i === S.i ? 'on' : ''} ${i < S.i ? 'done' : ''}" data-i="${i}" aria-current="${i === S.i ? 'step' : 'false'}"><span class="n">${String(i + 1).padStart(2, '0')}</span><span class="t">${s.t}</span><span class="kk">${kname(s)}</span></button>`).join('')}</div>`).join('');
+  $('jmap').querySelectorAll('.ji').forEach(b => b.addEventListener('click', () => go(+b.dataset.i)));
+  const on = $('jmap').querySelector('.ji.on'), m = $('jmap'); if (on && m.scrollWidth > m.clientWidth) m.scrollLeft = on.offsetLeft - m.clientWidth / 2 + on.offsetWidth / 2;
+}
+function buildLayers() {
+  const inLayer = STAGES[S.i].g === 'layer', post = STAGES[S.i].g === 'post';
+  $('jlayers').innerHTML = Array.from({ length: L }, (_, l) => `<button class="${isGlobal(l) ? 'g' : ''} ${inLayer && l === S.layer ? 'on' : ''} ${(post || l < S.layer) && STAGES[S.i].g !== 'pre' ? 'past' : ''}" data-l="${l}" aria-label="layer ${l}, ${isGlobal(l) ? 'global' : 'local'}" title="layer ${l} · ${isGlobal(l) ? 'global' : 'local'}"></button>`).join('');
+  $('jlayers').querySelectorAll('button').forEach(b => b.addEventListener('click', () => { S.layer = +b.dataset.l; go(STAGES[S.i].g === 'layer' ? S.i : 3); }));
+  const g = isGlobal(S.layer);
+  $('jlinfo').innerHTML = inLayer ? `layer <b>${S.layer}</b> of 47 · <b>${g ? 'global' : 'local'}</b> · ${g ? 'full context, RoPE base 1M' : 'window 1,024, RoPE base 10k'}` : post ? 'all <b>48</b> layers done' : 'filled: global layers (1 in 6) · hollow: local';
+}
+function render() {
+  const s = STAGES[S.i];
+  buildMap(); buildLayers();
+  $('jphase').textContent = prefill() ? `prefill · ${S.seq.length} tokens together` : `decode step ${S.gen}`;
+  $('jseq').innerHTML = S.seq.map((t, i) => `<span class="tok ${i === pos() ? 'me' : ''} ${i >= PROMPT.length ? 'gen' : ''}">${tokShow(t)}</span>`).join('');
+  $('jeyebrow').textContent = `step ${S.i + 1} of ${STAGES.length}${s.g === 'layer' ? ` · layer ${S.layer}` : ''} · following "${me().replace(/\n/g, '\\n')}" at position ${pos()}`;
+  $('jtitle').textContent = s.title();
+  $('jplain').innerHTML = s.plain();
+  $('jwhy').innerHTML = `<b>why it matters ·</b> ${esc(s.why)}`;
+  const ks = s.ks();
+  $('jk').innerHTML = ks.length ? ks.map(k => k.page ? `<a class="klink ${k.mm ? 'mm' : ''}" href="${k.k}.html">${k.k}${k.note ? ` <span class="muted">· ${k.note}</span>` : ''} →</a>` : `<span class="klink np" title="no page yet">${k.k} · no page yet</span>`).join('') : '<span class="hint">no GPU kernel for this step</span>';
+  $('jgpuhint').textContent = ks.some(k => k.page) ? 'open the kernel page to watch every thread' : '';
+  $('jkv').innerHTML = s.kv().map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  const r = s.res(); curRes = r;
+  $('jresinfo').textContent = r ? `RMS ${rmsOf(r).toFixed(2)} · ${s.g === 'layer' ? `layer ${S.layer}` : s.g === 'post' ? 'after layer 47' : 'before layer 0'}` : 'not created yet';
+  drawRes();
+  s.view($('jview'));
+  cost();
+  fixLinks($('journey'));
+}
+function go(i) {
+  S.i = Math.max(0, Math.min(STAGES.length - 1, i)); render();
+}
+function step(d) {
+  const s = STAGES[S.i];
+  if ($('jwalk').checked && s.g === 'layer') {
+    if (d > 0 && s.id === 'add2' && S.layer < L - 1) { S.layer++; return go(3); }
+    if (d < 0 && s.id === 'qkv' && S.layer > 0) { S.layer--; return go(12); }
+  }
+  if (d > 0 && S.i === STAGES.length - 1) { stop(); return; }
+  go(S.i + d);
+}
+function stop() { clearInterval(S.playing); S.playing = null; $('jplay').textContent = '▶ play'; }
+$('jprev').onclick = () => { stop(); step(-1); };
+$('jnext').onclick = () => { stop(); step(1); };
+$('jplay').onclick = () => { if (S.playing) return stop(); $('jplay').textContent = '❚❚ pause'; S.playing = setInterval(() => step(1), $('jwalk').checked ? 900 : 3200); };
+document.addEventListener('keydown', e => {
+  if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName) && document.activeElement.type !== 'checkbox') return;
+  const j = $('journey').getBoundingClientRect(); if (j.bottom < 0 || j.top > innerHeight) return;
+  if (e.key === 'ArrowRight') { stop(); step(1); e.preventDefault(); }
+  if (e.key === 'ArrowLeft') { stop(); step(-1); e.preventDefault(); }
+});
+$('jctx').addEventListener('input', e => { S.ctxIdx = +e.target.value; render(); });
+$('jbw').addEventListener('change', e => { S.bw = +e.target.value; cost(); });
+addEventListener('resize', drawRes);
+
+/* ---------- 02 gpu primer ---------- */
+const G = { bd: 256, bi: 0, t: 37 };
+function gpu() {
+  const rows = G.bd / 32, gt = $('gt');
+  gt.innerHTML = Array.from({ length: G.bd }, (_, t) => `<div data-t="${t}" class="${t === G.t ? 'sel' : (t >> 5) === (G.t >> 5) ? 'w' : ''}" title="thread ${t}"></div>`).join('');
+  gt.querySelectorAll('div').forEach(d => d.addEventListener('click', () => { G.t = +d.dataset.t; gpu(); }));
+  const t = Math.min(G.t, G.bd - 1), els = []; for (let i = t; i < D; i += G.bd) els.push(i);
+  $('gkv').innerHTML = [['threadIdx.x', t], ['warp, lane', `${t >> 5}, ${t & 31}  (t >> 5, t & 31)`], ['global id', `${G.bi} × ${G.bd} + ${t} = ${G.bi * G.bd + t}`], ['in a block-per-row kernel', `this thread reads elements ${els.slice(0, 5).join(', ')}${els.length > 5 ? ', …' : ''} of a 3,840-wide row (strided loop, ${els.length} passes)`], ['block size', `${rows} warps × 32 lanes`]].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  $('gbiv').textContent = G.bi;
+}
+$('gbd').querySelectorAll('button').forEach(b => b.addEventListener('click', () => { G.bd = +b.dataset.v; $('gbd').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); if (G.t >= G.bd) G.t = 37 % G.bd; gpu(); }));
+$('gbi').addEventListener('input', e => { G.bi = +e.target.value; gpu(); });
+gpu();
+
+const PTX = [
+  { line: [['fma', 'Fused multiply-add: a·b + c in one instruction, rounded once.'], ['.rn', 'Rounding mode: round to nearest even.'], ['.f32', 'Type: 32-bit float.'], ['%f2,', 'Destination register (each thread has its own %f2).'], ['%f3, %f3,', 'Two inputs multiplied: x · x.'], ['%f2;', 'Added to the old value, so this line is ss += x * x.']], where: 'rmsnorm, the sum of squares' },
+  { line: [['ld', 'Load from memory.'], ['.global', 'State space: the GPU\'s main memory. Others: .shared, .local, .param.'], ['.v4', 'Vector load: 4 values in one instruction, 16 bytes per thread.'], ['.f32', 'Type of each value.'], ['{%f1,%f2,%f3,%f4},', 'Four destination registers.'], ['[%rd5];', 'Address held in a 64-bit register. A warp of 32 threads loading consecutive addresses moves 512 bytes in one go: a coalesced load.']], where: 'matrix and element-wise kernels' },
+  { line: [['shfl', 'Shuffle: read another lane\'s register directly.'], ['.sync', 'All lanes in the mask take part together.'], ['.bfly', 'Butterfly mode: lane l reads lane l xor offset.'], ['.b32', '32-bit payload.'], ['%f3, %f2,', 'Receive into %f3 the partner\'s %f2.'], ['16, 31, -1;', 'Offset 16, clamp 31, member mask 0xffffffff (all 32 lanes). Repeated with 8, 4, 2, 1, every lane ends with the warp\'s total.']], where: 'every reduction' },
+  { line: [['bar', 'Barrier.'], ['.sync', 'Every thread of the block waits here until all have arrived.'], ['0;', 'Barrier number 0. Needed before reading shared memory that other warps wrote.']], where: 'rmsnorm, gemm_q8, attention_enc' },
+  { line: [['dp4a', 'Dot product of 4 packed int8 pairs, accumulated into int32.'], ['.s32.s32', 'Both operands signed bytes packed in 32-bit registers.'], ['%r9,', 'Destination.'], ['%r5, %r6,', '4 weights · 4 activations.'], ['%r9;', 'Running sum. One instruction does 4 multiply-adds. This is why activations are quantized to int8.']], where: 'mv_q8, mv_q5, gemm_q8' },
+  { line: [['@%p1', 'Predicate guard: only threads where %p1 is true execute this.'], ['bra', 'Branch.'], ['SUMSQ_DONE;', 'Label to jump to. Divergent branches inside a warp run both paths in turn, so kernels try to keep a warp\'s threads on the same path.']], where: 'loop bounds everywhere' },
+];
+let pk = 0;
+function ptx() {
+  $('pp').innerHTML = PTX.map((p, i) => `<button aria-pressed="${i === pk}" data-i="${i}">${p.line[0][0]}${p.line[1][0].startsWith('.') ? '' : ' '}${p.line[1][0]}</button>`).join('');
+  $('pp').querySelectorAll('button').forEach(b => b.addEventListener('click', () => { pk = +b.dataset.i; ptx(); }));
+  const p = PTX[pk];
+  $('pl').innerHTML = p.line.map(([t], i) => (i > 0 && !t.startsWith('.') ? ' ' : '') + `<span tabindex="0" data-i="${i}">${esc(t)}</span>`).join('');
+  $('pd').innerHTML = `Used in ${p.where}. Hover or focus a part.`;
+  $('pl').querySelectorAll('span').forEach(s => { const show = () => { $('pl').querySelectorAll('span').forEach(x => x.classList.toggle('on', x === s)); $('pd').innerHTML = `<b style="color:var(--fg)">${esc(p.line[s.dataset.i][0])}</b>  ${esc(p.line[s.dataset.i][1])}`; }; s.addEventListener('mouseenter', show); s.addEventListener('focus', show); });
+}
+ptx();
+
+/* ---------- 03 reading paths ---------- */
+const TRACKS = [
+  { name: 'first five', who: 'start here whatever your background', steps: [['geglu', 'grid-stride loop, no cooperation'], ['rmsnorm', 'warp butterfly + shared memory'], ['quant_q8', 'block-wise int8 with a scale'], ['mv_q8', 'one warp per row, coalesced loads, dp4a'], ['attention', 'online softmax, GQA, KV cache']] },
+  { name: 'matrix products', who: 'where the time goes', steps: [['mv_q8', 'the decode baseline'], ['mv_q5', 'unpacking 5-bit weights'], ['mv_mxfp4', 'fp4 via byte permutes, picking experts'], ['gemm_q8', 'tiles in shared memory, bank conflicts'], ['qkv', 'how the shapes fit together']] },
+  { name: 'positions and attention', who: 'how tokens see each other', steps: [['rope_kv', 'RoPE, YaRN, the ring-buffer cache'], ['qk_norm_rope', 'per-head norm fused with RoPE'], ['attention', 'causal, sliding window'], ['head_norm_rope', 'packed sequences'], ['attention_enc', 'bidirectional, exact two-pass softmax']] },
+  { name: 'experts and sampling', who: 'the parts around the matrices', steps: [['mv_f32', 'the MoE router'], ['router_topk', 'warp argmax ×4, softmax'], ['moe_sort', 'histogram, scan, scatter'], ['moe_combine', 'weighted mix into the residual'], ['argmax', 'three-level reduction, tie-breaking'], ['compact_logits', 'threshold + atomic append']] },
+];
+$('tracks').innerHTML = TRACKS.map((t, ti) => `<div class="track"><div class="tl"><b>${String.fromCharCode(65 + ti)} · ${t.name}</b><span>· ${t.who}</span></div><div class="rail">${t.steps.map(([k, n], i) => `<a class="step ${/^(mv_|gemm_)/.test(k) ? 'mm' : ''}" href="${k}.html"><span class="n">${String(i + 1).padStart(2, '0')}</span><span class="k">${k}</span><span class="note">${n}</span></a>`).join('')}</div></div>`).join('');
+
+/* ---------- 04 glossary ---------- */
+const GL = [
+  ['token', 'A piece of text from a fixed vocabulary, replaced by its id number.', '#journey'],
+  ['residual stream', 'The 3,840 (Gemma 3) numbers per token that every layer reads and adds to.', '#journey'],
+  ['prefill / decode', 'Prefill runs the whole prompt at once (matrix × matrix). Decode makes one token per pass (matrix × vector).', '#journey'],
+  ['logits', 'One raw score per vocabulary entry. Softmax turns them into probabilities.', 'argmax.html'],
+  ['RMSNorm', 'Rescale a vector to unit root-mean-square, then multiply by learned weights.', 'rmsnorm.html'],
+  ['GQA', 'Grouped-query attention: several query heads share one key/value head, shrinking the KV cache.', 'attention.html'],
+  ['KV cache', 'Stored keys and values of earlier tokens, so decode doesn\'t recompute them. f16 on this site.', 'qk_norm_rope.html'],
+  ['RoPE', 'Rotary position embedding: rotate pairs of q/k numbers by an angle proportional to position.', 'qk_norm_rope.html'],
+  ['YaRN', 'A way to stretch RoPE to longer contexts by blending rotation frequencies (gpt-oss).', 'rope_kv.html'],
+  ['NeoX pairs', 'RoPE pairs dimension i with i + d/2, rather than with i + 1.', 'rope_kv.html'],
+  ['sliding window / local', 'A layer that only attends to the last N tokens (1,024 in Gemma 3). Global layers see everything.', 'attention.html'],
+  ['online softmax', 'Softmax in one pass: keep a running max and sum, rescale as new scores arrive, never store all scores.', 'attention.html'],
+  ['MoE', 'Mixture of experts: a router picks a few feed-forward "experts" per token (4 of 32 in gpt-oss).', 'router_topk.html'],
+  ['SwiGLU / GeGLU', 'Gated feed-forward: activation(gate) × up. Swish for gpt-oss, GELU for Gemma.', 'geglu.html'],
+  ['tied output head', 'The output head reuses the embedding table as its weight matrix.', 'gemma3.html'],
+  ['GGUF', 'The file format the weights come in. Tensor names like attn_q.weight come from it.', 'gemma3.html'],
+  ['Q8_0 / Q5_0', 'Blocks of 32 weights stored as 8- or 5-bit integers with one f16 scale per block.', 'mv_q5.html'],
+  ['MXFP4 / E2M1 / e8m0', '4-bit floats (1 sign, 2 exponent, 1 mantissa bit) sharing a power-of-two scale per 32.', 'mv_mxfp4.html'],
+  ['warp / lane', '32 threads that execute together. A lane is one thread\'s index within its warp.', '#gpu'],
+  ['block / grid', 'A block is up to 1,024 threads sharing shared memory. The grid is all blocks of a launch.', '#gpu'],
+  ['coalesced load', 'Consecutive threads reading consecutive addresses, served as a few wide memory transactions.', 'mv_q8.html'],
+  ['warp butterfly', 'A reduction where lane l swaps with lane l xor 16, 8, 4, 2, 1. Every lane ends with the total.', 'rmsnorm.html'],
+  ['grid-stride loop', 'A fixed number of blocks loops over data of any size: i += gridDim × blockDim.', 'geglu.html'],
+  ['bank conflict', 'Several threads of a warp hitting the same shared-memory bank, which serializes their accesses. Fixed with padding.', 'gemm_q8.html'],
+  ['dp4a', 'One instruction for a 4-way int8 dot product with int32 accumulate.', 'mv_q5.html'],
+  ['prmt', 'Byte permute: assemble a register from chosen bytes of two others. Used to decode fp4.', 'mv_mxfp4.html'],
+  ['memory-bound', 'Speed limited by bytes moved, not arithmetic. Decode is memory-bound, so smaller weights mean faster tokens.', '#journey'],
+  ['PTX', 'NVIDIA\'s virtual instruction set. The driver compiles it to machine code (SASS) for each GPU.', '#gpu'],
+];
+function gloss() {
+  const q = $('gs').value.toLowerCase().trim();
+  $('gl').innerHTML = GL.filter(g => !q || (g[0] + ' ' + g[1]).toLowerCase().includes(q)).map(([t, d, h]) => `<div><b>${t}</b><span>${d}</span><a href="${h}">${h.startsWith('#') ? 'on this page ↑' : h.replace('.html', '') + ' →'}</a></div>`).join('') || '<p class="muted">No match.</p>';
+  fixLinks($('gl'));
+}
+$('gs').addEventListener('input', gloss); gloss();
+
+fixLinks(document);
+
+go(0);
+})();
+</script>
+</body>
+</html>
