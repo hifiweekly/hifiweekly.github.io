@@ -125,12 +125,21 @@ input.search { font: 13.5px var(--font-mono); color: var(--fg); background: var(
   <div class="in">
     <nav class="crumbs"><a href="index.html">kernel_atlas</a><span class="muted">/</span><span>start_here</span></nav>
     <h1>start_here</h1>
-    <p class="lede">The kernel pages show exactly how a GPU runs each step of a language model. This page gives you the big picture first. You'll follow one word through Gemma 3 12B, from text to the next word, and see which kernel does each job and why. Then pick a reading path.</p>
-    <p class="muted" style="font-size:14px">You need no CUDA and no machine-learning background. Matrix–vector multiplication and the idea of an array are enough. Each section takes about five minutes.</p>
+    <p class="lede">Ever wondered what actually happens inside a GPU when an AI model generates a response?<br>Kernel Atlas lets you explore that process, from the model’s computation down to the individual GPU threads and instructions that execute it. We’ll start with a simple example: asking Gemma 3 12B to complete the sentence “The capital of France is.”<br>Follow the computation step by step. See which kernels perform each operation, how GPU threads work together, and how those operations translate into actual GPU instructions. </p>
+    <p class="muted" style="font-size:14px">&nbsp;</p>
+    <p class="muted" style="font-size:14px">No CUDA or machine-learning experience required. We’ll introduce the concepts as you go. Ready? Choose the path that best matches what you already know. Why this is better:</p>
+    <ul>
+      <li>Starts with a question that almost everyone can relate to.</li>
+      <li>Explains what Kernel Atlas actually does.</li>
+      <li>Introduces the example without unnecessary technical terminology.</li>
+      <li>Establishes that beginners are welcome.</li>
+    </ul>
+    <p class="muted" style="font-size:14px">One technical wording detail: I’d consistently use token, rather than word, when discussing the model’s internal processing. A token may represent a word, part of a word, punctuation or whitespace.</p>
+    <p class="muted" style="font-size:14px">&nbsp;</p>
     <div class="paths">
-      <a class="path" href="#journey"><span class="who">NEW TO BOTH</span><b>Follow one token →</b><span>See what a model does to a word, one step at a time, with each step's kernel.</span></a>
-      <a class="path" href="#gpu"><span class="who">KNOW TRANSFORMERS, NOT GPUS</span><b>GPU in five minutes →</b><span>Threads, warps, blocks and memory, then how to read a line of PTX.</span></a>
-      <a class="path" href="#paths"><span class="who">KNOW CUDA, NOT LLMS</span><b>Reading paths →</b><span>Three ordered routes through the kernel pages, simplest first.</span></a>
+      <a class="path" href="#journey"><span class="who">NEW TO AI AND GPU PROGRAMMING</span><b>Start with one token →</b><span>Follow a simple AI example from input text to the next generated token. Discover what happens inside the model and how GPU kernels make it happen.</span></a>
+      <a class="path" href="#gpu"><span class="who">UNDERSTAND AI, NEW TO GPU PROGRAMMING</span><b>Understand how GPUs work →</b><span>Learn how threads, warps, blocks and GPU memory work together. Then see how these concepts appear in actual GPU instructions.</span></a>
+      <a class="path" href="#paths"><span class="who">KNOW GPU PROGRAMMING, NEW TO LLMS</span><b>Explore the kernel library →</b><span>Already familiar with GPU programming? Follow three curated learning paths through the kernel implementations, starting with simpler operations and progressing to more advanced techniques.</span></a>
     </div>
   </div>
 </div>
@@ -358,7 +367,7 @@ const STAGES = [
     res: () => null, view: vTokens },
   { id: 'emb', g: 'pre', t: 'embedding lookup', kk: 'table row copy',
     title: () => 'The id picks a row of the embedding table',
-    plain: () => `The embedding table has one row of 3,840 numbers per vocabulary entry. Token id → row. That row, scaled by √3840 ≈ 62, becomes the token's <em>residual stream</em>: the vector every layer reads from and adds to. The strip above shows it.`,
+	  plain: () => `The embedding table has one row of 3,840 numbers per vocabulary entry. Token id → row. That row, scaled by √3840 ≈ 62, becomes the token's <em>residual stream</em>: the vector every layer reads from and adds to. The strip above shows it. For example, first dimension's value of token <em>" is"</em> equals -0.4282, scale by 62, it becomes -0.007 as shown below.`,
     ks: () => [], kv: () => [['table', '262,144 × 3,840'], ['read per token', '1 row'], ['shared with', 'the output head (tied weights)']],
     why: 'The same table is reused at the very end. The output head scores the final vector against every row, so the table that turned the id into a vector also turns the final vector back into a word.',
     res: () => residual(me(), pos(), 0, 0), view: vEmbed },

@@ -90,8 +90,7 @@
 input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; margin: 0; vertical-align: middle; }
 .status { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
 .status.ok { color: var(--ok); } .status.err { color: var(--err); } .status.warn { color: var(--warn); }
-.bar { height: 5px; border-radius: 3px; background: var(--bar-bg); overflow: hidden; }
-.bar > i { display: block; height: 100%; width: 0; background: var(--bar); transition: width .2s; }
+.wave { display: block; width: 100%; height: 34px; border-radius: 3px; }
 
 .controls { padding: 14px 18px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-end; }
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
@@ -946,6 +945,49 @@ async function locateFrame(read, area, index, target) {
 class Resync extends Error {}
 
 /*
+ * A waveform overview of a track, as Audacity draws one: the samples are
+ * split into `columns` equal spans, and each span keeps its lowest and
+ * highest sample and its RMS (all channels together, after the gain).
+ * take() returns the columns completed since the last call.
+ */
+class WaveSummary {
+  constructor(columns, total, gain) {
+    this.columns = columns; this.total = Math.max(1, total); this.gain = gain;
+    this.min = new Float32Array(columns); this.max = new Float32Array(columns); this.rms = new Float32Array(columns);
+    this.col = 0; this.next = this.boundary(1); this.sent = 0;
+    this.lo = 0; this.hi = 0; this.sq = 0; this.n = 0;
+  }
+  boundary(c) { return Math.ceil(c * this.total / this.columns); }
+  close() {
+    const c = this.col;
+    if (c >= this.columns) return;
+    this.min[c] = this.lo; this.max[c] = this.hi; this.rms[c] = this.n ? Math.sqrt(this.sq / this.n) : 0;
+    this.lo = this.hi = this.sq = this.n = 0;
+    this.col++; this.next = this.boundary(this.col + 1);
+  }
+  // count samples of ch channels from pcm[offset], the first being sample `at` of the track
+  add(pcm, offset, count, ch, at) {
+    const g = this.gain;
+    for (let k = 0; k < count; k++, at++) {
+      while (at >= this.next && this.col < this.columns) this.close();
+      let lo = this.lo, hi = this.hi, sq = this.sq;
+      for (let c = 0; c < ch; c++) {
+        const v = pcm[offset++] * g;
+        if (v < lo) lo = v; else if (v > hi) hi = v;
+        sq += v * v;
+      }
+      this.lo = lo; this.hi = hi; this.sq = sq; this.n += ch;
+    }
+  }
+  finish() { while (this.col < this.columns) this.close(); }
+  take() {
+    const from = this.sent, to = this.col;
+    this.sent = to;
+    return { from, min: this.min.slice(from, to), max: this.max.slice(from, to), rms: this.rms.slice(from, to) };
+  }
+}
+
+/*
  * Converts one track to WAV data.  Only the frames from shortly before the
  * track to shortly after it are decoded: the filters forget everything
  * older than a fraction of a frame, and a frame of input always yields the
@@ -957,7 +999,9 @@ class Resync extends Error {}
  *   options.index              track index in area.tracks
  *   options.rate, bits, gainDb output format
  *   options.onData(bytes)      receives the sample data in order (may return a promise)
- *   options.onProgress(f)      0..1
+ *   options.onProgress(f, wave) 0..1, and if options.columns is set, the
+ *                              waveform columns completed since the last
+ *                              call: { from, min, max, rms } (see WaveSummary)
  *
  * The WAV header comes last, in the result (its sizes are only final then):
  * write it in front of the data.  Result:
@@ -998,6 +1042,8 @@ async function convertTrackFrom(o, seek) {
   const OUT_SIZE = 1 << 20;
   let out = new Uint8Array(OUT_SIZE), view = new DataView(out.buffer), used = 0;
   let pos = target * spf, written = 0, badFrames = 0, lastProgress = -1;
+  const wave = o.columns ? new WaveSummary(o.columns, end - begin, 10 ** (o.gainDb / 20)) : null;
+  const progress = p => o.onProgress?.(p, wave?.take());
 
   const flushOut = async () => {
     if (!used) return;
@@ -1009,6 +1055,7 @@ async function convertTrackFrom(o, seek) {
   const deliver = async n => {
     let from = Math.max(pos, begin);
     const to = Math.min(pos + n, end);
+    if (wave && from < to) wave.add(pcm, (from - pos) * ch, to - from, ch, from - begin);
     while (from < to) {
       const room = Math.floor((OUT_SIZE - used) / (enc.bytes * ch));
       if (!room) { await flushOut(); continue; }
@@ -1018,7 +1065,7 @@ async function convertTrackFrom(o, seek) {
     }
     pos += n;
     const p = Math.floor(written / (end - begin) * 200);
-    if (p !== lastProgress) { lastProgress = p; o.onProgress?.(p / 200); }
+    if (p !== lastProgress) { lastProgress = p; progress(p / 200); }
   };
   // One complete frame, as emit_frame() in sacd2wav.c.
   const emit = async (size) => {
@@ -1073,6 +1120,7 @@ async function convertTrackFrom(o, seek) {
     await deliver(dec.process(null, dec.flush, pcm)); // the filter tail
   }
   await flushOut();
+  if (wave) { wave.finish(); progress(written / Math.max(1, end - begin)); }
   if (badFrames) warnings.push(`${badFrames} frame${badFrames > 1 ? 's' : ''} could not be decoded and were replaced by silence`);
   if (outOfSequence) warnings.push(`${outOfSequence} frame time code${outOfSequence > 1 ? 's' : ''} out of sequence`);
   if (written < end - begin) warnings.push(`audio ended ${((end - begin - written) / rate).toFixed(2)} s early (truncated image?)`);
@@ -1094,7 +1142,7 @@ return {
   RATES, FRAME_RATE, SECTOR_SIZE, FormatError,
   readDisc, readArea, convertTrack, trackSpan, wavHeader, blobReader,
   // internals, exported for the tests
-  DstDecoder, Decimator, SampleEncoder, makeFilename, tocString,
+  DstDecoder, Decimator, SampleEncoder, WaveSummary, makeFilename, tocString,
 };
 }
 </script>
@@ -1119,11 +1167,12 @@ self.onmessage = async ({ data: m }) => {
   try {
     const result = await lib.convertTrack({
       read: lib.blobReader(m.file), area: m.area, index: m.index, rate: m.rate, bits: m.bits, gainDb: m.gainDb,
+      columns: m.columns,
       onData: async bytes => {
         self.postMessage({ type: 'data', bytes }, [bytes.buffer]);
         if (++unacked > 6) await new Promise(r => { resume = r; }); // the writer is behind
       },
-      onProgress: p => self.postMessage({ type: 'progress', p }),
+      onProgress: (p, wave) => self.postMessage({ type: 'progress', p, wave }),
     });
     self.postMessage({ type: 'done', result });
   } catch (e) {
@@ -1242,6 +1291,7 @@ function render() {
 
   const rows = $('track-rows');
   rows.replaceChildren();
+  waves.clear();
   a.tracks.forEach((track, i) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td class="c-check"><input type="checkbox"></td><td class="c-num"></td>
@@ -1286,21 +1336,90 @@ function updateSummary() {
     $('summary').textContent = n ? `${n} of ${a.tracks.length} tracks selected · ${fmtTime(frames)} · about ${fmtSize(bytes)} of WAV` : 'No tracks selected';
 }
 
-function setStatus(i, cls, text, progress) {
+function setStatus(i, cls, text) {
   const st = rowOf(i).querySelector('.status');
   st.className = 'status' + (cls ? ' ' + cls : '');
-  st.replaceChildren();
-  const label = document.createElement('span');
+  let label = st.querySelector('span');
+  if (!label) { label = document.createElement('span'); st.prepend(label); }
   label.textContent = text;
-  st.append(label);
-  if (progress != null) {
-    const bar = document.createElement('div');
-    bar.className = 'bar';
-    bar.innerHTML = '<i></i>';
-    bar.firstChild.style.width = `${(progress * 100).toFixed(1)}%`;
-    st.append(bar);
-  }
 }
+
+// ------------------------------------------------------------------ waveform progress
+// Each converting track shows its waveform (peak and RMS, like Audacity's
+// overview) drawing itself in from left to right as the track is decoded.
+
+const WAVE_COLUMNS = 400;
+const waves = new Map(); // row index -> { canvas, min, max, rms, filled, p, done }
+
+function resetWave(i) {
+  const st = rowOf(i).querySelector('.status');
+  st.querySelector('canvas')?.remove();
+  const canvas = document.createElement('canvas');
+  canvas.className = 'wave';
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', 'Waveform');
+  st.append(canvas);
+  const w = { canvas, min: new Float32Array(WAVE_COLUMNS), max: new Float32Array(WAVE_COLUMNS),
+              rms: new Float32Array(WAVE_COLUMNS), filled: 0, p: 0, done: false, queued: false };
+  waves.set(i, w);
+  drawWave(w);
+}
+
+function removeWave(i) {
+  rowOf(i).querySelector('.status canvas')?.remove();
+  waves.delete(i);
+}
+
+function updateWave(i, p, chunk, done) {
+  const w = waves.get(i);
+  if (!w) return;
+  if (chunk && chunk.min.length) {
+    w.min.set(chunk.min, chunk.from); w.max.set(chunk.max, chunk.from); w.rms.set(chunk.rms, chunk.from);
+    w.filled = chunk.from + chunk.min.length;
+  }
+  if (p != null) w.p = p;
+  if (done) w.done = true;
+  if (!w.queued) { w.queued = true; requestAnimationFrame(() => { w.queued = false; drawWave(w); }); }
+}
+
+function drawWave(w) {
+  const { canvas } = w, dpr = devicePixelRatio || 1;
+  const W = Math.max(1, Math.round(canvas.clientWidth * dpr)), H = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+  const g = canvas.getContext('2d'), css = getComputedStyle(canvas);
+  const fg = css.getPropertyValue('--bar').trim() || '#2f5bd3', bg = css.getPropertyValue('--bar-bg').trim() || '#e9e9e6';
+  const mid = H / 2, scale = (H / 2) - dpr, xEnd = Math.round(w.filled / WAVE_COLUMNS * W);
+  g.clearRect(0, 0, W, H);
+  // the track's area; the part still to come is fainter
+  g.fillStyle = bg;
+  g.fillRect(0, 0, xEnd, H);
+  g.globalAlpha = 0.45; g.fillRect(xEnd, 0, W - xEnd, H); g.globalAlpha = 1;
+  g.fillStyle = fg;
+  g.globalAlpha = 0.3; g.fillRect(0, Math.floor(mid), W, Math.max(1, Math.round(dpr / 2))); // zero line
+  // per pixel: the extremes and the mean RMS of the columns under it
+  const peaks = new Path2D(), rmsPath = new Path2D();
+  for (let x = 0; x < xEnd; x++) {
+    const c0 = Math.floor(x * WAVE_COLUMNS / W), c1 = Math.min(w.filled, Math.max(c0 + 1, Math.floor((x + 1) * WAVE_COLUMNS / W)));
+    let lo = 0, hi = 0, r = 0;
+    for (let c = c0; c < c1; c++) { if (w.min[c] < lo) lo = w.min[c]; if (w.max[c] > hi) hi = w.max[c]; r += w.rms[c]; }
+    r /= Math.max(1, c1 - c0);
+    lo = Math.max(lo, -1); hi = Math.min(hi, 1); r = Math.min(r, hi, -lo);
+    const top = mid - hi * scale, bot = mid - lo * scale;
+    peaks.rect(x, top, 1, Math.max(1, bot - top));
+    if (r > 0) rmsPath.rect(x, mid - r * scale, 1, Math.max(1, 2 * r * scale));
+  }
+  g.globalAlpha = 0.55; g.fill(peaks);
+  g.globalAlpha = 1; g.fill(rmsPath);
+  // the decoding position
+  if (!w.done && w.p > 0) {
+    g.fillStyle = css.getPropertyValue('--text').trim() || '#000';
+    g.globalAlpha = 0.8;
+    g.fillRect(Math.min(W - dpr, Math.round(w.p * W)), 0, Math.max(1, Math.round(dpr)), H);
+  }
+  g.globalAlpha = 1;
+}
+
+addEventListener('resize', () => { for (const w of waves.values()) drawWave(w); });
 
 // ------------------------------------------------------------------ output
 
@@ -1353,7 +1472,8 @@ function convertOne(i, opts, writer) {
         chain = chain.then(() => writer.write(m.bytes)).then(() => worker.postMessage({ type: 'ack' }))
           .catch(e => { failed = failed || e; worker.postMessage({ type: 'ack' }); });
       } else if (m.type === 'progress') {
-        setStatus(i, '', `${Math.floor(m.p * 100)}%`, m.p);
+        setStatus(i, '', `${Math.floor(m.p * 100)}%`);
+        updateWave(i, m.p, m.wave);
       } else if (m.type === 'done') {
         chain.then(async () => {
           finish();
@@ -1367,7 +1487,7 @@ function convertOne(i, opts, writer) {
     };
     worker.onerror = e => { e.preventDefault(); finish(); writer.abort(); reject(new Error(e.message || 'worker failed')); };
     state.cancelHooks.push(() => { finish(); writer.abort(); reject(new Error('cancelled')); });
-    worker.postMessage({ file: state.file, area: a, index: i, ...opts });
+    worker.postMessage({ file: state.file, area: a, index: i, columns: WAVE_COLUMNS, ...opts });
   });
 }
 
@@ -1391,7 +1511,7 @@ async function convert() {
   $('log').replaceChildren();
   for (const x of document.querySelectorAll('#area-choice input, .controls select, .controls input')) x.disabled = true;
   updateSummary();
-  for (const i of indices) setStatus(i, '', 'Waiting', 0);
+  for (const i of indices) { setStatus(i, '', 'Waiting'); resetWave(i); }
 
   const started = performance.now();
   const parallel = Math.max(1, Math.min(indices.length, (navigator.hardwareConcurrency || 4) - 1, 8));
@@ -1407,7 +1527,7 @@ async function convert() {
     while (next < indices.length && !state.cancelled) {
       const i = indices[next++], track = a.tracks[i], name = track.fileName;
       const frames = lib.trackSpan(a, i, opts.rate).frames;
-      setStatus(i, '', 'Starting', 0);
+      setStatus(i, '', 'Starting');
       try {
         const writer = dir ? await folderWriter(dir, name, lib.wavHeader(a.channels, opts.rate, opts.bits, frames))
                            : downloadWriter(name);
@@ -1415,8 +1535,10 @@ async function convert() {
         peak = Math.max(peak, r.peak);
         audioFrames += r.frames;
         setStatus(i, r.warnings.length ? 'warn' : 'ok', `Done · peak ${fmtDb(r.peak)} dBFS`);
+        updateWave(i, 1, null, true);
         r.warnings.forEach(w => log(`${name}: ${w}`));
       } catch (e) {
+        updateWave(i, null, null, true);
         if (state.cancelled) { setStatus(i, '', 'Cancelled'); continue; }
         failed++;
         setStatus(i, 'err', 'Failed');
@@ -1430,7 +1552,7 @@ async function convert() {
   clearInterval(timer);
 
   const secs = (performance.now() - started) / 1000;
-  for (const i of indices.slice(next)) setStatus(i, '', 'Cancelled');
+  for (const i of indices.slice(next)) { setStatus(i, '', 'Cancelled'); removeWave(i); }
   state.busy = false;
   $('cancel').hidden = true;
   for (const x of document.querySelectorAll('#area-choice input, .controls select, .controls input')) x.disabled = false;
