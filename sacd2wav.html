@@ -51,111 +51,233 @@
   }
 }
 </script>
-<link rel="stylesheet" href="style.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Share+Tech+Mono&display=swap">
 <style>
-#drop {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-  min-height: 150px; padding: 24px; text-align: center; cursor: pointer;
-  border: 2px dashed var(--line); background: var(--drop); transition: border-color .15s, background .15s;
+/* ---------------------------------------------------------------- Studio Rack theme */
+:root {
+  --bg: #111113; --panel: #1b1b1e; --text: #e8e6e1; --text-2: #c9c6bd; --muted: #a8a59c; --line: #3b3b40;
+  --accent: #ffb347; --accent-text: #1a1206; --accent-soft: #2a2418; --accent-dim: #d99a3d;
+  --ok: #6fe08a; --warn: #ffd27a; --err: #ff8a7a;
+  --bar: #ffb347; --bar-bg: #2a2418; --drop: #121214;
+  --lcd: #1a1206; --led: #6fe08a;
+  --meter-face: #efe3c4; --meter-ink: #3a3328; --meter-red: #b5321f;
+  --cond: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "Barlow", system-ui, sans-serif;
+  --mono: "Share Tech Mono", ui-monospace, monospace;
+  color-scheme: dark;
 }
-#drop.over { border-color: var(--accent); background: var(--accent-soft); }
-#drop strong { font-size: 16px; }
-#drop .hint { color: var(--muted); font-size: 13px; }
-#drop.compact { min-height: 0; flex-direction: row; justify-content: space-between; text-align: left; padding: 14px 18px; }
-#drop.compact .big { display: none; }
-#file-error { color: var(--err); margin: 10px 2px 0; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--body); -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); } a:hover { color: #ffd08a; }
+main { max-width: 1120px; margin: 0 auto; padding: 48px 16px 64px; display: flex; flex-direction: column; gap: 24px; }
 
-#disc { margin-top: 18px; }
-.disc-head { padding: 16px 18px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
-.disc-head h2 { margin: 0; font-size: 18px; }
-.disc-head .meta { color: var(--muted); font-size: 13px; margin-top: 2px; }
-.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.seg label { padding: 5px 12px; cursor: pointer; font-size: 13px; user-select: none; }
+.topbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px;
+  font-family: var(--cond); letter-spacing: .18em; text-transform: uppercase; font-size: 14px; color: var(--muted); }
+.topbar a { text-decoration: none; font-weight: 600; }
+
+/* Rack units */
+.rack {
+  position: relative;
+  background: repeating-linear-gradient(90deg, #26262a 0, #29292d 2px, #252529 4px);
+  border: 1px solid var(--line); border-radius: 12px; padding: 36px 56px;
+  display: flex; flex-direction: column; gap: 24px;
+  box-shadow: 0 1px 0 #4a4a50 inset, 0 30px 60px rgba(0,0,0,.45);
+}
+.screw { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #3e3e44; border: 1px solid #55555b; }
+.screw::after { content: ""; position: absolute; left: 2px; right: 2px; top: 50%; height: 1px; background: #26262a; transform: translateY(-50%) rotate(35deg); }
+.screw.tl { left: 18px; top: 22px; } .screw.bl { left: 18px; bottom: 22px; }
+.screw.tr { right: 18px; top: 22px; } .screw.br { right: 18px; bottom: 22px; }
+
+.head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 16px; }
+.head-text { display: flex; flex-direction: column; gap: 6px; }
+h1 { margin: 0; font-family: var(--cond); font-weight: 700; font-size: clamp(44px, 7vw, 64px); line-height: 1; letter-spacing: .04em; text-transform: uppercase; }
+h1 .arrow { color: var(--accent); }
+.sub { margin: 0; font-size: 17px; color: var(--text-2); max-width: 560px; }
+.led-chip { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+  font-family: var(--cond); letter-spacing: .14em; font-size: 14px; text-transform: uppercase; }
+.led-chip .led { width: 10px; height: 10px; border-radius: 50%; background: var(--led); box-shadow: 0 0 10px var(--led); }
+
+/* Amber display */
+.lcd { background: var(--lcd); border: 2px solid #0c0903; border-radius: 8px; box-shadow: inset 0 0 24px rgba(0,0,0,.8);
+  padding: 22px 28px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 20px; font-family: var(--mono); color: var(--accent); }
+.lcd-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1 1 320px; }
+.lcd-title { font-size: clamp(26px, 4.6vw, 44px); letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 0 12px rgba(255,179,71,.45);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lcd-sub { font-size: 15px; letter-spacing: .12em; color: var(--accent-dim); text-transform: uppercase; overflow-wrap: anywhere; }
+.lcd-grid { display: grid; grid-template-columns: auto auto; column-gap: 24px; row-gap: 6px; font-size: 15px; letter-spacing: .1em; align-content: center; margin: 0; text-transform: uppercase; }
+.lcd-grid dt { color: var(--accent-dim); } .lcd-grid dd { margin: 0; }
+.lcd.err .lcd-title { color: var(--err); text-shadow: none; }
+
+/* Disc slot (the original #drop) */
+#drop { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; padding: 26px 28px; border-radius: 8px; background: var(--drop);
+  border: 2px dashed #5a5a60; cursor: pointer; box-shadow: inset 0 6px 14px rgba(0,0,0,.6); transition: border-color .15s, background .15s; }
+#drop:hover, #drop.over { border-color: var(--accent); background: #17140f; }
+#drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+#drop .disc-icon { color: var(--accent); flex: none; }
+#drop .slot-text { display: flex; flex-direction: column; gap: 4px; flex: 1 1 280px; min-width: 0; }
+#drop strong { font-family: var(--cond); font-size: 28px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
+#drop .hint { font-size: 15px; color: var(--muted); }
+.slot-btn { font-family: var(--cond); font-size: 16px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+  padding: 12px 20px; min-height: 44px; display: inline-flex; align-items: center; border-radius: 6px; background: var(--accent); color: var(--accent-text); }
+#drop.compact { padding: 16px 22px; }
+#drop.compact .big { display: none; }
+#drop.compact strong { font-size: 22px; }
+#drop.compact .slot-btn::after { content: "  · Eject"; }
+#file-error { color: var(--err); margin: 0; font-family: var(--mono); letter-spacing: .04em; }
+
+.meters { display: flex; gap: 16px; justify-content: flex-end; }
+.meter { background: var(--meter-face); border: 3px solid #0e0e10; border-radius: 6px; padding: 6px 8px 2px; box-shadow: inset 0 0 12px rgba(120,80,20,.35); }
+.meter svg { display: block; width: 150px; height: 78px; }
+
+/* Second rack unit: the disc */
+.disc-head { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
+.disc-head h2 { margin: 0; font-family: var(--cond); font-size: 30px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.disc-head .meta { color: var(--muted); font-size: 15px; margin-top: 2px; }
+.eyebrow { font-family: var(--cond); letter-spacing: .18em; font-size: 13px; text-transform: uppercase; color: var(--muted); }
+
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg label { display: flex; align-items: center; padding: 10px 16px; min-height: 44px; background: var(--panel); cursor: pointer; user-select: none;
+  font-family: var(--cond); font-size: 16px; letter-spacing: .08em; text-transform: uppercase; }
+.seg label + label { border-left: 1px solid var(--line); }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
 .seg label:has(input:checked) { background: var(--accent); color: var(--accent-text); }
 .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+.seg label:has(input:disabled) { opacity: .5; cursor: default; }
 
+.table-well { background: #121214; border: 1px solid #0c0c0e; border-radius: 8px; box-shadow: inset 0 4px 12px rgba(0,0,0,.55); overflow-x: auto; }
 .tracks { width: 100%; border-collapse: collapse; }
-.tracks th, .tracks td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
-.tracks th { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.tracks th, .tracks td { padding: 9px 10px; text-align: left; border-bottom: 1px solid #26262a; vertical-align: middle; }
+.tracks th { font-family: var(--cond); font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .14em; }
 .tracks tr:last-child td { border-bottom: 0; }
 .tracks tbody tr { cursor: pointer; }
 .tracks tbody tr:hover { background: var(--accent-soft); }
-.tracks .c-check { width: 36px; padding-left: 16px; }
-.tracks .c-num { width: 36px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.tracks .c-len { width: 64px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
-.tracks .c-status { width: 190px; }
-.tracks .title { overflow-wrap: anywhere; }
-.tracks .performer { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
-input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; margin: 0; vertical-align: middle; }
-.status { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+.tracks .c-check { width: 40px; padding-left: 16px; }
+.tracks .c-num { width: 44px; color: var(--accent); font-family: var(--mono); font-size: 16px; }
+.tracks .c-len { width: 72px; text-align: right; font-family: var(--mono); color: var(--muted); }
+.tracks .c-status { width: 200px; }
+.tracks .title { overflow-wrap: anywhere; font-weight: 500; }
+.tracks .performer { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; margin: 0; vertical-align: middle; }
+.status { font-family: var(--mono); font-size: 13px; letter-spacing: .06em; color: var(--muted); display: flex; flex-direction: column; gap: 4px; text-transform: uppercase; }
 .status.ok { color: var(--ok); } .status.err { color: var(--err); } .status.warn { color: var(--warn); }
-.wave { display: block; width: 100%; height: 34px; border-radius: 3px; }
+.wave { display: block; width: 100%; height: 34px; border-radius: 3px; background: #0d0b07; }
 
-.controls { padding: 14px 18px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-end; }
-.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.controls { display: flex; flex-wrap: wrap; gap: 16px 22px; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 6px; font-family: var(--cond); font-size: 13px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
 .field select, .field input[type=number] {
-  font: inherit; font-size: 14px; color: var(--text); background: var(--panel);
-  border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; min-width: 120px;
+  font: 16px var(--mono); letter-spacing: .04em; color: var(--accent); background: var(--lcd);
+  border: 2px solid #0c0903; border-radius: 6px; padding: 9px 10px; min-height: 44px; min-width: 140px;
+  box-shadow: inset 0 0 10px rgba(0,0,0,.7);
 }
-.field input[type=number] { width: 90px; min-width: 0; }
+.field select:focus-visible, .field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.field input[type=number] { width: 100px; min-width: 0; }
+.field :disabled { opacity: .5; }
 .spacer { flex: 1; }
-button {
-  font: inherit; font-size: 14px; font-weight: 600; border-radius: 8px; padding: 8px 16px; cursor: pointer;
-  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text);
-}
-button.secondary { background: transparent; color: var(--text); border-color: var(--line); font-weight: 500; }
-button:disabled { opacity: .45; cursor: default; }
-.summary { padding: 0 18px 14px; font-size: 13px; color: var(--muted); }
-#log { margin: 14px 0 0; padding: 0; list-style: none; font-size: 13px; }
+button { font-family: var(--cond); font-size: 17px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+  border-radius: 6px; padding: 10px 22px; min-height: 44px; cursor: pointer; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text); }
+button:hover:not(:disabled) { background: #ffc26b; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+button.secondary { background: transparent; color: var(--text); border-color: var(--line); }
+button.secondary:hover:not(:disabled) { background: var(--panel); }
+button:disabled { opacity: .4; cursor: default; }
+.summary { font-family: var(--mono); font-size: 14px; letter-spacing: .06em; color: var(--accent-dim); text-transform: uppercase; }
+
+#log { margin: 0; padding: 0; list-style: none; font-family: var(--mono); font-size: 14px; }
+#log:empty { display: none; }
 #log li { padding: 3px 0; color: var(--warn); overflow-wrap: anywhere; }
 #log li.err { color: var(--err); }
-.foot { color: var(--muted); font-size: 12px; margin-top: 22px; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; font-size: 15px; line-height: 1.55; color: #b9b6ad; }
+.notes p { margin: 0; } .notes strong { color: var(--text); font-weight: 600; }
 
 @media (max-width: 640px) {
+  main { padding-top: 32px; }
+  .rack { padding: 28px 18px; }
+  .screw, .meters { display: none; }
   .tracks .c-len { display: none; }
   .tracks .c-status { width: 110px; }
-  .controls { gap: 12px; }
   .field select { min-width: 0; }
   .spacer { display: none; }
 }
+@media (prefers-reduced-motion: reduce) { #drop { transition: none; } }
 </style>
 </head>
 <body>
 <main>
-  <h1>SACD to WAV</h1>
-  <p class="sub">Convert tracks from an SACD ISO image to WAV. Everything happens on this computer; the image is never uploaded.</p>
-
-  <div id="drop" class="panel" tabindex="0" role="button" aria-label="Choose an SACD ISO image">
-    <div>
-      <strong id="drop-title">Drop an SACD .iso here</strong>
-      <div class="hint" id="drop-hint">or click to choose a file</div>
-    </div>
-    <div class="hint big">Stereo and multichannel areas, plain DSD and DST</div>
+  <div class="topbar">
+    <a href="https://hifiweekly.github.io/">Hifiweekly</a>
+    <span>In-browser SACD ISO converter</span>
   </div>
-  <input type="file" id="file-input" accept=".iso" hidden>
-  <p id="file-error" hidden></p>
 
-  <section id="disc" class="panel" hidden>
+  <div class="rack">
+    <span class="screw tl" aria-hidden="true"></span><span class="screw bl" aria-hidden="true"></span>
+    <span class="screw tr" aria-hidden="true"></span><span class="screw br" aria-hidden="true"></span>
+
+    <div class="head">
+      <div class="head-text">
+        <h1>SACD <span class="arrow">→</span> WAV</h1>
+        <p class="sub">Convert tracks from an SACD ISO image to WAV. Everything happens on this computer; the image is never uploaded.</p>
+      </div>
+      <div class="led-chip"><span class="led" aria-hidden="true"></span><span>Local only · No upload</span></div>
+    </div>
+
+    <div class="lcd" id="lcd" aria-hidden="true">
+      <div class="lcd-main">
+        <span class="lcd-title" id="lcd-title">No disc</span>
+        <span class="lcd-sub" id="lcd-sub">Insert .iso to begin</span>
+      </div>
+      <dl class="lcd-grid">
+        <dt>Area</dt><dd id="lcd-area">Stereo · Multi-ch</dd>
+        <dt>Coding</dt><dd id="lcd-coding">DSD · DST</dd>
+        <dt>Output</dt><dd id="lcd-out">WAV</dd>
+      </dl>
+    </div>
+
+    <div id="drop" tabindex="0" role="button" aria-label="Choose an SACD ISO image">
+      <svg class="disc-icon" aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 3.5a8.5 8.5 0 0 1 8.5 8.5"/></svg>
+      <div class="slot-text">
+        <strong id="drop-title">Drop an SACD .iso here</strong>
+        <div class="hint" id="drop-hint">or click to choose a file</div>
+        <div class="hint big">Stereo and multichannel areas, plain DSD and DST</div>
+      </div>
+      <span class="slot-btn" aria-hidden="true">Load disc</span>
+    </div>
+    <input type="file" id="file-input" accept=".iso" hidden>
+    <p id="file-error" hidden></p>
+
+    <div class="meters" aria-hidden="true">
+      <div class="meter"><svg viewBox="0 0 160 84"><path d="M20 72 A64 64 0 0 1 140 72" fill="none" stroke="#3a3328" stroke-width="1.5"/><path d="M112 34 A64 64 0 0 1 140 72" fill="none" stroke="#b5321f" stroke-width="4"/><g stroke="#3a3328" stroke-width="1.5"><line x1="26" y1="50" x2="31" y2="54"/><line x1="43" y1="32" x2="47" y2="38"/><line x1="64" y1="21" x2="66" y2="28"/><line x1="80" y1="18" x2="80" y2="25"/><line x1="96" y1="21" x2="94" y2="28"/><line x1="117" y1="32" x2="113" y2="38"/></g><text x="80" y="64" text-anchor="middle" font-family="Barlow Condensed, sans-serif" font-size="13" fill="#3a3328">VU · L</text><line x1="80" y1="80" x2="44" y2="38" stroke="#141414" stroke-width="1.5"/></svg></div>
+      <div class="meter"><svg viewBox="0 0 160 84"><path d="M20 72 A64 64 0 0 1 140 72" fill="none" stroke="#3a3328" stroke-width="1.5"/><path d="M112 34 A64 64 0 0 1 140 72" fill="none" stroke="#b5321f" stroke-width="4"/><g stroke="#3a3328" stroke-width="1.5"><line x1="26" y1="50" x2="31" y2="54"/><line x1="43" y1="32" x2="47" y2="38"/><line x1="64" y1="21" x2="66" y2="28"/><line x1="80" y1="18" x2="80" y2="25"/><line x1="96" y1="21" x2="94" y2="28"/><line x1="117" y1="32" x2="113" y2="38"/></g><text x="80" y="64" text-anchor="middle" font-family="Barlow Condensed, sans-serif" font-size="13" fill="#3a3328">VU · R</text><line x1="80" y1="80" x2="44" y2="38" stroke="#141414" stroke-width="1.5"/></svg></div>
+    </div>
+  </div>
+
+  <section id="disc" class="rack" hidden>
+    <span class="screw tl" aria-hidden="true"></span><span class="screw bl" aria-hidden="true"></span>
+    <span class="screw tr" aria-hidden="true"></span><span class="screw br" aria-hidden="true"></span>
     <div class="disc-head">
       <div>
+        <div class="eyebrow">Loaded disc</div>
         <h2 id="album"></h2>
         <div class="meta" id="album-meta"></div>
       </div>
       <div class="seg" id="area-choice" hidden></div>
     </div>
-    <table class="tracks">
-      <thead>
-        <tr>
-          <th class="c-check"><input type="checkbox" id="check-all" aria-label="Select all tracks"></th>
-          <th class="c-num">#</th>
-          <th>Title</th>
-          <th class="c-len">Length</th>
-          <th class="c-status"></th>
-        </tr>
-      </thead>
-      <tbody id="track-rows"></tbody>
-    </table>
+    <div class="table-well">
+      <table class="tracks">
+        <thead>
+          <tr>
+            <th class="c-check"><input type="checkbox" id="check-all" aria-label="Select all tracks"></th>
+            <th class="c-num">#</th>
+            <th>Title</th>
+            <th class="c-len">Length</th>
+            <th class="c-status"></th>
+          </tr>
+        </thead>
+        <tbody id="track-rows"></tbody>
+      </table>
+    </div>
     <div class="controls">
       <label class="field">Sample rate
         <select id="rate">
@@ -189,8 +311,13 @@ button:disabled { opacity: .45; cursor: default; }
     </div>
     <div class="summary" id="summary"></div>
   </section>
+
   <ul id="log"></ul>
-  <p class="foot">Each WAV is written while it is converted when saving to a folder (Chrome, Edge). With Downloads, each track is kept in memory until it is finished, then downloaded; your browser may ask once to allow several downloads.</p>
+
+  <div class="notes">
+    <p><strong>Save to a folder</strong> (Chrome, Edge) — each WAV is written while it is converted.</p>
+    <p><strong>Downloads</strong> — each track is kept in memory until it is finished, then downloaded. Your browser may ask once to allow several downloads.</p>
+  </div>
 </main>
 
 <script id="sacd-lib">
@@ -1598,6 +1725,46 @@ for (const id of ['rate', 'bits', 'gain', 'save']) $(id).addEventListener('chang
 $('convert').onclick = convert;
 $('cancel').onclick = cancel;
 addEventListener('beforeunload', e => { if (state.busy) e.preventDefault(); });
+})();
+</script>
+<script id="rack-display">
+// Studio Rack: mirrors the converter's own state onto the amber display.
+// Read-only; it never touches the converter.
+'use strict';
+(() => {
+  const $ = id => document.getElementById(id);
+  const lcd = $('lcd'), title = $('lcd-title'), sub = $('lcd-sub');
+  const areaEl = $('lcd-area'), coding = $('lcd-coding'), out = $('lcd-out');
+  const label = id => $(id).selectedOptions[0]?.text || '';
+
+  function sync() {
+    out.textContent = `WAV · ${label('rate')} · ${label('bits')}`;
+    const err = $('file-error');
+    if (!err.hidden && err.textContent) {
+      lcd.classList.add('err');
+      title.textContent = 'Read error';
+      sub.textContent = err.textContent;
+      return;
+    }
+    lcd.classList.remove('err');
+    if ($('disc').hidden) return;
+    title.textContent = $('album').textContent || 'Disc loaded';
+    sub.textContent = $('summary').textContent;
+    const m = $('album-meta').textContent.match(/(\d+) ch (DST|DSD)/);
+    if (m) {
+      const multi = $('area-choice').querySelector('input:checked')?.value === 'multichannel' || +m[1] > 2;
+      areaEl.textContent = `${multi ? 'Multi-ch' : 'Stereo'} · ${m[1]} ch`;
+      coding.textContent = m[2];
+    }
+  }
+
+  let queued = false;
+  const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; sync(); }); } };
+  const watch = { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden'] };
+  new MutationObserver(schedule).observe($('disc'), watch);
+  new MutationObserver(schedule).observe($('file-error'), watch);
+  for (const id of ['rate', 'bits']) $(id).addEventListener('change', schedule);
+  sync();
 })();
 </script>
 </body>
