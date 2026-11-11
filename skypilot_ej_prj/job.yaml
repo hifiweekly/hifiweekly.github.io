@@ -1,9 +1,0 @@
-name: multinode-bench
-resources:
-  infra: k8s/kind-skypilot
-  cpus: 1+
-  memory: 1+
-num_nodes: 6
-run: |
-  echo "[rank ${SKYPILOT_NODE_RANK}] started at $(date +%s.%N) on $(hostname)"
-
